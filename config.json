@@ -1,0 +1,22 @@
+{
+    "mcp_servers": {
+      "stdio_mcp_server": {
+        "description": "Configuration for the local MCP server that communicates over stdio.",
+        "transport": {
+          "type": "stdio",
+          "command": "python",
+          "args": ["mcp_server/server.py"]
+        }
+      },
+      "sse_mcp_server": {
+        "description": "A remote server to access files.",
+        "transport": {
+            "type": "sse",
+            "url": "http://localhost:8000"
+        }
+    }
+    },
+    "app_settings": {
+        "log_level": "INFO"
+    }
+  }
