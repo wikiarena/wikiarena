@@ -1,18 +1,24 @@
 
 # TODO:
 
-- [ ] MCP client module 
+- [x] MCP client module 
     - responsible for making HTTP requests to the MCP server
-- [ ] config
-    - [ ] mcp server
-- [ ] task/game state and data
-    - [ ] start page
-    - [ ] end page
-    - [ ] current page
-    - [ ] page history (number of stepsis implicit here)
-    - [ ] time elapsed
-    - [ ] result (success/failure)
+- [x] config
+    - [x] mcp server
+- [x] task/game state and data
+    - [x] start page
+    - [x] end page
+    - [x] current page
+    - [x] page history (number of stepsis implicit here)
+    - [x] time elapsed
+    - [x] result (success/failure)
 - [ ] LLM abstraction layer for multi-provider support
+    - [x] base class
+    - read the documentation for the providers and determine the settings each needs
+    - [ ] abstract list tools method
+        - need to convert to function definition format for each provider
+    - [ ] anthropic model
+    - [ ] openai model
 
 # idea
 Turn the wikipedia game into an eval / training environment for Language Models

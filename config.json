@@ -4,8 +4,8 @@
         "description": "Configuration for the local MCP server that communicates over stdio.",
         "transport": {
           "type": "stdio",
-          "command": "python",
-          "args": ["mcp_server/server.py"]
+          "command": "uv",
+          "args": ["run", "--with", "mcp", "mcp_server/server.py"]
         }
       },
       "sse_mcp_server": {
@@ -15,6 +15,18 @@
             "url": "http://localhost:8000"
         }
     }
+    },
+    "language_model_settings": {
+        "anthropic": {
+          "default_model_name": "claude-3-5-haiku-latest",
+          "default_max_tokens": 1000,
+          "system_prompt_template": "You are playing Wikipedia Race. Current: '{current_page_title}', Target: '{target_page_title}'. Use tool '{tool_name}' with a link from available links."
+        },
+        "openai": {
+          "default_model_name": "gpt-4o-mini",
+          "default_max_tokens": 1000,
+          "system_prompt_template": "You are playing Wikipedia Race. Current: '{current_page_title}', Target: '{target_page_title}'. Use tool '{tool_name}' with a link from available links."
+        }
     },
     "app_settings": {
         "log_level": "INFO"

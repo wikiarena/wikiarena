@@ -6,6 +6,8 @@ from rich.logging import RichHandler
 
 from wiki_arena.config import load_config
 from wiki_arena.mcp_client.client import MCPClient, create_server_params_from_config
+from wiki_arena.game.game_manager import GameManager
+from wiki_arena.data_models.game_models import GameConfig
 
 async def main():
     # 1. Load configuration
@@ -67,43 +69,51 @@ async def main():
 
     try:
         await mcp_client.connect(server_params)
+        logging.info(f"Connected to {mcp_server_config_name}")
 
-        # 4. Now the client is connected. You can pass the mcp_client
-        #    instance to your core application logic or use it directly here.
-        #    For a simple app, you might use it directly:
+        # 4. Create game configuration
+        game_config = GameConfig(
+            start_page_title="Python (programming language)",
+            target_page_title="Philosophy",
+            max_steps=30,
+            model_name="random",  # We're using random selection instead of AI
+            model_settings={}
+        )
 
-        logging.info(f"Connected to {mcp_server_config_name}. Available actions:")
+        # 5. Create and start game
+        game_manager = GameManager(mcp_client)
+        initial_state = await game_manager.start_game(game_config)
+        logging.info(f"Game started: {initial_state.game_id}")
+        logging.info(f"Current page: {initial_state.current_page.title}")
+        logging.info(f"Available links: {len(initial_state.current_page.links)}")
 
-        # Example: List tools and call one
-        tools_response = await mcp_client.list_tools()
-        if tools_response and tools_response.tools:
-            logging.info("Available Tools:")
-            for tool in tools_response.tools:
-                logging.info(f"- {tool.name}: {tool.description}")
+        # 6. Play game loop
+        while True:
+            result = await game_manager.play_turn()
+            if result:
+                # Game is over
+                logging.info(f"\nGame Over!")
+                logging.info(f"Status: {result.status.value}")
+                logging.info(f"Steps taken: {result.steps}")
+                logging.info(f"Path: {' -> '.join(result.path_taken)}")
+                logging.info(f"Duration: {result.duration:.2f}s")
+                if result.error_message:
+                    logging.error(f"Error: {result.error_message}")
+                break
 
-            # Example: Call a specific tool if it exists
-            tool_to_call = "get_wikipedia_page_links_titles" # Replace with a tool your server actually has
-            if any(tool.name == tool_to_call for tool in tools_response.tools):
-                 try:
-                     result = await mcp_client.call_tool(tool_to_call, {"page_title": "Python (programming language)"})
-                     logging.info(f"\nResult of '{tool_to_call}': {result.content[0].text}")
-                 except Exception as e:
-                     logging.error(f"Error calling tool '{tool_to_call}': {e}", exc_info=True)
-            else:
-                logging.warning(f"\nTool '{tool_to_call}' not found on server.")
-
-        else:
-            logging.info("No tools available on this server.")
-
+            # Game continues
+            current_page = game_manager.state.current_page
+            logging.info(f"Step {game_manager.state.steps}")
+            logging.info(f"Current page: {current_page.title}")
+            logging.info(f"Available links: {len(current_page.links)}")
 
     except Exception as e:
         logging.critical(f"An unexpected error occurred during application runtime: {e}", exc_info=True)
 
     finally:
-        # 5. Ensure the client disconnects when the application finishes or an error occurs
+        # 7. Ensure the client disconnects when the application finishes
         await mcp_client.disconnect()
         logging.info("Application shutting down.")
-
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -2,7 +2,6 @@ from mcp.server.fastmcp import FastMCP
 from typing import List
 import wikipediaapi
 
-# Create an MCP server
 mcp = FastMCP("wiki-arena-mcp-server")
 
 # Create a global Wikipedia API session with descriptive user agent
