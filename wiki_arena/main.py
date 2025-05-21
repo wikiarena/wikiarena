@@ -76,8 +76,12 @@ async def main():
             start_page_title="Python (programming language)",
             target_page_title="Philosophy",
             max_steps=30,
-            model_name="random",  # We're using random selection instead of AI
-            model_settings={}
+            model_provider="random",  # We're using random selection instead of AI
+            # model_provider="anthropic", # Example: uncomment to use Anthropic
+            model_settings={
+                # "model_name": "claude-3-haiku-20240307" # Example for Anthropic
+                # "max_tokens": 1000
+            }
         )
 
         # 5. Create and start game

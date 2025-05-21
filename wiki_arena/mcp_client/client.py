@@ -4,6 +4,7 @@ import logging
 
 from pydantic import BaseModel, Field
 
+from mcp.types import ListToolsResult, CallToolResult
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client, StdioServerParameters
 from mcp.client.sse import sse_client
@@ -73,7 +74,7 @@ class MCPClient:
         self._server_params = None
         logging.info("Disconnected.")
 
-    async def list_tools(self) -> Optional[Any]:
+    async def list_tools(self) -> ListToolsResult:
         """Lists tools available on the connected server."""
         if not self._session:
             logging.warning("Attempted to list tools while not connected.")
@@ -82,14 +83,14 @@ class MCPClient:
         # TODO(llm): Add error handling here for communication issues after connecting
         return await self._session.list_tools()
 
-    async def call_tool(self, tool_name: str, params: Dict[str, Any]) -> Optional[Any]:
+    async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> CallToolResult:
         """Calls a specific tool on the connected server."""
         if not self._session:
             logging.warning(f"Attempted to call tool '{tool_name}' while not connected.")
             raise ConnectionError("Not connected to server.")
-        logging.debug(f"Calling tool: {tool_name} with params: {params}")
+        logging.debug(f"Calling tool: {tool_name} with arguments: {arguments}")
         # TODO(llm): Add error handling here
-        return await self._session.call_tool(tool_name, params)
+        return await self._session.call_tool(tool_name, arguments)
 
 
 def create_server_params_from_config(config: Dict[str, Any]) -> ServerParams:

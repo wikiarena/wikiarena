@@ -17,11 +17,20 @@ class GameStatus(Enum):
 
 # --- Data Models ---
 
+DEFAULT_SYSTEM_PROMPT_TEMPLATE = (
+    "You are in the Wiki Arena. Your goal is to navigate from the starting Wikipedia page to the target Wikipedia page "
+    "by only using the links (page titles) within the current page.\n"
+    "Start Page: '{start_page_title}'\n"
+    "Target Page: '{target_page_title}'\n\n"
+    "Navigate to the target page using the tools provided for you.\n"
+)
+
 class Page(BaseModel):
     """Represents a single Wikipedia page in the game."""
     title: str = Field(..., description="The title of the Wikipedia page.")
     url: str = Field(..., description="The URL of the Wikipedia page.")
     text: Optional[str] = Field(None, description="The text of the Wikipedia page.")
+    # TODO(hunter): this should be a list of a defined type
     links: List[str] = Field([], description="A list of link texts found on the page.")
 
 class GameConfig(BaseModel):
@@ -29,24 +38,29 @@ class GameConfig(BaseModel):
     start_page_title: str = Field(..., description="The title of the starting Wikipedia page.")
     target_page_title: str = Field(..., description="The title of the target Wikipedia page.")
     max_steps: int = Field(30, description="The maximum number of steps allowed for the game.")
-    model_name: str = Field(..., description="The name of the Language Model.")
-    model_settings: Dict[str, Any] = Field({}, description="Provider-specific settings for the AI model.")
-
+    model_provider: str = Field(..., description="The name of the Language Model.")
+    model_settings: Dict[str, Any] = Field({}, description="Provider-specific settings for the language model.")
+    system_prompt_template: Optional[str] = Field(DEFAULT_SYSTEM_PROMPT_TEMPLATE, description="The system prompt for the language model.")
+    # what should be in settings?
+    # - system prompt? (or should this be in model settings so we can have multiple models with different system prompts?)
+    #  - exact or template. if template should we have an id?
+    
 class Move(BaseModel):
-    """Records a single step taken by the language model."""
+    """Records a single step taken by a player."""
     step: int = Field(..., description="The sequential number of the step.")
     from_page_title: str = Field(..., description="The title of the page before this move.")
     to_page_title: Optional[str] = Field(None, description="The title of the page navigated to (if successful).")
     timestamp: datetime = Field(default_factory=datetime.now, description="The timestamp when this move occurred.")
-    model_response: str = Field(..., description="The full text response received from the AI model.")
+    model_response: str = Field(..., description="The full text response received from the language model.")
     tool_call_attempt: Optional[Dict[str, Any]] = Field(None, description="Details of the tool call attempted by the model.")
+    # TODO(hunter): understand why we have/need both result and error
     tool_call_result: Optional[Any] = Field(None, description="The result received from the MCP tool call.")
     error: Optional[str] = Field(None, description="An error message if an error occurred during this step.")
 
 class GameState(BaseModel):
     """Represents the dynamic state of a single ongoing or completed game."""
     config: GameConfig = Field(..., description="The configuration for this game.")
-    current_page: Optional[Page] = Field(None, description="Details of the page the AI is currently on.")
+    current_page: Optional[Page] = Field(None, description="Details of the page the language model is currently on.")
     move_history: List[Move] = Field([], description="A chronological list of moves made in the game.")
     steps: int = Field(0, description="The number of steps taken.")
     status: GameStatus = Field(GameStatus.NOT_STARTED, description="The current status of the game.")
@@ -72,7 +86,7 @@ if __name__ == "__main__":
         start_page_title="Artificial Intelligence",
         target_page_title="Philosophy",
         max_steps=25,
-        model_name="gemini-2.0-flash-latest",
+        model_provider="random",
     )
     print("Example GameConfig:")
     print(example_config.model_dump_json(indent=2))
