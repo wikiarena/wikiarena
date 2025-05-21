@@ -3,11 +3,13 @@ import sys
 import json
 import logging
 from rich.logging import RichHandler
+from datetime import datetime
 
 from wiki_arena.config import load_config
 from wiki_arena.mcp_client.client import MCPClient, create_server_params_from_config
 from wiki_arena.game.game_manager import GameManager
 from wiki_arena.data_models.game_models import GameConfig
+from wiki_arena.data_models.game_models import GameStatus
 
 async def main():
     # 1. Load configuration
@@ -73,14 +75,17 @@ async def main():
 
         # 4. Create game configuration
         game_config = GameConfig(
-            start_page_title="Python (programming language)",
-            target_page_title="Philosophy",
+            start_page_title="Secretariat (horse)",
+            target_page_title="Cobhamites",
             max_steps=30,
-            model_provider="random",  # We're using random selection instead of AI
-            # model_provider="anthropic", # Example: uncomment to use Anthropic
+            # model_provider="random",  # We're using random selection instead of AI
+            model_provider="openai",
             model_settings={
-                # "model_name": "claude-3-haiku-20240307" # Example for Anthropic
+                # "model_name": "claude-3-haiku-latest" # Example for Anthropic
                 # "max_tokens": 1000
+                # Example for OpenAI:
+                "model_name": "gpt-4o-mini-2024-07-18",
+                # "max_tokens": 1024
             }
         )
 
@@ -93,16 +98,40 @@ async def main():
 
         # 6. Play game loop
         while True:
-            result = await game_manager.play_turn()
-            if result:
-                # Game is over
+            game_over = await game_manager.play_turn()
+            if game_over:
+                # Game is over, access state directly for details
+                game_state = game_manager.state
                 logging.info(f"\nGame Over!")
-                logging.info(f"Status: {result.status.value}")
-                logging.info(f"Steps taken: {result.steps}")
-                logging.info(f"Path: {' -> '.join(result.path_taken)}")
-                logging.info(f"Duration: {result.duration:.2f}s")
-                if result.error_message:
-                    logging.error(f"Error: {result.error_message}")
+                logging.info(f"Status: {game_state.status.value}")
+                logging.info(f"Steps taken: {game_state.steps}")
+                
+                # Simplified path construction
+                path_taken = []
+                if not game_state.move_history:
+                    # Game ended on the start page (e.g., 0-step win, or error before first move)
+                    path_taken.append(game_state.config.start_page_title)
+                else:
+                    for move in game_state.move_history:
+                        path_taken.append(move.from_page_title)
+                    
+                    # If the game was won, the final page in the path is the target page.
+                    if game_state.status == GameStatus.WON:
+                        path_taken.append(game_state.config.target_page_title)
+
+                logging.info(f"Path: {' -> '.join(path_taken)}")
+
+                # Calculate duration
+                end_time = datetime.now()
+                duration = (end_time - game_state.start_timestamp).total_seconds()
+                logging.info(f"Duration: {duration:.2f}s")
+                
+                if game_state.error_message:
+                    # Error_message now directly stores outcome or error
+                    if game_state.status == GameStatus.ERROR or game_state.status == GameStatus.LOST_INVALID_MOVE or game_state.status == GameStatus.LOST_MAX_STEPS:
+                        logging.error(f"Outcome: {game_state.error_message}")
+                    else: # e.g. WON status, error_message contains success message
+                        logging.info(f"Outcome: {game_state.error_message}")
                 break
 
             # Game continues

@@ -7,5 +7,6 @@ requires-python = ">=3.12"
 dependencies = [
     "anthropic>=0.51.0",
     "mcp[cli]>=1.9.0",
+    "openai>=1.79.0",
     "wikipedia-api>=0.8.1",
 ]

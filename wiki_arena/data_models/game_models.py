@@ -19,10 +19,11 @@ class GameStatus(Enum):
 
 DEFAULT_SYSTEM_PROMPT_TEMPLATE = (
     "You are in the Wiki Arena. Your goal is to navigate from the starting Wikipedia page to the target Wikipedia page "
-    "by only using the links (page titles) within the current page.\n"
+    # "by only using the links (page titles) within the current page.\n"
+    "using ONLY the content from the current page.\n"
     "Start Page: '{start_page_title}'\n"
     "Target Page: '{target_page_title}'\n\n"
-    "Navigate to the target page using the tools provided for you.\n"
+    "Navigate one step closer to the target page by passing a page title on the current page to the tools provided for you.\n"
 )
 
 class Page(BaseModel):
@@ -67,6 +68,7 @@ class GameState(BaseModel):
     start_timestamp: datetime = Field(default_factory=datetime.now, description="The timestamp when the game started.")
     end_timestamp: Optional[datetime] = Field(None, description="The timestamp when the game ended.")
     game_id: str = Field(..., description="A unique identifier for this game session.")
+    error_message: Optional[str] = Field(None, description="A final error message if the game ended due to an error.")
 
 class GameResult(BaseModel):
     """Summarizes the outcome and key statistics of a completed game."""
