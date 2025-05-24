@@ -12,13 +12,13 @@
     - [x] page history (number of stepsis implicit here)
     - [x] time elapsed
     - [x] result (success/failure)
-- [ ] LLM abstraction layer for multi-provider support
+- [x] LLM abstraction layer for multi-provider support
     - [x] base class
     - read the documentation for the providers and determine the settings each needs
-    - [ ] abstract list tools method
+    - [x] abstract list tools method
         - need to convert to function definition format for each provider
-    - [ ] anthropic model
-    - [ ] openai model
+    - [x] anthropic model
+    - [x] openai model
 
 # idea
 Turn the wikipedia game into an eval / training environment for Language Models
