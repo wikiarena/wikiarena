@@ -9,9 +9,9 @@ from .language_model import LanguageModel, ToolCall
 class RandomModel(LanguageModel):
     """
     A language model that randomly selects a link from the current page
-    if the 'navigate_to_page' tool is available.
+    if the 'navigate' tool is available.
     """
-    TARGET_TOOL_NAME = "navigate_to_page"
+    TARGET_TOOL_NAME = "navigate"
 
     def __init__(self, model_settings: Dict[str, Any]):
         super().__init__(model_settings)

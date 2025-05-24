@@ -8,8 +8,10 @@ from datetime import datetime
 from wiki_arena.config import load_config
 from wiki_arena.mcp_client.client import MCPClient, create_server_params_from_config
 from wiki_arena.game.game_manager import GameManager
-from wiki_arena.data_models.game_models import GameConfig
+from wiki_arena.data_models.game_models import GameConfig, ModelConfig, GameResult
 from wiki_arena.data_models.game_models import GameStatus
+from wiki_arena.wikipedia.page_selector import get_random_page_pair_async
+from wiki_arena.storage import GameStorageService, StorageConfig
 
 async def main():
     # 1. Load configuration
@@ -73,30 +75,65 @@ async def main():
         await mcp_client.connect(server_params)
         logging.info(f"Connected to {mcp_server_config_name}")
 
-        # 4. Create game configuration
+        # 4. Generate random page pair for the game with efficient validation
+        logging.info("Generating random Wikipedia page pair...")
+        
+        # Use new page selector with validation enabled by default
+        page_pair = await get_random_page_pair_async()
+        
+        if not page_pair:
+            logging.error("Failed to generate random page pair. Exiting.")
+            sys.exit(1)
+        
+        logging.info(f"Selected page pair: '{page_pair.start_page}' -> '{page_pair.target_page}'")
+
+        # 5. Create game configuration with the selected pages
+        model_config = ModelConfig(
+            provider="random",  # Options: random, anthropic, openai
+            model_name="random",  # For random, this can be anything
+            settings={}
+        )
+        
+        # Test different model configurations
+        # model_config = ModelConfig(
+        #     provider="anthropic",
+        #     model_name="claude-3-haiku-20240307",
+        #     settings={"max_tokens": 1024}
+        # )
+        
+        # Alternative examples for AI models:
+        # model_config = ModelConfig(
+        #     provider="anthropic",
+        #     model_name="claude-3-haiku-20240307",
+        #     settings={"max_tokens": 1024}
+        # )
+        
+        # model_config = ModelConfig(
+        #     provider="openai", 
+        #     model_name="gpt-4o-mini",
+        #     settings={"max_tokens": 1024}
+        # )
+
         game_config = GameConfig(
-            start_page_title="Secretariat (horse)",
-            target_page_title="Cobhamites",
+            start_page_title=page_pair.start_page,
+            target_page_title=page_pair.target_page,
             max_steps=30,
-            # model_provider="random",  # We're using random selection instead of AI
-            model_provider="openai",
-            model_settings={
-                # "model_name": "claude-3-haiku-latest" # Example for Anthropic
-                # "max_tokens": 1000
-                # Example for OpenAI:
-                "model_name": "gpt-4o-mini-2024-07-18",
-                # "max_tokens": 1024
-            }
+            model=model_config
         )
 
-        # 5. Create and start game
+        # 5.5. Initialize game storage service
+        storage_config = StorageConfig()  # Use default configuration for now
+        storage_service = GameStorageService(storage_config)
+        logging.info(f"Game storage configured: {storage_config.get_storage_path()}")
+
+        # 6. Create and start game
         game_manager = GameManager(mcp_client)
         initial_state = await game_manager.start_game(game_config)
         logging.info(f"Game started: {initial_state.game_id}")
         logging.info(f"Current page: {initial_state.current_page.title}")
         logging.info(f"Available links: {len(initial_state.current_page.links)}")
 
-        # 6. Play game loop
+        # 7. Play game loop
         while True:
             game_over = await game_manager.play_turn()
             if game_over:
@@ -132,6 +169,20 @@ async def main():
                         logging.error(f"Outcome: {game_state.error_message}")
                     else: # e.g. WON status, error_message contains success message
                         logging.info(f"Outcome: {game_state.error_message}")
+                
+                # 7.5. Store game result
+                try:
+                    game_result = GameResult.from_game_state(game_state)
+                    storage_success = storage_service.store_game(game_result)
+                    
+                    if storage_success:
+                        logging.info(f"Game result stored successfully")
+                    else:
+                        logging.warning(f"Failed to store game result")
+                        
+                except Exception as e:
+                    logging.error(f"Error storing game result: {e}", exc_info=True)
+                
                 break
 
             # Game continues
@@ -144,7 +195,7 @@ async def main():
         logging.critical(f"An unexpected error occurred during application runtime: {e}", exc_info=True)
 
     finally:
-        # 7. Ensure the client disconnects when the application finishes
+        # 8. Ensure the client disconnects when the application finishes
         await mcp_client.disconnect()
         logging.info("Application shutting down.")
 
