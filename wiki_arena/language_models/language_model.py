@@ -4,7 +4,7 @@ from mcp.types import Tool
 
 from pydantic import BaseModel, Field
 
-from wiki_arena.data_models.game_models import GameState, GameConfig
+from wiki_arena.data_models.game_models import GameState, GameConfig, MoveMetrics, ModelConfig
 
 class ToolCall(BaseModel):
     """
@@ -15,22 +15,33 @@ class ToolCall(BaseModel):
     tool_arguments: Optional[Dict[str, Any]] = Field(None, description="The arguments the model provided for the chosen tool.")
     # TODO(hunter): see if we can remove this or other option
     error_message: Optional[str] = Field(None, description="Any error message if the model failed to produce a valid action.")
+    metrics: Optional[MoveMetrics] = Field(None, description="API call metrics")
 
 class LanguageModel(ABC):
     """
     Abstract base class for Language Model interactions.
     """
 
-    def __init__(self, model_settings: Dict[str, Any]):
+    def __init__(self, model_config: ModelConfig):
         """
-        Initializes the Language Model with provider-specific settings and an MCPClient.
+        Initializes the Language Model with a structured ModelConfig.
 
         Args:
-            model_settings: A dictionary containing configuration for the specific Language Model.
-            mcp_client: An instance of MCPClient to interact with the MCP server (e.g., for listing tools).
+            model_config: A ModelConfig object containing provider, model name, pricing, and settings.
         """
-        self.model_settings = model_settings
+        self.model_config = model_config
+        # Keep backward compatibility for now
+        self.model_settings = model_config.settings
         super().__init__()
+
+    def _calculate_cost(self, input_tokens: int, output_tokens: int) -> float:
+        """Calculate cost based on model pricing and token usage."""
+        if not self.model_config.input_cost_per_1m_tokens or not self.model_config.output_cost_per_1m_tokens:
+            return 0.0
+            
+        input_cost = (input_tokens / 1_000_000) * self.model_config.input_cost_per_1m_tokens
+        output_cost = (output_tokens / 1_000_000) * self.model_config.output_cost_per_1m_tokens
+        return input_cost + output_cost
 
     @abstractmethod
     async def _format_tools_for_provider(

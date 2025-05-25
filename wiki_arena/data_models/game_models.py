@@ -40,6 +40,15 @@ class GameError(BaseModel):
     message: str = Field(..., description="Human-readable error description.")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional context for analysis.")
 
+class MoveMetrics(BaseModel):
+    """Metrics for a single language model API call."""
+    input_tokens: int = Field(0, description="Input tokens for this API call")
+    output_tokens: int = Field(0, description="Output tokens for this API call") 
+    total_tokens: int = Field(0, description="Total tokens for this API call")
+    estimated_cost_usd: float = Field(0.0, description="Estimated cost for this API call in USD")
+    response_time_ms: float = Field(0.0, description="API response time in milliseconds")
+    request_timestamp: datetime = Field(default_factory=datetime.now, description="When this API call was made")
+
 DEFAULT_SYSTEM_PROMPT_TEMPLATE = (
     "You are in the Wiki Arena. Your goal is to navigate from the starting Wikipedia page to the target Wikipedia page "
     # "by only using the links (page titles) within the current page.\n"
@@ -54,6 +63,10 @@ class ModelConfig(BaseModel):
     provider: str = Field(..., description="Model provider: anthropic, openai, random")
     model_name: str = Field(..., description="Specific model name for the provider")
     settings: Dict[str, Any] = Field(default_factory=dict, description="Provider-specific settings")
+    
+    # Add pricing info
+    input_cost_per_1m_tokens: Optional[float] = Field(None, description="Cost per 1M input tokens in USD")
+    output_cost_per_1m_tokens: Optional[float] = Field(None, description="Cost per 1M output tokens in USD")
     
     def get_storage_key(self) -> str:
         """Generate consistent key for storage naming."""
@@ -89,10 +102,10 @@ class Move(BaseModel):
     step: int = Field(..., description="The sequential number of the step.")
     from_page_title: str = Field(..., description="The title of the page before this move.")
     to_page_title: Optional[str] = Field(None, description="The title of the page navigated to (if successful).")
-    timestamp: datetime = Field(default_factory=datetime.now, description="The timestamp when this move occurred.")
     model_response: Optional[str] = Field(None, description="The full text response received from the language model.")
     tool_call_attempt: Optional[Dict[str, Any]] = Field(None, description="Details of the tool call attempted by the model.")
     error: Optional[GameError] = Field(None, description="Structured error information if an error occurred during this step.")
+    metrics: Optional[MoveMetrics] = Field(None, description="API call metrics for this move")
 
 class GameState(BaseModel):
     """Represents the dynamic state of a single ongoing or completed game."""
@@ -116,10 +129,18 @@ class GameResult(BaseModel):
     path_taken: List[str] = Field([], description="Simple page title sequence for path visualization.")
     moves: List[Move] = Field([], description="Complete move history with errors and model responses.")
     
-    duration: float = Field(..., description="The duration of the game in seconds.")
     start_timestamp: datetime = Field(..., description="The timestamp when the game started.")
     end_timestamp: datetime = Field(..., description="The timestamp when the game concluded.")
     error_message: Optional[str] = Field(None, description="A final error message if the game ended due to an error.")
+    
+    # Pre-aggregated API metrics
+    total_input_tokens: int = Field(0, description="Total input tokens across all API calls")
+    total_output_tokens: int = Field(0, description="Total output tokens across all API calls") 
+    total_tokens: int = Field(0, description="Total tokens across all API calls")
+    total_estimated_cost_usd: float = Field(0.0, description="Total estimated cost for all API calls in USD")
+    total_api_time_ms: float = Field(0.0, description="Total time spent in API calls in milliseconds")
+    average_response_time_ms: float = Field(0.0, description="Average API response time in milliseconds")
+    api_call_count: int = Field(0, description="Number of successful API calls made during the game")
     
     # Add metadata for analysis
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional analysis metadata.")
@@ -140,6 +161,25 @@ class GameResult(BaseModel):
         else:
             # No moves made, just start page
             path_taken.append(game_state.config.start_page_title)
+        
+        # Calculate aggregated API metrics
+        total_input_tokens = 0
+        total_output_tokens = 0
+        total_tokens = 0
+        total_estimated_cost_usd = 0.0
+        total_api_time_ms = 0.0
+        api_call_count = 0
+        
+        for move in game_state.move_history:
+            if move.metrics:
+                total_input_tokens += move.metrics.input_tokens
+                total_output_tokens += move.metrics.output_tokens
+                total_tokens += move.metrics.total_tokens
+                total_estimated_cost_usd += move.metrics.estimated_cost_usd
+                total_api_time_ms += move.metrics.response_time_ms
+                api_call_count += 1
+        
+        average_response_time_ms = total_api_time_ms / api_call_count if api_call_count > 0 else 0.0
         
         # Generate analysis metadata
         metadata = {
@@ -162,24 +202,32 @@ class GameResult(BaseModel):
             steps=game_state.steps,
             path_taken=path_taken,
             moves=game_state.move_history,
-            duration=(end_timestamp - game_state.start_timestamp).total_seconds(),
             start_timestamp=game_state.start_timestamp,
             end_timestamp=end_timestamp,
             error_message=game_state.error_message,
+            total_input_tokens=total_input_tokens,
+            total_output_tokens=total_output_tokens,
+            total_tokens=total_tokens,
+            total_estimated_cost_usd=total_estimated_cost_usd,
+            total_api_time_ms=total_api_time_ms,
+            average_response_time_ms=average_response_time_ms,
+            api_call_count=api_call_count,
             metadata=metadata
         )
 
 # Example Usage (for testing/demonstration)
 if __name__ == "__main__":
-    # Example of creating a GameConfig
+    # Example of creating a GameConfig with pricing
     example_config = GameConfig(
         start_page_title="Artificial Intelligence",
         target_page_title="Philosophy",
         max_steps=25,
         model=ModelConfig(
-            provider="random",
-            model_name="random",
-            settings={}
+            provider="anthropic",
+            model_name="claude-3-5-haiku-latest",
+            settings={},
+            input_cost_per_1m_tokens=0.25,
+            output_cost_per_1m_tokens=1.25
         ),
     )
     print("Example GameConfig:")
@@ -194,16 +242,25 @@ if __name__ == "__main__":
     print("\nExample Initial GameState:")
     print(initial_state.model_dump_json(indent=2))
 
-    # Example of creating a Move
+    # Example of creating metrics
+    example_metrics = MoveMetrics(
+        input_tokens=150,
+        output_tokens=75,
+        total_tokens=225,
+        estimated_cost_usd=0.0002,
+        response_time_ms=750.0
+    )
+
+    # Example of creating a Move with metrics
     example_move = Move(
         step=1,
         from_page_title="Artificial Intelligence",
         to_page_title="Machine Learning",
-        model_response="Thinking process...\n<tool_code>call_tool('getPageContentAndLinks', {'page_title': 'Machine Learning'})</tool_code>",
-        tool_call_attempt={'tool_name': 'getPageContentAndLinks', 'parameters': {'page_title': 'Machine Learning'}},
-        timestamp=datetime.now()
+        model_response="I'll navigate to Machine Learning as it's related to AI and closer to Philosophy.",
+        tool_call_attempt={'tool_name': 'navigate', 'arguments': {'page_title': 'Machine Learning'}},
+        metrics=example_metrics
     )
-    print("\nExample Move:")
+    print("\nExample Move with Metrics:")
     print(example_move.model_dump_json(indent=2))
 
     # Example of updating GameState with a move
@@ -211,7 +268,7 @@ if __name__ == "__main__":
         title="Machine Learning",
         url="...",
         text="...",
-        links=["Algorithm", "Data", "Model"]
+        links=["Algorithm", "Data", "Model", "Philosophy"]
     )
     state_after_move = GameState(
         game_id="game_123",
@@ -225,16 +282,7 @@ if __name__ == "__main__":
     print("\nExample GameState After Move:")
     print(state_after_move.model_dump_json(indent=2))
 
-    # Example of creating a GameResult
-    end_time = datetime.now()
-    example_result = GameResult(
-        game_id="game_123",
-        config=example_config,
-        status=GameStatus.WON,
-        steps=5,
-        path_taken=["Artificial Intelligence", "Machine Learning", "Neural Network", "Computer Science", "Philosophy"],
-        duration=(end_time - initial_state.start_timestamp).total_seconds(),
-        end_timestamp=end_time
-    )
-    print("\nExample GameResult:")
+    # Example of creating a GameResult with aggregated metrics
+    example_result = GameResult.from_game_state(state_after_move)
+    print("\nExample GameResult with Aggregated Metrics:")
     print(example_result.model_dump_json(indent=2))

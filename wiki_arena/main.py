@@ -12,6 +12,7 @@ from wiki_arena.data_models.game_models import GameConfig, ModelConfig, GameResu
 from wiki_arena.data_models.game_models import GameStatus
 from wiki_arena.wikipedia.page_selector import get_random_page_pair_async
 from wiki_arena.storage import GameStorageService, StorageConfig
+from wiki_arena.language_models import create_model
 
 async def main():
     # 1. Load configuration
@@ -88,37 +89,24 @@ async def main():
         logging.info(f"Selected page pair: '{page_pair.start_page}' -> '{page_pair.target_page}'")
 
         # 5. Create game configuration with the selected pages
-        model_config = ModelConfig(
-            provider="random",  # Options: random, anthropic, openai
-            model_name="random",  # For random, this can be anything
-            settings={}
-        )
+        # model_key = "claude-3-haiku-20240307"  # Use the new full model name
+        model_key = "gpt-4o-mini-2024-07-18"  # OpenAI's affordable model
+        # model_key = "random"                   # Random baseline
         
-        # Test different model configurations
-        # model_config = ModelConfig(
-        #     provider="anthropic",
-        #     model_name="claude-3-haiku-20240307",
-        #     settings={"max_tokens": 1024}
-        # )
+        # Create model using simplified system (no config needed!)
+        model = create_model(model_key)
         
-        # Alternative examples for AI models:
-        # model_config = ModelConfig(
-        #     provider="anthropic",
-        #     model_name="claude-3-haiku-20240307",
-        #     settings={"max_tokens": 1024}
-        # )
+        # You can also override settings if needed:
+        # model = create_model(model_key, max_tokens=2048, temperature=0.1)
         
-        # model_config = ModelConfig(
-        #     provider="openai", 
-        #     model_name="gpt-4o-mini",
-        #     settings={"max_tokens": 1024}
-        # )
+        logging.info(f"Using model: {model.model_config.model_name} ({model.model_config.provider})")
+        logging.info(f"Model pricing: ${model.model_config.input_cost_per_1m_tokens}/1M input, ${model.model_config.output_cost_per_1m_tokens}/1M output tokens")
 
         game_config = GameConfig(
             start_page_title=page_pair.start_page,
             target_page_title=page_pair.target_page,
             max_steps=30,
-            model=model_config
+            model=model.model_config  # Use the model config
         )
 
         # 5.5. Initialize game storage service

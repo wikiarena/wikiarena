@@ -1,8 +1,9 @@
 import random
 from typing import Any, Dict, List, Optional
+from datetime import datetime
 
 from mcp.types import Tool # Assuming Tool is available at this path
-from wiki_arena.data_models.game_models import GameState
+from wiki_arena.data_models.game_models import GameState, MoveMetrics, ModelConfig
 from .language_model import LanguageModel, ToolCall
 
 
@@ -13,8 +14,8 @@ class RandomModel(LanguageModel):
     """
     TARGET_TOOL_NAME = "navigate"
 
-    def __init__(self, model_settings: Dict[str, Any]):
-        super().__init__(model_settings)
+    def __init__(self, model_config: ModelConfig):
+        super().__init__(model_config)
         # No specific settings needed for RandomModel yet
 
     async def generate_response(
@@ -25,6 +26,16 @@ class RandomModel(LanguageModel):
         """
         Generates a response by randomly selecting a link.
         """
+        # Create zero metrics since this is not a real API call
+        metrics = MoveMetrics(
+            input_tokens=0,
+            output_tokens=0,
+            total_tokens=0,
+            estimated_cost_usd=0.0,
+            response_time_ms=0.0,
+            request_timestamp=datetime.now()
+        )
+        
         target_tool_present = any(tool.name == self.TARGET_TOOL_NAME for tool in tools)
 
         if not target_tool_present:
@@ -36,14 +47,16 @@ class RandomModel(LanguageModel):
             return ToolCall(
                 model_text_response=f"Tool '{self.TARGET_TOOL_NAME}' not available.",
                 tool_name=None,
-                tool_arguments=None
+                tool_arguments=None,
+                metrics=metrics
             )
 
         if not game_state.current_page.links:
             return ToolCall(
                 model_text_response="No links available on the current page.",
                 tool_name=None,
-                tool_arguments=None
+                tool_arguments=None,
+                metrics=metrics
             )
 
         selected_link = random.choice(game_state.current_page.links)
@@ -53,7 +66,8 @@ class RandomModel(LanguageModel):
         return ToolCall(
             model_text_response=f"Randomly selected link: {selected_link}",
             tool_name=self.TARGET_TOOL_NAME,
-            tool_arguments={"page_title": selected_link}
+            tool_arguments={"page_title": selected_link},
+            metrics=metrics
         )
 
     async def _format_tools_for_provider(self, tools: List[Tool]) -> Any:

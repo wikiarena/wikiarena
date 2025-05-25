@@ -81,7 +81,6 @@ class GameStorageService:
                 'game_id': game_result.game_id,
                 'start_timestamp': game_result.start_timestamp.isoformat(),
                 'end_timestamp': game_result.end_timestamp.isoformat(),
-                'duration_seconds': game_result.duration,
                 'status': game_result.status.value,
                 'steps': game_result.steps,
                 'model_provider': game_result.config.model.provider,
@@ -96,7 +95,20 @@ class GameStorageService:
                 'error_message': game_result.error_message or '',
                 'error_types': ','.join(game_result.metadata.get('error_types', [])),
                 'final_page_links': game_result.metadata.get('links_on_final_page', 0),
-                'path_taken': ' -> '.join(game_result.path_taken)
+                'path_taken': ' -> '.join(game_result.path_taken),
+                
+                # API metrics
+                'total_input_tokens': game_result.total_input_tokens,
+                'total_output_tokens': game_result.total_output_tokens,
+                'total_tokens': game_result.total_tokens,
+                'total_estimated_cost_usd': game_result.total_estimated_cost_usd,
+                'total_api_time_ms': game_result.total_api_time_ms,
+                'average_response_time_ms': game_result.average_response_time_ms,
+                'api_call_count': game_result.api_call_count,
+                
+                # Model pricing (for historical reference)
+                'input_cost_per_1m_tokens': game_result.config.model.input_cost_per_1m_tokens or 0,
+                'output_cost_per_1m_tokens': game_result.config.model.output_cost_per_1m_tokens or 0,
             }
             
             with open(csv_path, 'a', newline='', encoding='utf-8') as f:

@@ -3,6 +3,7 @@ import logging
 from datetime import datetime
 from typing import Optional, List, Tuple
 import uuid
+import asyncio
 
 from wiki_arena.data_models.game_models import (
     GameConfig,
@@ -16,7 +17,7 @@ from wiki_arena.data_models.game_models import (
 from wiki_arena.mcp_client.client import MCPClient
 from mcp.types import Tool, CallToolResult, TextContent
 
-from wiki_arena.language_models import get_model_registry
+from wiki_arena.language_models import PROVIDERS
 from wiki_arena.language_models.language_model import LanguageModel, ToolCall
 
 # Capability-based architecture
@@ -31,7 +32,6 @@ class GameManager:
         self.state: Optional[GameState] = None
         self.language_model: Optional[LanguageModel] = None
         self.available_tools: List[Tool] = []
-        self.model_registry = get_model_registry()
         # TODO(hunter): I know start game logic shouldn't be in init but I want to know why
 
     def _generate_game_id(self, model_config) -> str:
@@ -52,9 +52,15 @@ class GameManager:
             error_message=None # Initialize error_message
         )
 
-        # Initialize Language Model using registry
+        # Initialize Language Model using simplified system
         try:
-            self.language_model = self.model_registry.create_model(config.model)
+            provider = config.model.provider
+            if provider not in PROVIDERS:
+                available_providers = list(PROVIDERS.keys())
+                raise ValueError(f"Unknown provider '{provider}'. Available: {available_providers}")
+            
+            provider_class = PROVIDERS[provider]
+            self.language_model = provider_class(config.model)
             logging.info(f"Using {config.model.provider} ({config.model.model_name}) for link selection.")
         except ValueError as e:
             logging.error(f"Failed to create language model: {e}")
@@ -304,13 +310,13 @@ class GameManager:
             step=step,
             from_page_title=from_page,
             to_page_title=nav_result.page.title,
-            timestamp=datetime.now(),
             model_response=tool_call_request.model_text_response,
             tool_call_attempt={
                 "tool_name": tool_call_request.tool_name,
                 "arguments": tool_call_request.tool_arguments
             },
-            error=None
+            error=None,
+            metrics=tool_call_request.metrics
         )
         
         self.state.move_history.append(move)
@@ -340,13 +346,13 @@ class GameManager:
             step=step,
             from_page_title=from_page,
             to_page_title=None,  # No successful navigation
-            timestamp=datetime.now(),
             model_response=tool_call_request.model_text_response if tool_call_request else None,
             tool_call_attempt={
                 "tool_name": tool_call_request.tool_name,
                 "arguments": tool_call_request.tool_arguments
             } if tool_call_request else None,
-            error=error
+            error=error,
+            metrics=tool_call_request.metrics if tool_call_request else None
         )
         
         self.state.move_history.append(move)
