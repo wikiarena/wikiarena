@@ -90,8 +90,8 @@ async def main():
 
         # 5. Create game configuration with the selected pages
         # model_key = "claude-3-haiku-20240307"  # Use the new full model name
-        model_key = "gpt-4o-mini-2024-07-18"  # OpenAI's affordable model
-        # model_key = "random"                   # Random baseline
+        # model_key = "gpt-4o-mini-2024-07-18"  # OpenAI's affordable model
+        model_key = "random"                   # Random baseline
         
         # Create model using simplified system (no config needed!)
         model = create_model(model_key)

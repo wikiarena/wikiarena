@@ -11,7 +11,6 @@ class OpenAIModel(LanguageModel):
     """
     LanguageModel implementation for OpenAI's models.
     """
-    DEFAULT_MODEL_NAME = "gpt-4o-mini"
     DEFAULT_MAX_TOKENS = 1024
 
     def __init__(self, model_config: ModelConfig):
