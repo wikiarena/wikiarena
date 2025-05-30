@@ -31,6 +31,17 @@ graph TD
     subgraph "External APIs"
         WA
     end
+
+    FE[Frontend] --> API[FastAPI Gateway]
+    API --> GS[Game Service]
+    GS --> WA[Wiki Arena Core]
+    GS --> DB[(Database)]
+    GS --> WS[WebSocket Service]
+    WS --> FE
+    
+    API --> SS[Storage Service]
+    SS --> DB
+    SS --> FS[(File Storage)]
 ```
 
 ## Component Flow

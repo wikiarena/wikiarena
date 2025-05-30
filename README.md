@@ -1,24 +1,26 @@
+# Wiki Arena - LLM Wikipedia Navigation Eval
+
+## 🚀 Quick Start
+
+**Ready to run?** See [STARTUP.md](STARTUP.md) for complete setup instructions.
+
+**TL;DR:** Start 3 terminals:
+```bash
+# Terminal 1: MCP Server
+cd mcp_server && uv run python server.py
+
+# Terminal 2: Backend API  
+cd backend && uv run python -m backend.main
+
+# Terminal 3: Frontend UI
+cd frontend && npm run dev
+```
+Then open http://localhost:5173/
+
+---
 
 # TODO:
 
-- [x] MCP client module 
-    - responsible for making HTTP requests to the MCP server
-- [x] config
-    - [x] mcp server
-- [x] task/game state and data
-    - [x] start page
-    - [x] end page
-    - [x] current page
-    - [x] page history (number of stepsis implicit here)
-    - [x] time elapsed
-    - [x] result (success/failure)
-- [x] LLM abstraction layer for multi-provider support
-    - [x] base class
-    - read the documentation for the providers and determine the settings each needs
-    - [x] abstract list tools method
-        - need to convert to function definition format for each provider
-    - [x] anthropic model
-    - [x] openai model
 
 # idea
 Turn the wikipedia game into an eval / training environment for Language Models
@@ -111,7 +113,7 @@ graph model performance based on task difficulty
 
 
 simplest version is based on number of steps
-but ones with multiple paths are “easier”
+but ones with multiple paths are "easier"
 discoverability matters too. larger pages with only a single optimal link
 
 ## interactive viewing experience 
@@ -143,4 +145,4 @@ humans may cheat tho
 ## wall of shame
 show all examples of players cheating by selecting a next page that is not accessible from the current page
 
-“leaderboard” for most cheating attempts / rate
+"leaderboard" for most cheating attempts / rate
