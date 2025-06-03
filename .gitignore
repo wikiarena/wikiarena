@@ -1,3 +1,7 @@
+# Data files (too large for git)
+database/*.sqlite
+database/dumps/*
+
 # Logs
 logs
 *.log
