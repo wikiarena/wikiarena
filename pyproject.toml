@@ -6,13 +6,18 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "aiohttp>=3.10.0",
+    "aiosqlite>=0.20.0",
     "anthropic>=0.51.0",
     "fastapi>=0.115.12",
+    "httpx>=0.28.1",
     "mcp[cli]>=1.9.0",
     "openai>=1.79.0",
+    "psutil>=7.0.0",
     "pytest>=8.3.5",
+    "pytest-asyncio>=1.0.0",
     "python-multipart>=0.0.20",
     "requests>=2.32.3",
+    "tqdm>=4.66.0",
     "uvicorn[standard]>=0.34.2",
     "websockets==11.0.3",
     "wikipedia-api>=0.8.1",
