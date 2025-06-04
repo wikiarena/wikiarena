@@ -5,7 +5,7 @@ from pathlib import Path
 import asyncio
 import aiosqlite
 
-from backend.utils.wiki_helpers import (
+from common.utils.wiki_helpers import (
     get_sanitized_page_title, 
     get_readable_page_title,
     validate_page_id,
