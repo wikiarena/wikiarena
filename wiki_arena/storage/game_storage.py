@@ -18,9 +18,6 @@ class GameStorageService:
         
     def should_store_game(self, game_result: GameResult) -> bool:
         """Determine if a game should be stored based on configuration."""
-        if self.config.store_all_games:
-            return True
-            
         # Check specific game outcomes
         if game_result.status == GameStatus.WON and self.config.store_won_games:
             return True
@@ -39,7 +36,7 @@ class GameStorageService:
     
     def _ensure_storage_directory(self):
         """Create storage directory if it doesn't exist."""
-        storage_path = self.config.get_storage_path()
+        storage_path = self.config.storage_path
         storage_path.mkdir(parents=True, exist_ok=True)
         
     def store_game_jsonl(self, game_result: GameResult) -> bool:
@@ -49,7 +46,7 @@ class GameStorageService:
             
         try:
             self._ensure_storage_directory()
-            jsonl_path = self.config.get_jsonl_path()
+            jsonl_path = self.config.jsonl_path
             
             # Convert to JSON and append to file
             json_line = game_result.model_dump_json()
@@ -71,7 +68,7 @@ class GameStorageService:
             
         try:
             self._ensure_storage_directory()
-            csv_path = self.config.get_csv_path()
+            csv_path = self.config.csv_path
             
             # Check if file exists to determine if we need headers
             file_exists = csv_path.exists()
@@ -144,3 +141,7 @@ class GameStorageService:
             self.logger.warning(f"Partial storage failure for game {game_result.game_id}")
             
         return success 
+    
+    # TODO(hunter): read from storage functions
+
+    

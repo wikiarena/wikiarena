@@ -3,6 +3,8 @@ from datetime import datetime
 from enum import Enum
 from pydantic import BaseModel, Field
 
+from common.utils.wiki_helpers import get_sanitized_page_title
+
 # --- Enums ---
 
 class GameStatus(Enum):
@@ -33,6 +35,18 @@ class ErrorType(Enum):
     APP_UNKNOWN_ERROR = "app_unknown_error"
 
 # --- Data Models ---
+
+class Task(BaseModel):
+    """A task is a single game that is played."""
+    start_page_title: str = Field(..., description="The title of the starting Wikipedia page.")
+    target_page_title: str = Field(..., description="The title of the target Wikipedia page.")
+
+    @property
+    def task_id(self) -> str:
+        """Generate a unique task ID by concatenating sanitized start and target page titles."""
+        start = get_sanitized_page_title(self.start_page_title)
+        target = get_sanitized_page_title(self.target_page_title)
+        return f"{start}_to_{target}"
 
 class GameError(BaseModel):
     """Structured error information for analysis and debugging."""
@@ -68,16 +82,6 @@ class ModelConfig(BaseModel):
     input_cost_per_1m_tokens: Optional[float] = Field(None, description="Cost per 1M input tokens in USD")
     output_cost_per_1m_tokens: Optional[float] = Field(None, description="Cost per 1M output tokens in USD")
     
-    def get_storage_key(self) -> str:
-        """Generate consistent key for storage naming."""
-        if self.provider == "random":
-            return "random"
-        # Clean model name for filesystem compatibility
-        clean_model_name = self.model_name.replace('/', '_').replace('-', '_').replace('.', '_')
-        return f"{self.provider}_{clean_model_name}"
-
-# --- Model Registry will be imported later to avoid circular imports ---
-
 class Page(BaseModel):
     """Represents a single Wikipedia page in the game."""
     title: str = Field(..., description="The title of the Wikipedia page.")
@@ -183,9 +187,8 @@ class GameResult(BaseModel):
         
         # Generate analysis metadata
         metadata = {
-            "model_key": game_state.config.model.get_storage_key(),
-            "model_provider": game_state.config.model.provider,
             "model_name": game_state.config.model.model_name,
+            "model_provider": game_state.config.model.provider,
             "links_on_final_page": len(game_state.current_page.links) if game_state.current_page else 0,
             "error_types": [move.error.type.value for move in game_state.move_history if move.error],
             "successful_moves": len([move for move in game_state.move_history if move.to_page_title]),
