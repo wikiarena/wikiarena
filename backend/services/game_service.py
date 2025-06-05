@@ -36,12 +36,7 @@ class GameService:
             self.app_config = load_config()
             
             # Initialize storage service for backend games
-            storage_config = StorageConfig(
-                storage_dir="./backend_game_results",  # Backend-specific directory
-                store_all_games=True,  # Store all completed games
-                jsonl_filename="backend_games.jsonl",
-                csv_filename="backend_games_summary.csv"
-            )
+            storage_config = StorageConfig() # use default config
             self.storage_service = GameStorageService(storage_config)
             
             self.logger.info("GameService initialized with wiki_arena config and storage")
