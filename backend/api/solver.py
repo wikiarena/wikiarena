@@ -22,8 +22,6 @@ async def find_shortest_path(request: SolverRequest) -> SolverResponse:
             await wiki_solver.initialize()
             wiki_solver._initialized = True
         
-        # Caching related calls (e.g., clear_expired_cache) removed.
-        
         response = await wiki_solver.find_shortest_path(
             request.start_page, 
             request.target_page
@@ -32,7 +30,6 @@ async def find_shortest_path(request: SolverRequest) -> SolverResponse:
         logger.info(
             f"Path found: {request.start_page} -> {request.target_page} "
             f"({response.path_length} steps, {response.computation_time_ms:.1f}ms, "
-            f"cached: {response.from_cache})" # from_cache will be False
         )
         
         return response

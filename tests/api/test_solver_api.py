@@ -16,7 +16,6 @@ def test_find_shortest_path():
     data = response.json()
     assert data["paths"] == [["Philosophy"]]
     assert data["path_length"] == 0
-    assert data["from_cache"] is False
     assert data["computation_time_ms"] >= 0
 
     # Test case 2: Known short path (Philosophy to Banana)

@@ -2,7 +2,7 @@ import pytest
 import pytest_asyncio
 
 from backend.services.wiki_db_service import wiki_db, WikiGraphDatabase
-from backend.utils.wiki_helpers import get_readable_page_title, get_sanitized_page_title
+from common.utils.wiki_helpers import get_readable_page_title, get_sanitized_page_title
 
 # Database path for tests - ensure this path is correct relative to where tests are run
 # Or configure via environment variable / conftest.py

@@ -14,8 +14,11 @@ class WikiPathSolver:
     """Service for finding shortest paths between Wikipedia pages using sdow BFS logic."""
     
     def __init__(self):
-        # Caching removed for now, will be re-evaluated post-testing.
-        pass
+        self.active_target_id: Optional[int] = None
+        # Cache for backward search state {visited: ..., unvisited: ...} for the active_target_id
+        self.cached_backward_bfs_state: Optional[Dict[str, Dict[int, List[Optional[int]]]]] = None
+        # Cache for forward expansion outgoing links: {source_node_id: [link_ids]} for the active_target_id
+        self.cached_forward_expansion_links: Dict[int, List[int]] = {}
         
     async def initialize(self):
         """Initialize the solver (database initialization is handled by wiki_db)."""
@@ -34,12 +37,21 @@ class WikiPathSolver:
         if target_id is None:
             raise ValueError(f"Target page '{target_page}' not found in database.")
         
-        if start_page == target_page: # Or start_id == target_id
+        # --- Cache Management based on target_id ---
+        if self.active_target_id != target_id:
+            logger.info(f"Target ID changed from {self.active_target_id} to {target_id}. Resetting caches.")
+            self.active_target_id = target_id
+            self.cached_backward_bfs_state = None
+            self.cached_forward_expansion_links.clear()
+        else:
+            logger.info(f"Continuing with active target ID: {self.active_target_id}. Caches may be reused.")
+
+        if start_id == target_id:
             path_titles = [[start_page]]
             computation_time_ms = (time.time() - request_start_time) * 1000
             return SolverResponse(
                 paths=path_titles, path_length=0,
-                computation_time_ms=computation_time_ms, from_cache=False
+                computation_time_ms=computation_time_ms,
             )
         
         # Perform BFS using adapted sdow logic
@@ -74,8 +86,7 @@ class WikiPathSolver:
         return SolverResponse(
             paths=all_paths_as_titles,
             path_length=len(all_paths_as_titles[0]) - 1,
-            computation_time_ms=actual_computation_time_ms,
-            from_cache=False
+            computation_time_ms=actual_computation_time_ms
         )
 
     async def _get_paths_recursive(
@@ -114,21 +125,33 @@ class WikiPathSolver:
 
     async def _adapted_sdow_bfs(self, start_id: int, target_id: int) -> List[List[int]]:
         """
-        Adapted asynchronous version of the bi-directional BFS from database/sdow/breadth_first_search.py.
-        Returns a list of shortest paths, each path being a list of page IDs.
+        Adapted asynchronous version of the bi-directional BFS.
+        Uses self.cached_backward_bfs_state and self.cached_forward_expansion_links
+        if self.active_target_id matches the current target_id.
         """
         if start_id == target_id: # Should be handled by caller, but as a safeguard
             return [[start_id]]
 
         final_paths: List[List[int]] = []
 
-        # page_id -> list of parent_ids (None signifies origin)
+        # Forward search always starts fresh from the new start_id
         unvisited_forward: Dict[int, List[Optional[int]]] = {start_id: [None]}
-        unvisited_backward: Dict[int, List[Optional[int]]] = {target_id: [None]}
-
         visited_forward: Dict[int, List[Optional[int]]] = {}
-        visited_backward: Dict[int, List[Optional[int]]] = {}
-        
+
+        # Backward search attempts to use cache if active_target_id matches target_id
+        # (find_shortest_path ensures caches are valid for self.active_target_id)
+        if self.cached_backward_bfs_state is not None and self.active_target_id == target_id:
+            logger.info(f"Reusing cached backward BFS state for target_id: {target_id}.")
+            # Ensure copies are used if the state might be mutable and shared,
+            # but here we are loading it for this BFS run.
+            # The cache stores the *completed* state of a prior backward search.
+            visited_backward = self.cached_backward_bfs_state['visited'].copy()
+            unvisited_backward = self.cached_backward_bfs_state['unvisited'].copy()
+        else:
+            logger.info(f"No valid cache for backward BFS state for target_id: {target_id}. Starting fresh.")
+            unvisited_backward = {target_id: [None]}
+            visited_backward = {}
+
         # The sdow BFS doesn't use explicit depth counters for termination in the same way the old one did.
         # It terminates when an intersection is found and processed, or queues are empty.
         # Max depth for safety can be added if needed.
@@ -164,14 +187,33 @@ class WikiPathSolver:
                         for p in parents:
                             if p not in visited_forward[page_id]:
                                 visited_forward[page_id].append(p)
-                
                 unvisited_forward.clear()
 
-                # Get all outgoing links for the source_page_ids_to_expand
-                # This needs to be efficient. Consider a batch get_outgoing_links if possible,
-                # or iterate. Current wiki_db.get_outgoing_links is per ID.
-                tasks = [wiki_db.get_outgoing_links(src_id) for src_id in source_page_ids_to_expand]
-                results_for_all_sources = await asyncio.gather(*tasks)
+                # --- Modified Link Fetching for Forward BFS ---
+                results_for_all_sources = [[] for _ in source_page_ids_to_expand]
+                indices_and_src_ids_for_db_fetch = []
+
+                for original_idx, src_id_to_check in enumerate(source_page_ids_to_expand):
+                    # Use self.cached_forward_expansion_links (valid for self.active_target_id)
+                    cached_links = self.cached_forward_expansion_links.get(src_id_to_check)
+                    
+                    if cached_links is not None:
+                        results_for_all_sources[original_idx] = cached_links
+                        logger.debug(f"Forward link cache HIT for {src_id_to_check} (active target: {self.active_target_id})")
+                    else:
+                        indices_and_src_ids_for_db_fetch.append((original_idx, src_id_to_check))
+                        logger.debug(f"Forward link cache MISS for {src_id_to_check} (active target: {self.active_target_id})")
+                
+                if indices_and_src_ids_for_db_fetch:
+                    src_ids_to_fetch_from_db = [item[1] for item in indices_and_src_ids_for_db_fetch]
+                    db_fetch_tasks = [wiki_db.get_outgoing_links(s_id) for s_id in src_ids_to_fetch_from_db]
+                    fetched_links_results_list = await asyncio.gather(*db_fetch_tasks)
+
+                    for i, (original_idx, s_id_fetched) in enumerate(indices_and_src_ids_for_db_fetch):
+                        actual_links = fetched_links_results_list[i]
+                        self.cached_forward_expansion_links[s_id_fetched] = actual_links # Store in the active cache
+                        results_for_all_sources[original_idx] = actual_links
+                # --- End of Modified Link Fetching ---
                 
                 for i, src_id in enumerate(source_page_ids_to_expand):
                     target_ids_from_src = results_for_all_sources[i]
@@ -299,6 +341,17 @@ class WikiPathSolver:
                     logger.debug(f"BFS complete. Found {len(final_paths)} paths.")
                     break # Exit while loop
 
+        # After BFS, if backward search was initiated fresh for the *active_target_id*, store its state.
+        # This condition means: self.cached_backward_bfs_state was None at the start of this BFS *for this target_id*.
+        # (The initial check `self.cached_backward_bfs_state is not None` handles loading)
+        # If it was None, and we computed it, then we store it.
+        if self.active_target_id == target_id and self.cached_backward_bfs_state is None and (visited_backward or unvisited_backward):
+            self.cached_backward_bfs_state = {
+                'visited': visited_backward.copy(), 
+                'unvisited': unvisited_backward.copy()
+            }
+            logger.info(f"Cached backward BFS state for active target_id: {self.active_target_id}. Visited: {len(visited_backward)}, Unvisited: {len(unvisited_backward)}")
+            
         return final_paths
 
 # Global instance
