@@ -212,22 +212,22 @@ fi
 ############################
 #  CREATE SQLITE DATABASE  #
 ############################
-if [ ! -f sdow.sqlite ]; then
+if [ ! -f wiki_graph.sqlite ]; then
   echo
   echo "[INFO] Creating redirects table"
-  time pigz -dc redirects.with_ids.txt.gz | sqlite3 sdow.sqlite ".read $ROOT_DIR/../schema/createRedirectsTable.sql"
+  time pigz -dc redirects.with_ids.txt.gz | sqlite3 wiki_graph.sqlite ".read $ROOT_DIR/../schema/createRedirectsTable.sql"
 
   echo
   echo "[INFO] Creating pages table"
-  time pigz -dc pages.pruned.txt.gz | sqlite3 sdow.sqlite ".read $ROOT_DIR/../schema/createPagesTable.sql"
+  time pigz -dc pages.pruned.txt.gz | sqlite3 wiki_graph.sqlite ".read $ROOT_DIR/../schema/createPagesTable.sql"
 
   echo
   echo "[INFO] Creating links table"
-  time pigz -dc links.with_counts.txt.gz | sqlite3 sdow.sqlite ".read $ROOT_DIR/../schema/createLinksTable.sql"
+  time pigz -dc links.with_counts.txt.gz | sqlite3 wiki_graph.sqlite ".read $ROOT_DIR/../schema/createLinksTable.sql"
 
   echo
   echo "[INFO] Compressing SQLite file"
-  time pigz --best --keep sdow.sqlite
+  time pigz --best --keep wiki_graph.sqlite
 else
   echo "[WARN] Already created SQLite database"
 fi

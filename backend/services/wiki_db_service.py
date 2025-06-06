@@ -15,9 +15,9 @@ from common.utils.wiki_helpers import (
 logger = logging.getLogger(__name__)
 
 class WikiGraphDatabase:
-    """Service for managing Wikipedia graph data in SQLite, adapted for sdow.sqlite."""
+    """Service for managing Wikipedia graph data in SQLite, adapted for wiki_graph.sqlite."""
     
-    def __init__(self, db_path: str = "database/sdow.sqlite"):
+    def __init__(self, db_path: str = "database/wiki_graph.sqlite"):
         self.db_path = Path(db_path)
         if not self.db_path.exists():
             logger.error(f"Database file not found at {self.db_path.resolve()}")
@@ -28,7 +28,7 @@ class WikiGraphDatabase:
     async def get_page_id(self, title: str) -> Optional[int]:
         """Get the page ID for a given title, handling redirects and capitalization.
         Corresponds to fetch_page in sdow/database.py but simplified to return ID.
-        Titles are assumed to be stored in sanitized form in sdow.sqlite 'pages' table.
+        Titles are assumed to be stored in sanitized form in wiki_graph.sqlite 'pages' table.
         """
         validate_page_title(title)
         sanitized_title = get_sanitized_page_title(title)
@@ -74,7 +74,7 @@ class WikiGraphDatabase:
     
     async def get_outgoing_links(self, page_id: int) -> List[int]:
         """Get all page IDs that this page links to.
-        The 'links' table in sdow.sqlite has 'id' (source_page_id) 
+        The 'links' table in wiki_graph.sqlite has 'id' (source_page_id) 
         and 'outgoing_links' (pipe-separated string of target_page_ids).
         """
         validate_page_id(page_id)
@@ -88,7 +88,7 @@ class WikiGraphDatabase:
 
     async def get_incoming_links(self, page_id: int) -> List[int]:
         """Get all page IDs that link to this page.
-        The 'links' table in sdow.sqlite has 'id' (target_page_id for this query's purpose) 
+        The 'links' table in wiki_graph.sqlite has 'id' (target_page_id for this query's purpose) 
         and 'incoming_links' (pipe-separated string of source_page_ids).
         """
         validate_page_id(page_id)

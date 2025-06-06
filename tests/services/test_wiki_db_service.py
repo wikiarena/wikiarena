@@ -6,7 +6,7 @@ from common.utils.wiki_helpers import get_readable_page_title, get_sanitized_pag
 
 # Database path for tests - ensure this path is correct relative to where tests are run
 # Or configure via environment variable / conftest.py
-TEST_DB_PATH = "database/sdow.sqlite"
+TEST_DB_PATH = "database/wiki_graph.sqlite"
 
 @pytest_asyncio.fixture(scope="module")
 async def db_service():

@@ -11,7 +11,7 @@ from typing import Optional
 
 from wiki_arena.game.game_manager import GameManager
 from wiki_arena.data_models.game_models import (
-    GameConfig, GameState, GameStatus, Page, Move, GameError, ErrorType
+    GameConfig, GameState, GameStatus, Page, Move, GameError, ErrorType, ModelConfig
 )
 from wiki_arena.mcp_client.client import MCPClient
 from wiki_arena.language_models.language_model import ToolCall
@@ -91,8 +91,11 @@ def basic_game_config():
         start_page_title="Start Page",
         target_page_title="Target Page", 
         max_steps=5,
-        model_provider="random",
-        model_settings={}
+        model=ModelConfig(
+            provider="random",
+            model_name="random",
+            settings={}
+        )
     )
 
 
