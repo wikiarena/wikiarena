@@ -43,7 +43,6 @@ uv run python -m backend.main
 - **Start Background Game**: `POST /api/games?background=true`
 - **Get Game State**: `GET /api/games/{game_id}`
 - **Play Turn**: `POST /api/games/{game_id}/turn`
-- **Get Status**: `GET /api/games/{game_id}/status`
 
 #### Monitoring & Stats
 - **List Active Games**: `GET /api/games`
