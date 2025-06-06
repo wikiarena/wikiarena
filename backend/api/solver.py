@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Query
 from typing import Dict, Any, Optional
 import logging
 
-from backend.models.solver_models import SolverRequest, SolverResponse, SolverStatus
+from backend.models.solver_models import SolverRequest, SolverResponse
 from backend.services.wiki_solver_service import wiki_solver
 from backend.services.wiki_db_service import wiki_db
 
@@ -46,44 +46,6 @@ async def find_shortest_path(request: SolverRequest) -> SolverResponse:
             status_code=500,
             detail=f"Internal server error: {str(e)}"
         )
-
-@router.get("/status", response_model=SolverStatus)
-async def get_solver_status() -> SolverStatus:
-    """
-    Get the current status of the Wikipedia solver.
-    
-    Returns information about the database state.
-    """
-    try:
-        # Get database statistics
-        page_count: Optional[int] = None
-        link_count: Optional[int] = None
-        database_ready: bool = False
-        try:
-            page_count, link_count = await wiki_db.get_database_stats()
-            database_ready = page_count > 0 and link_count > 0 # Or just page_count > 0
-        except Exception as db_error:
-            logger.warning(f"Could not get database stats: {db_error}")
-            # page_count, link_count, database_ready remain as initialized above (None, None, False)
-        
-        # Cache statistics calls removed.
-        
-        return SolverStatus(
-            database_ready=database_ready,
-            total_pages=page_count,
-            total_links=link_count,
-            last_updated=None  # TODO: Add timestamp tracking to database
-        )
-        
-    except Exception as e:
-        logger.error(f"Failed to get solver status: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to get status: {str(e)}"
-        )
-
-# Removed /cache/stats endpoint
-# Removed DELETE /cache endpoint
 
 @router.get("/validate/{page_title}")
 async def validate_page(page_title: str) -> Dict[str, Any]: # Kept Dict[str, Any] for now

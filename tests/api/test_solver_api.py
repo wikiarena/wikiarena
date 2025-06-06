@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from backend.main import app
-from backend.models.solver_models import SolverResponse, SolverStatus
+from backend.models.solver_models import SolverResponse
 
 client = TestClient(app)
 
@@ -46,24 +46,6 @@ def test_find_shortest_path():
     )
     assert response.status_code == 404
     assert "Target page" in response.json()["detail"]
-
-def test_get_solver_status():
-    """Test the /api/solver/status endpoint."""
-    response = client.get("/api/solver/status")
-    assert response.status_code == 200
-    data = response.json()
-    
-    # Check response structure
-    assert "database_ready" in data
-    assert "total_pages" in data
-    assert "total_links" in data
-    assert "last_updated" in data
-    
-    # Check data types
-    assert isinstance(data["database_ready"], bool)
-    assert data["total_pages"] is None or isinstance(data["total_pages"], int)
-    assert data["total_links"] is None or isinstance(data["total_links"], int)
-    assert data["last_updated"] is None or isinstance(data["last_updated"], str)
 
 def test_validate_page():
     """Test the /api/solver/validate/{page_title} endpoint."""

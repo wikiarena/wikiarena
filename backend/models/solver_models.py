@@ -10,11 +10,4 @@ class SolverResponse(BaseModel):
     paths: List[List[str]] = Field(..., description="Shortest paths from start to target page, list of paths, each path is a list of page titles")
     path_length: int = Field(..., description="Number of steps in the shortest paths (all returned paths will have this length)")
     computation_time_ms: float = Field(..., description="Time taken to compute the path in milliseconds")
-    
-class SolverStatus(BaseModel):
-    database_ready: bool = Field(..., description="Whether the Wikipedia database is loaded")
-    total_pages: Optional[int] = Field(None, description="Total number of pages in the database")
-    total_links: Optional[int] = Field(None, description="Total number of links in the database")
-    last_updated: Optional[datetime] = Field(None, description="When the database was last updated")
-    # cache_size field removed as caching is currently disabled/being redesigned.
 
