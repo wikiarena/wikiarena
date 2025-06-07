@@ -25,4 +25,4 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["wiki_arena", "common", "backend"]
+package-dir = {"" = "src"}
