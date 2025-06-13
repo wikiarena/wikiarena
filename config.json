@@ -5,7 +5,7 @@
         "transport": {
           "type": "stdio",
           "command": "uv",
-          "args": ["run", "--with", "mcp", "mcp_server/server.py"]
+          "args": ["run", "--with", "mcp", "src/mcp_server/server.py"]
         }
       },
       "sse_mcp_server": {
