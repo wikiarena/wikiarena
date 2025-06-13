@@ -14,8 +14,8 @@ from pathlib import Path
 # Add the wiki_arena directory to path to import page_selector
 sys.path.append(str(Path(__file__).parent.parent / "wiki_arena"))
 
-from path_finder import WikipediaPathFinder
-from wikipedia.page_selector import WikipediaPageSelector, LinkValidationConfig
+from .path_finder import WikipediaPathFinder
+from wiki_arena.wikipedia.task_selector import WikipediaPageSelector, LinkValidationConfig
 
 # Set up logging
 logging.basicConfig(
