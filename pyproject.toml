@@ -35,12 +35,41 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.pytest.ini_options]
+# Test discovery and execution
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
 # Essential: Enable src/ package imports during testing
 pythonpath = ["src"]
-markers = [
-    "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
+
+# Output and behavior
+addopts = [
+    "--asyncio-mode=auto",
+    "--tb=short",
+    "--strict-markers",
+    "-v",
 ]
-# Configure asyncio mode to avoid deprecation warnings
+
+# Async configuration
 asyncio_mode = "auto"
-# Essential: Prevent async fixture scope mismatch errors
-asyncio_default_fixture_loop_scope = "function"
+asyncio_default_fixture_loop_scope = "session"
+
+# Test markers for organization
+markers = [
+    "unit: Unit tests with no external dependencies",
+    "integration: Integration tests with real dependencies", 
+    "slow: Tests that take more than 1 second",
+    "requires_db: Tests that need wiki_graph.sqlite",
+    "requires_mcp: Tests that need MCP server running",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=8.3.5",
+    "pytest-asyncio>=1.0.0",
+    "pytest-cov>=6.2.1",
+    "websockets>=11.0.3",
+]
