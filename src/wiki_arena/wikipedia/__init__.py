@@ -5,18 +5,16 @@ This module contains functionality for interacting with Wikipedia,
 including page selection and content sourcing for games.
 """
 
-from .page_selector import (
-    PagePair,
-    LinkValidationConfig,
-    WikipediaPageSelector,
-    get_random_page_pair,
-    get_random_page_pair_async
+from .live_service import LiveWikiService
+from .task_selector import (
+    get_random_task,
+    get_random_task_async,
+    WikipediaTaskSelector
 )
 
 __all__ = [
-    'PagePair',
-    'LinkValidationConfig', 
-    'WikipediaPageSelector',
-    'get_random_page_pair',
-    'get_random_page_pair_async'
+    'LiveWikiService',
+    'get_random_task',
+    'get_random_task_async',
+    'WikipediaTaskSelector'
 ] 

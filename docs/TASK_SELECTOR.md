@@ -1,6 +1,6 @@
-# Wikipedia Page Selector
+# Wikipedia Task Selector
 
-The `WikipediaPageSelector` module provides functionality for randomly selecting pairs of Wikipedia pages for use in the Wiki Arena game. It's designed to be standalone and decoupled from the rest of the application logic.
+The `WikipediaTaskSelector` module provides functionality for randomly selecting pairs of Wikipedia pages for use in the Wiki Arena game. It's designed to be standalone and decoupled from the rest of the application logic.
 
 ## Features
 
@@ -17,27 +17,27 @@ The `WikipediaPageSelector` module provides functionality for randomly selecting
 ### Basic Usage
 
 ```python
-from wiki_arena.wikipedia.page_selector import get_random_page_pair
+from wiki_arena.wikipedia.task_selector import get_random_task
 
-# Simple one-liner to get a random page pair
-page_pair = get_random_page_pair()
+# Simple one-liner to get a random task
+task = get_random_task()
 
-if page_pair:
-    print(f"Start: {page_pair.start_page}")
-    print(f"Target: {page_pair.target_page}")
+if task:
+    print(f"Start: {task.start_page}")
+    print(f"Target: {task.target_page}")
 ```
 
 ### Async Usage
 
 ```python
 import asyncio
-from wiki_arena.wikipedia.page_selector import get_random_page_pair_async
+from wiki_arena.wikipedia.task_selector import get_random_task_async
 
 async def main():
-    page_pair = await get_random_page_pair_async()
-    if page_pair:
-        print(f"Start: {page_pair.start_page}")
-        print(f"Target: {page_pair.target_page}")
+    task = await get_random_task_async()
+    if task:
+        print(f"Start: {task.start_page}")
+        print(f"Target: {task.target_page}")
 
 asyncio.run(main())
 ```
@@ -45,20 +45,20 @@ asyncio.run(main())
 ### Integration with Game Config
 
 ```python
-from wiki_arena.wikipedia.page_selector import get_random_page_pair_async
+from wiki_arena.wikipedia.task_selector import get_random_task_async
 from wiki_arena.data_models.game_models import GameConfig
 
 async def create_game():
     # Generate random pages
-    page_pair = await get_random_page_pair_async()
+    task = await get_random_task_async()
     
-    if not page_pair:
+    if not task:
         raise Exception("Failed to generate page pair")
     
     # Create game configuration
     game_config = GameConfig(
-        start_page_title=page_pair.start_page,
-        target_page_title=page_pair.target_page,
+        start_page_title=task.start_page,
+        target_page_title=task.target_page,
         max_steps=30,
         model_provider="openai",
         model_settings={}
@@ -69,27 +69,26 @@ async def create_game():
 
 ## Classes and Functions
 
-### PagePair
+### Task
 
-A data class representing a pair of Wikipedia pages for a game.
+A data class representing a task for a game.
 
 ```python
-@dataclass
-class PagePair:
-    start_page: str
-    target_page: str
+class Task(BaseModel):
+    start_page_title: str
+    target_page_title: str
 ```
 
 **Validation**: Automatically validates that start and target pages are different.
 
-### WikipediaPageSelector
+### WikipediaTaskSelector
 
-The main class for selecting random Wikipedia page pairs.
+The main class for selecting random Wikipedia tasks.
 
 #### Constructor
 
 ```python
-WikipediaPageSelector(
+WikipediaTaskSelector(
     language: str = "en",
     max_retries: int = 10,
     excluded_prefixes: Optional[Set[str]] = None
