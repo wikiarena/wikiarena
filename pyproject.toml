@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "wiki-arena"
 version = "0.1.0"
@@ -26,3 +30,17 @@ dependencies = [
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+# Essential: Enable src/ package imports during testing
+pythonpath = ["src"]
+markers = [
+    "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
+]
+# Configure asyncio mode to avoid deprecation warnings
+asyncio_mode = "auto"
+# Essential: Prevent async fixture scope mismatch errors
+asyncio_default_fixture_loop_scope = "function"
