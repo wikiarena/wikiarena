@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from typing import Optional, List
 from dataclasses import dataclass
 
-from wiki_arena.data_models.game_models import Page
+from wiki_arena.models import Page
 
 
 @dataclass

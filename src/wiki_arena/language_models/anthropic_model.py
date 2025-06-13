@@ -4,7 +4,7 @@ from datetime import datetime
 
 from anthropic import Anthropic, AnthropicError
 from .language_model import LanguageModel, ToolCall
-from wiki_arena.data_models.game_models import GameState, MoveMetrics, ModelConfig
+from wiki_arena.models import GameState, MoveMetrics, ModelConfig
 from mcp.types import Tool
 
 class AnthropicModel(LanguageModel):

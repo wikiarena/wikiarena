@@ -2,8 +2,7 @@ from typing import List
 from pathlib import Path
 from pydantic import BaseModel, Field
 
-from wiki_arena.data_models.game_models import ErrorType
-
+from wiki_arena.models import ErrorType
 
 class StorageConfig(BaseModel):
     """Configuration for game result storage."""

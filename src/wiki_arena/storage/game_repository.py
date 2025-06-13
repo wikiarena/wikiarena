@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 from typing import List, Dict, Optional
 
-from wiki_arena.data_models.game_models import GameResult, Task
+from wiki_arena.models import GameResult, Task
 from .storage_config import StorageConfig
 
 class GameRepository:

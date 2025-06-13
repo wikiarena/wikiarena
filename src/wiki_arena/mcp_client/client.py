@@ -57,7 +57,16 @@ class MCPClient:
 
         except Exception as e:
             logging.error(f"Failed to connect or initialize MCP session: {e}")
-            await self.disconnect() # Clean up if connection fails
+            # Reset state and clean up on connection failure
+            self._session = None
+            if self._exit_stack:
+                try:
+                    await self._exit_stack.aclose()
+                except Exception:
+                    pass  # Ignore cleanup errors during failed connection
+                self._exit_stack = None
+            self._is_connected = False
+            self._server_params = None
             raise
 
     async def disconnect(self):
@@ -66,12 +75,18 @@ class MCPClient:
             return
 
         logging.info("Disconnecting from MCP server...")
-        if self._exit_stack:
-            await self._exit_stack.aclose()
+        
+        # Reset state first to prevent partial cleanup issues
         self._session = None
-        self._exit_stack = None
+        if self._exit_stack:
+            try:
+                await self._exit_stack.aclose()
+            except Exception as e:
+                # Log but don't re-raise cleanup errors
+                logging.debug(f"Error during exit stack cleanup: {e}")
         self._is_connected = False
         self._server_params = None
+        
         logging.info("Disconnected.")
 
     async def list_tools(self) -> ListToolsResult:

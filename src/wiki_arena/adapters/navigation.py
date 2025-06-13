@@ -13,7 +13,7 @@ from mcp.types import Tool, CallToolResult, TextContent, EmbeddedResource
 
 from wiki_arena.adapters.base import CapabilityAdapter, ToolSignature
 from wiki_arena.capabilities.navigation import INavigationCapability, NavigationResult
-from wiki_arena.data_models.game_models import Page
+from wiki_arena.models import Page
 
 
 class NavigationCapabilityImpl(INavigationCapability):

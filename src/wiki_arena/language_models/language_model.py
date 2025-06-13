@@ -4,7 +4,7 @@ from mcp.types import Tool
 
 from pydantic import BaseModel, Field
 
-from wiki_arena.data_models.game_models import GameState, GameConfig, MoveMetrics, ModelConfig
+from wiki_arena.models import GameState, GameConfig, MoveMetrics, ModelConfig
 
 class ToolCall(BaseModel):
     """

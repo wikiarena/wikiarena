@@ -5,15 +5,17 @@ from typing import Optional, List, Tuple
 import uuid
 import asyncio
 
-from wiki_arena.data_models.game_models import (
+from wiki_arena.models import (
     GameConfig,
     GameState,
     GameStatus,
     Page,
     Move,
     GameError,
-    ErrorType
+    ErrorType,
+    ModelConfig
 )
+from wiki_arena.events import EventBus, GameEvent
 from wiki_arena.mcp_client.client import MCPClient
 from mcp.types import Tool, CallToolResult, TextContent
 
@@ -22,24 +24,24 @@ from wiki_arena.language_models.language_model import LanguageModel, ToolCall
 
 # Capability-based architecture
 from wiki_arena.services.capability_registry import CapabilityRegistry
-from wiki_arena.capabilities.navigation import INavigationCapability, NavigationResult
 
 class GameManager:
-    def __init__(self, mcp_client: MCPClient):
-        """Initialize the game manager with an MCP client."""
+    def __init__(self, mcp_client: MCPClient, event_bus: Optional[EventBus] = None):
+        """Initialize the game manager with an MCP client and optional event bus."""
         self.mcp_client = mcp_client
         self.capability_registry = CapabilityRegistry(mcp_client)
         self.state: Optional[GameState] = None
         self.language_model: Optional[LanguageModel] = None
         self.available_tools: List[Tool] = []
+        self.event_bus = event_bus
         # TODO(hunter): I know start game logic shouldn't be in init but I want to know why
 
-    def _generate_game_id(self, model_config) -> str:
+    def _generate_game_id(self, model_config: ModelConfig) -> str:
         """Generate descriptive game ID with model info."""
         timestamp = datetime.now()
         date_str = timestamp.strftime("%Y%m%d_%H%M%S")
         uuid_short = str(uuid.uuid4())[:8]
-        model_key = model_config.get_storage_key()
+        model_key = model_config.model_name
         
         return f"{model_key}_{date_str}_{uuid_short}"
 
@@ -179,7 +181,7 @@ class GameManager:
                 return True
             
             # Success! Create successful move and update game state
-            return self._handle_successful_move(current_step, current_page_title, nav_result, tool_call_request)
+            return await self._handle_successful_move(current_step, current_page_title, nav_result, tool_call_request)
             
         except Exception as e:
             return self._handle_unexpected_exception(e, current_step, current_page_title, locals().get('tool_call_request'))
@@ -239,7 +241,7 @@ class GameManager:
         
         return None
 
-    def _extract_target_page(self, tool_call_request) -> tuple[Optional[str], Optional[GameError]]:
+    def _extract_target_page(self, tool_call_request: ToolCall) -> tuple[Optional[str], Optional[GameError]]:
         """Extract target page title from tool call arguments."""
         chosen_tool_args = tool_call_request.tool_arguments or {}
         
@@ -300,7 +302,7 @@ class GameManager:
         nav_capability = self.capability_registry.get_navigation_capability()
         return await nav_capability.navigate_to_page(target_page)
 
-    def _handle_successful_move(self, step: int, from_page: str, nav_result, tool_call_request) -> bool:
+    async def _handle_successful_move(self, step: int, from_page: str, nav_result, tool_call_request) -> bool:
         """Handle a successful move and update game state."""
         # Update current page
         self.state.current_page = nav_result.page
@@ -329,16 +331,31 @@ class GameManager:
             self.state.status = GameStatus.WON
             self.state.error_message = "Target page reached!"
             logging.info(f"Game {self.state.game_id}: Won! Reached target '{nav_result.page.title}' in {self.state.steps} steps.")
-            return True
-        
+            game_over = True
         # Check max steps
-        if self.state.steps >= self.state.config.max_steps:
+        elif self.state.steps >= self.state.config.max_steps:
             self.state.status = GameStatus.LOST_MAX_STEPS
             self.state.error_message = "Maximum turns reached"
             logging.info(f"Game {self.state.game_id}: Lost - Max turns ({self.state.config.max_steps}) reached.")
-            return True
+            game_over = True
+        else:
+            game_over = False
         
-        return False  # Game continues
+        # Emit event if event bus is available
+        if self.event_bus:
+            await self.event_bus.publish(GameEvent(
+                type="move_completed",
+                game_id=self.state.game_id,
+                data={
+                    "move": move,
+                    "game_state": self.state,
+                    "is_game_over": game_over,
+                    "from_page": from_page,
+                    "to_page": nav_result.page.title
+                }
+            ))
+        
+        return game_over
 
     def _create_error_move(self, step: int, from_page: str, error: GameError, tool_call_request):
         """Create a move record for an error case."""
@@ -364,6 +381,7 @@ class GameManager:
         """Handle unexpected exceptions with proper categorization."""
         exception_str = str(exception)
         
+        # TODO(hunter): when do I expect any of these to happen?
         # Categorize based on exception content
         if exception_str.startswith("PROVIDER_RATE_LIMIT:"):
             error_type = ErrorType.PROVIDER_RATE_LIMIT

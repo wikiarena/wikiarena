@@ -8,9 +8,9 @@ from datetime import datetime
 from wiki_arena.config import load_config
 from wiki_arena.mcp_client.client import MCPClient, create_server_params_from_config
 from wiki_arena.game.game_manager import GameManager
-from wiki_arena.data_models.game_models import GameConfig, ModelConfig, GameResult
-from wiki_arena.data_models.game_models import GameStatus
-from wiki_arena.wikipedia.page_selector import get_random_page_pair_async
+from wiki_arena.models import GameConfig, ModelConfig, GameResult
+from wiki_arena.models import GameStatus
+from wiki_arena.wikipedia.task_selector import get_random_task_async
 from wiki_arena.storage import GameStorageService, StorageConfig
 from wiki_arena.language_models import create_model
 
@@ -76,21 +76,13 @@ async def main():
         await mcp_client.connect(server_params)
         logging.info(f"Connected to {mcp_server_config_name}")
 
-        # 4. Generate random page pair for the game with efficient validation
-        logging.info("Generating random Wikipedia page pair...")
-        
-        # Use new page selector with validation enabled by default
-        page_pair = await get_random_page_pair_async()
-        
-        if not page_pair:
-            logging.error("Failed to generate random page pair. Exiting.")
-            sys.exit(1)
-        
-        logging.info(f"Selected page pair: '{page_pair.start_page}' -> '{page_pair.target_page}'")
+        # 4. Select a random task
+        task = await get_random_task_async()
+        if not task:
+            print("Could not retrieve a valid task. Exiting.")
+            return
 
-        # 5. Create game configuration with the selected pages
-        # model_key = "claude-3-haiku-20240307"  # Use the new full model name
-        # model_key = "gpt-4o-mini-2024-07-18"  # OpenAI's affordable model
+        # 5. Create game configuration from the task
         model_key = "random"                   # Random baseline
         
         # Create model using simplified system (no config needed!)
@@ -103,8 +95,8 @@ async def main():
         logging.info(f"Model pricing: ${model.model_config.input_cost_per_1m_tokens}/1M input, ${model.model_config.output_cost_per_1m_tokens}/1M output tokens")
 
         game_config = GameConfig(
-            start_page_title=page_pair.start_page,
-            target_page_title=page_pair.target_page,
+            start_page_title=task.start_page_title,
+            target_page_title=task.target_page_title,
             max_steps=30,
             model=model.model_config  # Use the model config
         )
@@ -112,7 +104,7 @@ async def main():
         # 5.5. Initialize game storage service
         storage_config = StorageConfig()  # Use default configuration for now
         storage_service = GameStorageService(storage_config)
-        logging.info(f"Game storage configured: {storage_config.get_storage_path()}")
+        logging.info(f"Game storage configured: {storage_config.storage_path}")
 
         # 6. Create and start game
         game_manager = GameManager(mcp_client)

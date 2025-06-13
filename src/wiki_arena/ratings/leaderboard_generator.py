@@ -1,9 +1,9 @@
 from collections import defaultdict
 from typing import Dict, List
 
-from wiki_arena.storage.game_repository import GameRepository
-from wiki_arena.data_models.game_models import GameResult, Task
-from wiki_arena.ratings.bradley_terry import BradleyTerryModel
+from wiki_arena.storage import GameRepository
+from wiki_arena.models import GameResult, Task
+from wiki_arena.ratings.bradley_terry import BradleyTerryCalculator
 
 class LeaderboardGenerator:
     """Orchestrates the generation of leaderboard ratings from game results."""
@@ -17,7 +17,7 @@ class LeaderboardGenerator:
         """
         self.game_repository = game_repository
         # Initialize bt_model here or in generate_elo_ratings for fresh run
-        self.bt_model = BradleyTerryModel()
+        self.bt_model = BradleyTerryCalculator()
 
     def _fetch_and_group_games_by_task(self) -> Dict[str, List[GameResult]]:
         """Fetches all games and groups them by task ID."""
@@ -75,7 +75,7 @@ class LeaderboardGenerator:
             A dictionary mapping model keys to their Elo ratings.
         """
         # Re-initialize for a fresh calculation run each time this method is called
-        self.bt_model = BradleyTerryModel()
+        self.bt_model = BradleyTerryCalculator()
         
         games_by_task = self._fetch_and_group_games_by_task()
         self._populate_bradley_terry_comparisons(games_by_task)

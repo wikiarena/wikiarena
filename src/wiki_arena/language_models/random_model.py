@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime
 
 from mcp.types import Tool # Assuming Tool is available at this path
-from wiki_arena.data_models.game_models import GameState, MoveMetrics, ModelConfig
+from wiki_arena.models import GameState, MoveMetrics, ModelConfig
 from .language_model import LanguageModel, ToolCall
 
 

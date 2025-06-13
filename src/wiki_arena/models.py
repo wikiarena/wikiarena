@@ -1,7 +1,7 @@
 from typing import List, Dict, Any, Optional, Type
 from datetime import datetime
 from enum import Enum
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, ValidationInfo
 
 from common.utils.wiki_helpers import get_sanitized_page_title
 
@@ -40,6 +40,13 @@ class Task(BaseModel):
     """A task is a single game that is played."""
     start_page_title: str = Field(..., description="The title of the starting Wikipedia page.")
     target_page_title: str = Field(..., description="The title of the target Wikipedia page.")
+
+    @field_validator("target_page_title")
+    @classmethod
+    def titles_must_be_different(cls, v: str, info: ValidationInfo):
+        if "start_page_title" in info.data and v == info.data["start_page_title"]:
+            raise ValueError("Start and target page titles must be different.")
+        return v
 
     @property
     def task_id(self) -> str:
