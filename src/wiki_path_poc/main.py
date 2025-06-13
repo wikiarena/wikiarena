@@ -6,7 +6,7 @@ import asyncio
 import sys
 import time
 import logging
-from path_finder import WikipediaPathFinder
+from .path_finder import WikipediaPathFinder
 
 # Set up nice logging
 logging.basicConfig(

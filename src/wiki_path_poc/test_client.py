@@ -4,7 +4,7 @@ Run this to verify API interactions work correctly.
 """
 import asyncio
 import logging
-from wikipedia_client import WikipediaClient
+from .wikipedia_client import WikipediaClient
 
 # Set up logging to see what's happening
 logging.basicConfig(level=logging.INFO)

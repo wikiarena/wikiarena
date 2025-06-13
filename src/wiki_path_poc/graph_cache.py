@@ -3,7 +3,7 @@ Graph cache for Wikipedia path finding POC.
 Manages in-memory graph storage with target-based invalidation.
 """
 from typing import Dict, Set, Optional
-from models import WikiPage
+from .models import WikiPage
 import logging
 
 logger = logging.getLogger(__name__)

@@ -8,9 +8,9 @@ from typing import List, Optional, Set, Dict
 import time
 import logging
 
-from models import SearchState
-from wikipedia_client import WikipediaClient
-from graph_cache import GraphCache
+from .models import SearchState
+from .wikipedia_client import WikipediaClient
+from .graph_cache import GraphCache
 
 logger = logging.getLogger(__name__)
 
