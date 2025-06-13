@@ -25,39 +25,13 @@ async def main():
         print(f"CRITICAL: Error parsing configuration file: {e}", file=sys.stderr)
         sys.exit(1)
 
-    # Configure logging using RichHandler
+    # Configure unified logging
+    from wiki_arena.logging_config import setup_logging
+    
     log_level_str = app_config.get("app_settings", {}).get("log_level", "INFO").upper()
-    numeric_log_level = getattr(logging, log_level_str, logging.INFO)
-
-    # Get the root logger
-    root_logger = logging.getLogger()
-    root_logger.setLevel(numeric_log_level)
-
-    # Remove any existing handlers to avoid duplicates
-    for handler in root_logger.handlers[:]:
-        root_logger.removeHandler(handler)
-
-    # Create RichHandler
-    rich_handler = RichHandler(
-        level=numeric_log_level,
-        show_time=True,
-        show_level=True,
-        show_path=True,
-        enable_link_path=True,
-        rich_tracebacks=True,
-        markup=True,
-        log_time_format="[%m/%d/%y %H:%M:%S]"
-    )
-
-    # Create a formatter to include the logger name with the message, similar to your example
-    log_format_string = "%(name)s: %(message)s"
-    formatter = logging.Formatter(log_format_string)
-    rich_handler.setFormatter(formatter)
-
-    # Add the RichHandler to the root logger
-    root_logger.addHandler(rich_handler)
-
-    logging.debug("Rich logging configured.")
+    setup_logging(level=log_level_str)
+    
+    logging.debug("Unified logging configured.")
 
     # 2. Get the configuration for the specific server we want to use
     # TODO(hunter): make this a sysarg or config arg for default server

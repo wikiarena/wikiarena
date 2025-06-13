@@ -7,17 +7,13 @@ from fastapi.responses import JSONResponse
 
 from backend.config import config
 from backend.api.games import router as games_router
-from backend.api.solver import router as solver_router
 from backend.websockets.game_hub import websocket_manager
 from backend.coordinators.game_coordinator import GameCoordinator
 from wiki_arena import EventBus
 
-# Configure logging to match wiki_arena style
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(name)s: %(message)s", # TODO(hunter): this is not the wiki-arena style
-    handlers=[logging.StreamHandler()]
-)
+# Configure unified logging to match wiki_arena style
+from wiki_arena.logging_config import setup_logging
+setup_logging(level="INFO")
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +92,6 @@ app = FastAPI(
 
 # Routers and Middleware
 app.include_router(games_router)
-app.include_router(solver_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=config.cors_origins,

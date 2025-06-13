@@ -6,6 +6,10 @@ from typing import List, Union
 import sys
 
 from wiki_arena.wikipedia import LiveWikiService
+from wiki_arena.logging_config import setup_logging
+
+# Configure unified logging to match the main application
+setup_logging(level="INFO")
 
 # Configure the server for stateless HTTP to enable testing
 mcp = FastMCP("wiki-arena")
