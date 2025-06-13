@@ -1,6 +1,7 @@
 import logging
 import uvicorn
-from fastapi import FastAPI
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -8,6 +9,8 @@ from backend.config import config
 from backend.api.games import router as games_router
 from backend.api.solver import router as solver_router
 from backend.websockets.game_hub import websocket_manager
+from backend.coordinators.game_coordinator import GameCoordinator
+from wiki_arena import EventBus
 
 # Configure logging to match wiki_arena style
 logging.basicConfig(
@@ -16,15 +19,84 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()]
 )
 
+logger = logging.getLogger(__name__)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Handle application startup and shutdown events."""
+    logger.info("Starting Wiki Arena API...")
+    
+    # Create event bus
+    event_bus = EventBus()
+    
+    # Initialize core services
+    from wiki_arena.config import load_config
+    from wiki_arena.mcp_client.client import MCPClient, create_server_params_from_config
+    
+    app_config = load_config()
+    server_config = app_config['mcp_servers'][config.mcp_server_name]
+    server_params = create_server_params_from_config(server_config.get("transport", {}))
+    
+    mcp_client = MCPClient()
+    await mcp_client.connect(server_params)
+    logger.info("MCP client connected")
+    
+    # Create and initialize solver
+    from wiki_arena.solver import WikiTaskSolver
+    from wiki_arena.solver.static_db import static_solver_db
+    
+    solver = WikiTaskSolver(db=static_solver_db)
+    logger.info("WikiTaskSolver created")
+    
+    # Create coordinator
+    game_coordinator = GameCoordinator(event_bus, mcp_client)
+    
+    # Create event handlers with dependencies
+    from backend.handlers.websocket_handler import WebSocketHandler
+    from backend.handlers.optimal_path_handler import OptimalPathHandler
+    
+    websocket_handler = WebSocketHandler()
+    optimal_path_handler = OptimalPathHandler(event_bus, solver)
+    
+    # Register event handlers
+    event_bus.subscribe("move_completed", websocket_handler.handle_move_completed)
+    event_bus.subscribe("move_completed", optimal_path_handler.handle_move_completed)
+    event_bus.subscribe("game_started", websocket_handler.handle_game_started)
+    event_bus.subscribe("game_started", optimal_path_handler.handle_game_started)
+    event_bus.subscribe("game_ended", websocket_handler.handle_game_ended)
+    event_bus.subscribe("optimal_paths_found", websocket_handler.handle_optimal_paths_found)
+    # TODO(hunter): add storage and maybe metrics handler
+
+    logger.info("Event handlers registered")
+    
+    # Store in app state
+    app.state.event_bus = event_bus
+    app.state.game_coordinator = game_coordinator
+    app.state.mcp_client = mcp_client
+    app.state.solver = solver
+    
+    logger.info("Wiki Arena API startup complete")
+    
+    yield
+    
+    # Shutdown
+    logger.info("Shutting down Wiki Arena API...")
+    await game_coordinator.shutdown()
+    await mcp_client.disconnect()
+    logger.info("Wiki Arena API shutdown complete")
+
 # Create FastAPI app
 app = FastAPI(
     title="Wiki Arena API",
     description="API for running Wikipedia navigation games with real-time updates",
-    version="2.0.0",
-    debug=config.debug
+    version="0.0.1",
+    debug=config.debug,
+    lifespan=lifespan
 )
 
-# Add CORS middleware
+# Routers and Middleware
+app.include_router(games_router)
+app.include_router(solver_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=config.cors_origins,
@@ -33,16 +105,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
-app.include_router(games_router)
-app.include_router(solver_router)
-
 @app.get("/")
 async def root():
     """Root endpoint with API information."""
     return {
         "message": "Wiki Arena API",
-        "version": "2.0.0",
+        "version": "0.0.1",
         "features": [
             "REST API for game management",
             "WebSocket support for real-time updates",
@@ -60,7 +128,7 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "wiki-arena-api",
-        "version": "2.0.0",
+        "version": "0.0.1",
         "features": {
             "websockets": True,
             "background_execution": True,

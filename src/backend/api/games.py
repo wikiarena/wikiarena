@@ -1,30 +1,27 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect, Query
-from typing import Dict, Any
+from fastapi import APIRouter, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect, Query, Depends
+from typing import Dict, Any, Annotated
 import logging
 
 from backend.models.api_models import (
     StartGameRequest,
     StartGameResponse, 
-    GameStateResponse,
     ErrorResponse
 )
-from backend.services.game_service import game_service
+from wiki_arena.models import GameState
+from backend.coordinators.game_coordinator import GameCoordinator
 from backend.websockets.game_hub import websocket_manager
+from backend.dependencies import get_game_coordinator
 
 router = APIRouter(prefix="/api/games", tags=["games"])
 logger = logging.getLogger(__name__)
 
+GameCoordinatorDep = Annotated[GameCoordinator, Depends(get_game_coordinator)]
+
 @router.post("", response_model=StartGameResponse)
-async def start_game(request: StartGameRequest, background: bool = Query(False, description="Run game in background")) -> StartGameResponse:
+async def start_game(request: StartGameRequest, coordinator: GameCoordinatorDep, background: bool = Query(False, description="Run game in background")) -> StartGameResponse:
     """Start a new game with the specified configuration."""
     try:
-        # Initialize service if needed
-        if not game_service.app_config:
-            await game_service.initialize()
-        
-        response = await game_service.start_game(request, background=background)
-        return response
-        
+        return await coordinator.start_game(request, background=background)
     except Exception as e:
         logger.error(f"Failed to start game: {e}", exc_info=True)
         raise HTTPException(
@@ -32,87 +29,63 @@ async def start_game(request: StartGameRequest, background: bool = Query(False, 
             detail=f"Failed to start game: {str(e)}"
         )
 
-@router.get("/{game_id}", response_model=GameStateResponse)
-async def get_game_state(game_id: str) -> GameStateResponse:
+@router.get("/{game_id}", response_model=GameState)
+async def get_game_state(game_id: str, coordinator: GameCoordinatorDep) -> GameState:
     """Get the current state of a game."""
-    try:
-        game_state = await game_service.get_game_state(game_id)
-        
-        if not game_state:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Game {game_id} not found"
-            )
-        
-        return game_state
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to get game state for {game_id}: {e}", exc_info=True)
+    state = await coordinator.get_game_state(game_id)
+    if not state:
         raise HTTPException(
-            status_code=500,
-            detail=f"Failed to get game state: {str(e)}"
+            status_code=404,
+            detail=f"Game {game_id} not found"
         )
+    return state
 
-@router.post("/{game_id}/turn", response_model=GameStateResponse)
-async def play_turn(game_id: str) -> GameStateResponse:
+@router.post("/{game_id}/turn", response_model=GameState)
+async def play_turn(game_id: str, coordinator: GameCoordinatorDep) -> GameState:
     """Play a single turn of the game."""
+    state = await coordinator.play_turn(game_id)
+    if not state:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Game {game_id} not found"
+        )
+    return state
+
+@router.delete("/{game_id}", status_code=204)
+async def terminate_game(game_id: str, coordinator: GameCoordinatorDep):
+    """Forcibly terminate a game and clean up all its resources."""
     try:
-        game_state = await game_service.play_turn(game_id)
-        
-        if not game_state:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Game {game_id} not found"
-            )
-        
-        return game_state
-        
-    except HTTPException:
-        raise
+        await coordinator.terminate_game(game_id)
     except Exception as e:
-        logger.error(f"Failed to play turn for {game_id}: {e}", exc_info=True)
+        logger.error(f"Failed to terminate game {game_id}: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to play turn: {str(e)}"
+            detail=f"Failed to terminate game: {str(e)}"
         )
 
 @router.get("/{game_id}/status")
-async def get_game_status(game_id: str) -> Dict[str, Any]:
+async def get_game_status(game_id: str, coordinator: GameCoordinatorDep) -> Dict[str, Any]:
     """Get just the status of a game (lightweight endpoint for polling)."""
-    try:
-        game_state = await game_service.get_game_state(game_id)
-        
-        if not game_state:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Game {game_id} not found"
-            )
-        
-        return {
-            "game_id": game_state.game_id,
-            "status": game_state.status,
-            "steps": game_state.steps,
-            "current_page": game_state.current_page
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to get game status for {game_id}: {e}", exc_info=True)
+    state = await coordinator.get_game_state(game_id)
+    if not state:
         raise HTTPException(
-            status_code=500,
-            detail=f"Failed to get game status: {str(e)}"
+            status_code=404,
+            detail=f"Game {game_id} not found"
         )
+    return {
+        "game_id": state.game_id,
+        "status": state.status.value,
+        "steps": state.steps,
+        "current_page": state.current_page.title if state.current_page else None
+    }
 
 @router.websocket("/{game_id}/ws")
 async def game_websocket(websocket: WebSocket, game_id: str):
     """WebSocket endpoint for real-time game updates."""
+    await websocket_manager.connect(websocket, game_id)
+    logger.info(f"WebSocket connected for game {game_id}")
+    
     try:
-        await websocket_manager.connect(websocket, game_id)
-        logger.info(f"WebSocket connected for game {game_id}")
-        
         # Keep connection alive and handle client messages
         while True:
             try:
@@ -137,10 +110,10 @@ async def game_websocket(websocket: WebSocket, game_id: str):
         await websocket_manager.disconnect(websocket)
 
 @router.get("")
-async def list_active_games() -> Dict[str, Any]:
+async def list_active_games(coordinator: GameCoordinatorDep) -> Dict[str, Any]:
     """List all active games and their execution mode."""
     try:
-        active_games = game_service.get_active_games()
+        active_games = coordinator.get_active_games()
         websocket_connections = {
             game_id: websocket_manager.get_connection_count(game_id)
             for game_id in active_games.keys()

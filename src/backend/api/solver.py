@@ -1,28 +1,26 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import Dict, Any, Optional
 import logging
 
-from backend.models.solver_models import SolverRequest, SolverResponse
-from backend.services.wiki_solver_service import wiki_solver
-from backend.services.wiki_db_service import wiki_db
+from wiki_arena.solver import SolverRequest, SolverResponse, WikiTaskSolver
+from wiki_arena.solver.static_db import static_solver_db
+from backend.dependencies import get_solver
 
 router = APIRouter(prefix="/api/solver", tags=["solver"])
 logger = logging.getLogger(__name__)
 
 @router.post("/path", response_model=SolverResponse)
-async def find_shortest_path(request: SolverRequest) -> SolverResponse:
+async def find_shortest_path(
+    request: SolverRequest, 
+    solver: WikiTaskSolver = Depends(get_solver)
+) -> SolverResponse:
     """
     Find the shortest path between two Wikipedia pages.
     
     This endpoint performs bidirectional BFS to find the optimal path.
     """
     try:
-        # Initialize solver if needed (simple hasattr check for one-time init)
-        if not hasattr(wiki_solver, '_initialized') or not wiki_solver._initialized:
-            await wiki_solver.initialize()
-            wiki_solver._initialized = True
-        
-        response = await wiki_solver.find_shortest_path(
+        response = await solver.find_shortest_path(
             request.start_page, 
             request.target_page
         )
@@ -48,18 +46,18 @@ async def find_shortest_path(request: SolverRequest) -> SolverResponse:
         )
 
 @router.get("/validate/{page_title}")
-async def validate_page(page_title: str) -> Dict[str, Any]: # Kept Dict[str, Any] for now
+async def validate_page(page_title: str) -> Dict[str, Any]:
     """
     Check if a Wikipedia page exists in the database.
     
     Useful for validating user input before attempting path finding.
     """
     try:
-        exists = await wiki_db.page_exists(page_title)
+        exists = await static_solver_db.page_exists(page_title)
         page_id = None
         if exists:
             # Optionally, also return the page ID if it exists
-            page_id = await wiki_db.get_page_id(page_title)
+            page_id = await static_solver_db.get_page_id(page_title)
 
         return {
             "page_title": page_title,
