@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from backend.main import app
-from backend.models.solver_models import SolverResponse
+from wiki_arena.solver import SolverResponse
 
 client = TestClient(app)
 
