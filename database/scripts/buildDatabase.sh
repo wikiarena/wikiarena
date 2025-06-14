@@ -1,237 +1,198 @@
-#!/bin/bash
-
+#!/usr/bin/env bash
 set -euo pipefail
 
-# Force default language for output sorting to be bytewise. Necessary to ensure uniformity amongst
-# UNIX commands.
-export LC_ALL=C
+# ========================================================
+# 0.  Language edition
+# ========================================================
+WIKI="${WIKI:-enwiki}"            # simplewiki, frwiki, …
 
-# By default, the latest Wikipedia dump will be downloaded. If a download date in the format
-# YYYYMMDD is provided as the first argument, it will be used instead.
-if [[ $# -eq 0 ]]; then
-  DOWNLOAD_DATE=$(wget -q -O- https://dumps.wikimedia.org/enwiki/ | grep -Po '\d{8}' | sort | tail -n1)
-else
-  if [ ${#1} -ne 8 ]; then
-    echo "[ERROR] Invalid download date provided: $1"
-    exit 1
+# ========================================================
+# 1.  GNU ↔︎ BSD helpers
+# ========================================================
+GREP=$(command -v ggrep || echo grep)
+SORT=$(command -v gsort || echo sort)
+SHA1SUM=$(command -v gsha1sum || command -v sha1sum || echo shasum)
+
+sha1_check() {                    # read “hash  file” lines from stdin
+  if [[ $SHA1SUM == *sha1sum ]]; then $SHA1SUM -c -
+  else awk '{print $1"\t"$2}' | $SHA1SUM -a 1 -c -; fi
+}
+
+sort_maybe_mem() {                # $1 mem %, rest = sort args
+  local mem=$1; shift
+  if $SORT --version 2>/dev/null | grep -q GNU; then
+      $SORT -S "$mem" -t$'\t' "$@"
   else
-    DOWNLOAD_DATE=$1
-  fi
-fi
-
-ROOT_DIR=`pwd`
-OUT_DIR="dumps"
-
-DOWNLOAD_URL="https://dumps.wikimedia.org/enwiki/$DOWNLOAD_DATE"
-TORRENT_URL="https://tools.wmflabs.org/dump-torrents/enwiki/$DOWNLOAD_DATE"
-
-SHA1SUM_FILENAME="enwiki-$DOWNLOAD_DATE-sha1sums.txt"
-REDIRECTS_FILENAME="enwiki-$DOWNLOAD_DATE-redirect.sql.gz"
-PAGES_FILENAME="enwiki-$DOWNLOAD_DATE-page.sql.gz"
-LINKS_FILENAME="enwiki-$DOWNLOAD_DATE-pagelinks.sql.gz"
-
-
-# Make the output directory if it doesn't already exist and move to it
-mkdir -p $OUT_DIR
-pushd $OUT_DIR > /dev/null
-
-
-echo "[INFO] Download date: $DOWNLOAD_DATE"
-echo "[INFO] Download URL: $DOWNLOAD_URL"
-echo "[INFO] Output directory: $OUT_DIR"
-echo
-
-##############################
-#  DOWNLOAD WIKIPEDIA DUMPS  #
-##############################
-
-function download_file() {
-  if [ ! -f $2 ]; then
-    echo
-    if [ $1 != sha1sums ] && command -v aria2c > /dev/null; then
-      echo "[INFO] Downloading $1 file via torrent"
-      time aria2c --summary-interval=0 --console-log-level=warn --seed-time=0 \
-        "$TORRENT_URL/$2.torrent"
-    else
-      echo "[INFO] Downloading $1 file via wget"
-      time wget --progress=dot:giga "$DOWNLOAD_URL/$2"
-    fi
-
-    if [ $1 != sha1sums ]; then
-      echo
-      echo "[INFO] Verifying SHA-1 hash for $1 file"
-      time grep "$2" "$SHA1SUM_FILENAME" | sha1sum -c
-      if [ $? -ne 0 ]; then
-        echo
-        echo "[ERROR] Downloaded $1 file has incorrect SHA-1 hash"
-        rm $2
-        exit 1
-      fi
-    fi
-  else
-    echo "[WARN] Already downloaded $1 file"
+      $SORT      -t$'\t' "$@"
   fi
 }
 
-download_file "sha1sums" $SHA1SUM_FILENAME
-download_file "redirects" $REDIRECTS_FILENAME
-download_file "pages" $PAGES_FILENAME
-download_file "links" $LINKS_FILENAME
-
-##########################
-#  TRIM WIKIPEDIA DUMPS  #
-##########################
-
-# Trim redirects
-if [ ! -f redirects.txt.gz ]; then
-  echo
-  echo "[INFO] Trimming redirects file"
-  time python "$ROOT_DIR/trim_wikipedia_dump.py" redirects $REDIRECTS_FILENAME redirects.txt.gz
+# ========================================================
+# 2.  Dump date
+# ========================================================
+if [[ $# -eq 0 || $1 == latest ]]; then
+  DOWNLOAD_DATE=$(wget -q -O- "https://dumps.wikimedia.org/$WIKI/" \
+                 | $GREP -Eo '[0-9]{8}' | $SORT | tail -n1)
 else
-  echo "[WARN] Already trimmed redirects file"
+  [[ ${#1} -eq 8 ]] || { echo "[ERROR] invalid date $1"; exit 1; }
+  DOWNLOAD_DATE=$1
 fi
 
-# Trim pages
-if [ ! -f pages.txt.gz ]; then
-  echo
-  echo "[INFO] Trimming pages file"
-  time python "$ROOT_DIR/trim_wikipedia_dump.py" pages $PAGES_FILENAME pages.txt.gz
-else
-  echo "[WARN] Already trimmed pages file"
-fi
+# ========================================================
+# 3.  Paths & filenames
+# ========================================================
+ROOT_DIR=$(pwd);  OUT_DIR=dumps
+DOWNLOAD_URL="https://dumps.wikimedia.org/$WIKI/$DOWNLOAD_DATE"
+TORRENT_URL="https://tools.wmflabs.org/dump-torrents/$WIKI/$DOWNLOAD_DATE"
 
-# Trim links
-if [ ! -f links.txt.gz ]; then
-  echo
-  echo "[INFO] Trimming links file"
-  time python "$ROOT_DIR/trim_wikipedia_dump.py" links $LINKS_FILENAME links.txt.gz
-else
-  echo "[WARN] Already trimmed links file"
-fi
+SHA1SUM_FILE="$WIKI-$DOWNLOAD_DATE-sha1sums.txt"
+REDIRECTS_FILE="$WIKI-$DOWNLOAD_DATE-redirect.sql.gz"
+PAGES_FILE="$WIKI-$DOWNLOAD_DATE-page.sql.gz"
+LINKS_FILE="$WIKI-$DOWNLOAD_DATE-pagelinks.sql.gz"
+LINKTARGET_FILE="$WIKI-$DOWNLOAD_DATE-linktarget.sql.gz"
 
-###########################################
-#  REPLACE TITLES AND REDIRECTS IN FILES  #
-###########################################
-if [ ! -f redirects.with_ids.txt.gz ]; then
+mkdir -p "$OUT_DIR";  pushd "$OUT_DIR" >/dev/null
+echo "[INFO] wiki=$WIKI   date=$DOWNLOAD_DATE   dir=$OUT_DIR"; echo
+
+# ========================================================
+# 4.  Download & verify
+# ========================================================
+download_file() {
+  local tag=$1 file=$2
+  [[ -f $file ]] && { echo "[WARN] $file already present"; return; }
   echo
-  echo "[INFO] Replacing titles in redirects file"
-  time python "$ROOT_DIR/replace_titles_in_redirects_file.py" pages.txt.gz redirects.txt.gz \
-    | sort -S 100% -t $'\t' -k 1n,1n \
-    | pigz --fast > redirects.with_ids.txt.gz.tmp
+  if [[ $tag != sha1sums && -x $(command -v aria2c) ]]; then
+      echo "[INFO] torrent $tag"
+      time aria2c --summary-interval=0 --console-log-level=warn --seed-time=0 \
+           "$TORRENT_URL/$file.torrent"
+  else
+      echo "[INFO] wget $tag"
+      time wget --progress=dot:giga "$DOWNLOAD_URL/$file"
+  fi
+  [[ $tag == sha1sums ]] && return
+  echo; echo "[INFO] verify SHA-1 $file"
+  time $GREP "$file" "$SHA1SUM_FILE" | sha1_check
+}
+
+download_file sha1sums   "$SHA1SUM_FILE"
+download_file redirects  "$REDIRECTS_FILE"
+download_file pages      "$PAGES_FILE"
+download_file links      "$LINKS_FILE"
+download_file linktarget "$LINKTARGET_FILE"
+
+# ========================================================
+# 5.  Trim SQL → TSV (gzip-compressed)
+# ========================================================
+trim_step() {                        # $1 tag  $2 in  $3 out
+  [[ -f $3 ]] && { echo "[WARN] $3 exists"; return; }
+  echo; echo "[INFO] trim $1"
+  time python "$ROOT_DIR/trim_wikipedia_dump.py" "$1" "$2" "$3"
+}
+
+trim_step redirects   "$REDIRECTS_FILE"   redirects.txt.gz
+trim_step pages       "$PAGES_FILE"       pages.txt.gz
+trim_step links       "$LINKS_FILE"       links.txt.gz
+trim_step targets     "$LINKTARGET_FILE"  linktarget.txt.gz
+
+# ========================================================
+# 6.  ID normalisation & pruning
+# ========================================================
+
+if [[ ! -f redirects.with_ids.txt.gz ]]; then
+  echo; echo "[INFO] titles→ids in redirects"
+  time python "$ROOT_DIR/replace_titles_in_redirects_file.py" \
+       pages.txt.gz redirects.txt.gz |
+       sort_maybe_mem 100% -k1,1n | pigz --fast \
+       > redirects.with_ids.txt.gz.tmp
   mv redirects.with_ids.txt.gz.tmp redirects.with_ids.txt.gz
-else
-  echo "[WARN] Already replaced titles in redirects file"
 fi
 
-if [ ! -f links.with_ids.txt.gz ]; then
-  echo
-  echo "[INFO] Replacing titles and redirects in links file"
-  time python "$ROOT_DIR/replace_titles_and_redirects_in_links_file.py" pages.txt.gz redirects.with_ids.txt.gz links.txt.gz \
-    | pigz --fast > links.with_ids.txt.gz.tmp
+if [[ ! -f edges.ids_only.txt.gz ]]; then
+  echo; echo "[INFO] merge pages+links+targets → IDs-only edge list"
+  time python "$ROOT_DIR/merge_links.py" \
+       pages.txt.gz linktarget.txt.gz links.txt.gz |
+       pigz --fast > edges.ids_only.txt.gz.tmp
+  mv edges.ids_only.txt.gz.tmp edges.ids_only.txt.gz
+fi
+
+if [[ ! -f links.with_ids.txt.gz ]]; then
+  echo; echo "[INFO] apply redirects to edge list"
+  time python "$ROOT_DIR/replace_titles_and_redirects_in_links_file.py" \
+       pages.txt.gz redirects.with_ids.txt.gz edges.ids_only.txt.gz |
+       pigz --fast > links.with_ids.txt.gz.tmp
   mv links.with_ids.txt.gz.tmp links.with_ids.txt.gz
-else
-  echo "[WARN] Already replaced titles and redirects in links file"
 fi
 
-if [ ! -f pages.pruned.txt.gz ]; then
-  echo
-  echo "[INFO] Pruning pages which are marked as redirects but with no redirect"
-  time python "$ROOT_DIR/prune_pages_file.py" pages.txt.gz redirects.with_ids.txt.gz \
-    | pigz --fast > pages.pruned.txt.gz
-else
-  echo "[WARN] Already pruned pages which are marked as redirects but with no redirect"
+if [[ ! -f pages.pruned.txt.gz ]]; then
+  echo; echo "[INFO] prune orphan redirects in pages"
+  time python "$ROOT_DIR/prune_pages_file.py" \
+       pages.txt.gz redirects.with_ids.txt.gz |
+       pigz --fast > pages.pruned.txt.gz
 fi
 
-#####################
-#  SORT LINKS FILE  #
-#####################
-if [ ! -f links.sorted_by_source_id.txt.gz ]; then
-  echo
-  echo "[INFO] Sorting links file by source page ID"
-  time pigz -dc links.with_ids.txt.gz \
-    | sort -S 80% -t $'\t' -k 1n,1n \
-    | uniq \
-    | pigz --fast > links.sorted_by_source_id.txt.gz.tmp
-  mv links.sorted_by_source_id.txt.gz.tmp links.sorted_by_source_id.txt.gz
-else
-  echo "[WARN] Already sorted links file by source page ID"
-fi
+#########################################################
+#  7. Sort links two ways                               #
+#########################################################
+sort_links() {                           # $1 = field (1|2)  $2 = outfile
+  [[ -f $2 ]] && { echo "[WARN] $2 exists"; return; }
+  echo; echo "[INFO] Sorting links by $1"
+  time pigz -dc links.with_ids.txt.gz |
+       sort_maybe_mem 80% -k"$1","$1"n |
+       uniq |
+       pigz --fast > "$2.tmp"
+  mv "$2.tmp" "$2"
+}
+sort_links 1 links.sorted_by_source_id.txt.gz
+sort_links 2 links.sorted_by_target_id.txt.gz
 
-if [ ! -f links.sorted_by_target_id.txt.gz ]; then
-  echo
-  echo "[INFO] Sorting links file by target page ID"
-  time pigz -dc links.with_ids.txt.gz \
-    | sort -S 80% -t $'\t' -k 2n,2n \
-    | uniq \
-    | pigz --fast > links.sorted_by_target_id.txt.gz.tmp
-  mv links.sorted_by_target_id.txt.gz.tmp links.sorted_by_target_id.txt.gz
-else
-  echo "[WARN] Already sorted links file by target page ID"
-fi
+#########################################################
+#  8. Group links per page                              #
+#########################################################
+group_links() {                         # $1 in  $2 col  $3 out
+  [[ -f $3 ]] && { echo "[WARN] $3 exists"; return; }
+  echo; echo "[INFO] Grouping $1"
+  time pigz -dc "$1" | awk -F'\t' -v col="$2" '
+    $col==last {printf "|%s", (col==1?$2:$1); next}
+    NR>1       {print ""}
+                {last=$col; printf "%s\t%s", $col, (col==1?$2:$1)}
+    END        {print ""}' |
+    pigz --fast > "$3.tmp"
+  mv "$3.tmp" "$3"
+}
+group_links links.sorted_by_source_id.txt.gz 1 links.grouped_by_source_id.txt.gz
+group_links links.sorted_by_target_id.txt.gz 2 links.grouped_by_target_id.txt.gz
 
-
-#############################
-#  GROUP SORTED LINKS FILE  #
-#############################
-if [ ! -f links.grouped_by_source_id.txt.gz ]; then
-  echo
-  echo "[INFO] Grouping source links file by source page ID"
-  time pigz -dc links.sorted_by_source_id.txt.gz \
-   | awk -F '\t' '$1==last {printf "|%s",$2; next} NR>1 {print "";} {last=$1; printf "%s\t%s",$1,$2;} END{print "";}' \
-   | pigz --fast > links.grouped_by_source_id.txt.gz.tmp
-  mv links.grouped_by_source_id.txt.gz.tmp links.grouped_by_source_id.txt.gz
-else
-  echo "[WARN] Already grouped source links file by source page ID"
-fi
-
-if [ ! -f links.grouped_by_target_id.txt.gz ]; then
-  echo
-  echo "[INFO] Grouping target links file by target page ID"
-  time pigz -dc links.sorted_by_target_id.txt.gz \
-    | awk -F '\t' '$2==last {printf "|%s",$1; next} NR>1 {print "";} {last=$2; printf "%s\t%s",$2,$1;} END{print "";}' \
-    | gzip > links.grouped_by_target_id.txt.gz
-else
-  echo "[WARN] Already grouped target links file by target page ID"
-fi
-
-
-################################
-# COMBINE GROUPED LINKS FILES  #
-################################
-if [ ! -f links.with_counts.txt.gz ]; then
-  echo
-  echo "[INFO] Combining grouped links files"
-  time python "$ROOT_DIR/combine_grouped_links_files.py" links.grouped_by_source_id.txt.gz links.grouped_by_target_id.txt.gz \
-    | pigz --fast > links.with_counts.txt.gz.tmp
+#########################################################
+#  9. Combine incoming + outgoing + counts              #
+#########################################################
+if [[ ! -f links.with_counts.txt.gz ]]; then
+  echo; echo "[INFO] Combining grouped links"
+  time python "$ROOT_DIR/combine_grouped_links_files.py" \
+       links.grouped_by_source_id.txt.gz links.grouped_by_target_id.txt.gz |
+       pigz --fast > links.with_counts.txt.gz.tmp
   mv links.with_counts.txt.gz.tmp links.with_counts.txt.gz
-else
-  echo "[WARN] Already combined grouped links files"
 fi
 
+#########################################################
+# 10. Build SQLite graph DB                             #
+#########################################################
+if [[ ! -f wiki_graph.sqlite ]]; then
+  echo; echo "[INFO] Creating SQLite DB"
+  time pigz -dc redirects.with_ids.txt.gz | \
+       sqlite3 wiki_graph.sqlite ".read $ROOT_DIR/../schema/createRedirectsTable.sql"
 
-############################
-#  CREATE SQLITE DATABASE  #
-############################
-if [ ! -f wiki_graph.sqlite ]; then
-  echo
-  echo "[INFO] Creating redirects table"
-  time pigz -dc redirects.with_ids.txt.gz | sqlite3 wiki_graph.sqlite ".read $ROOT_DIR/../schema/createRedirectsTable.sql"
+  echo; echo "[INFO] Inserting pages"
+  time pigz -dc pages.pruned.txt.gz | \
+       sqlite3 wiki_graph.sqlite ".read $ROOT_DIR/../schema/createPagesTable.sql"
 
-  echo
-  echo "[INFO] Creating pages table"
-  time pigz -dc pages.pruned.txt.gz | sqlite3 wiki_graph.sqlite ".read $ROOT_DIR/../schema/createPagesTable.sql"
+  echo; echo "[INFO] Inserting links"
+  time pigz -dc links.with_counts.txt.gz | \
+       sqlite3 wiki_graph.sqlite ".read $ROOT_DIR/../schema/createLinksTable.sql"
 
-  echo
-  echo "[INFO] Creating links table"
-  time pigz -dc links.with_counts.txt.gz | sqlite3 wiki_graph.sqlite ".read $ROOT_DIR/../schema/createLinksTable.sql"
-
-  echo
-  echo "[INFO] Compressing SQLite file"
+  echo; echo "[INFO] Compressing DB"
   time pigz --best --keep wiki_graph.sqlite
 else
-  echo "[WARN] Already created SQLite database"
+  echo "[WARN] wiki_graph.sqlite already present"
 fi
 
-
-echo
-echo "[INFO] All done!"
+echo; echo "[INFO] All done!"
