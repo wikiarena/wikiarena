@@ -1,122 +1,120 @@
 #!/usr/bin/env python3
 """
-Efficient version of merge_links.py using DuckDB.
+merge_links.py
+==============
 
-Inputs:
-  1. pages.txt.gz       → page_id, page_namespace, page_title
-  2. linktarget.txt.gz  → lt_id,   lt_namespace,  lt_title
-  3. links.txt.gz       → pl_from, pl_from_namespace, pl_target_id
+Usage (exactly the same bash line you already have):
+  python merge_links.py pages.txt.gz linktarget.txt.gz links.txt.gz | pigz --fast > …
 
-Output:
-  src_id<TAB>tgt_id
+Outputs to *stdout*:
+  src_id<TAB>tgt_id   (no header, uncompressed – the shell pipe compresses it)
+
+DuckDB creates/uses an on-disk file `wiki.duckdb` the first time it runs so the
+65-million-row `pages` table is only materialised once.
 """
-
+from __future__ import annotations
 import duckdb
-import pandas as pd
-import gzip
 import sys
-from pathlib import Path
+import textwrap
+import logging
+import gzip
 
-def load_pages_to_duckdb(con, pages_path: Path):
-    con.execute("CREATE TABLE pages (page_id TEXT, ns TEXT, title TEXT)")
-    total_rows = 0
-    with gzip.open(pages_path, "rt", encoding="utf-8") as f:
-        reader = pd.read_csv(
-            f, sep="\t",
-            names=["page_id", "ns", "title"],
-            usecols=[0, 1, 2],
-            chunksize=100_000
-        )
-        for chunk in reader:
-            con.append("pages", chunk)
-            total_rows += len(chunk)
-            if total_rows % 10_000_000 == 0:
-                print(f"[INFO]   Loaded {total_rows:,} rows into 'pages'", file=sys.stderr)
-    print(f"[INFO]   Finished loading 'pages' with {total_rows:,} rows", file=sys.stderr)
-    con.execute("CREATE INDEX idx_pages_id ON pages(page_id)")
-    con.execute("CREATE INDEX idx_pages_ns_title ON pages(ns, title)")
-    print(f"[INFO]   Created indexes on 'pages'", file=sys.stderr)
+BUF = 4 * 1024 * 1024  # 4 MB CSV buffer
+con = None             # Global connection for interrupt handling
 
-def load_linktargets_to_duckdb(con, ltarget_path: Path):
-    con.execute("CREATE TABLE linktargets (lt_id TEXT, ns TEXT, title TEXT)")
-    total_rows = 0
-    with gzip.open(ltarget_path, "rt", encoding="utf-8") as f:
-        reader = pd.read_csv(
-            f, sep="\t",
-            names=["lt_id", "ns", "title"],
-            usecols=[0, 1, 2],
-            chunksize=100_000
-        )
-        for chunk in reader:
-            con.append("linktargets", chunk)
-            total_rows += len(chunk)
-            if total_rows % 10_000_000 == 0:
-                print(f"[INFO]   Loaded {total_rows:,} rows into 'linktargets'", file=sys.stderr)
-    print(f"[INFO]   Finished loading 'linktargets' with {total_rows:,} rows", file=sys.stderr)
-    con.execute("CREATE INDEX idx_linktargets_id ON linktargets(lt_id)")
-    print(f"[INFO]   Created index on 'linktargets'", file=sys.stderr)
+# ───────────── Logging Setup ─────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
 
-def stream_and_join_links(con, links_path: Path):
-    with gzip.open(links_path, "rt", encoding="utf-8") as fh:
-        for i, line in enumerate(fh, 1):
-            parts = line.strip().split("\t")
-            if len(parts) < 3:
-                continue
-            src_id, _, tgt_lt_id = parts
+def table_exists(con, name):
+    return con.execute(
+        "SELECT 1 FROM information_schema.tables WHERE table_name = ?",
+        [name]
+    ).fetchone() is not None
 
-            try:
-                # Check if src_id exists
-                if not con.execute("SELECT 1 FROM pages WHERE page_id = ?", [src_id]).fetchone():
-                    continue
+def count_lines_gz(path: str) -> int:
+    """Efficiently count number of lines in a .gz file."""
+    logging.info("Counting lines in %s …", path)
+    with gzip.open(path, 'rt', encoding='utf-8') as f:
+        return sum(1 for _ in f)
 
-                # Resolve linktarget → (ns, title)
-                ns_title = con.execute(
-                    "SELECT ns, title FROM linktargets WHERE lt_id = ?",
-                    [tgt_lt_id]
-                ).fetchone()
-                if not ns_title:
-                    continue
+def main() -> None:
+    global con
 
-                # Resolve (ns, title) → tgt_id
-                tgt_id = con.execute(
-                    "SELECT page_id FROM pages WHERE ns = ? AND title = ?",
-                    ns_title
-                ).fetchone()
-                if not tgt_id:
-                    continue
-
-                print(f"{src_id}\t{tgt_id[0]}")
-
-                if i % 1_000_000 == 0:
-                    print(f"[INFO] Processed {i:,} links", file=sys.stderr)
-            except Exception:
-                continue
-
-def main():
     if len(sys.argv) != 4:
-        sys.exit(f"Usage: {sys.argv[0]} pages.txt.gz linktarget.txt.gz links.txt.gz")
+        sys.exit("Usage: merge_links.py pages.txt.gz linktarget.txt.gz links.txt.gz")
 
-    pages_path = Path(sys.argv[1])
-    linktarget_path = Path(sys.argv[2])
-    links_path = Path(sys.argv[3])
+    pages_gz, linktarget_gz, links_gz = sys.argv[1:]
+    logging.info("Opening DuckDB database…")
+    con = duckdb.connect("wiki.duckdb")
 
-    for f in (pages_path, linktarget_path, links_path):
-        if not f.suffix == ".gz":
-            sys.exit(f"[ERROR] Input file {f.name} must be .gz")
+    rebuild_pages = True
 
-    print("[INFO] Connecting to DuckDB …", file=sys.stderr)
-    con = duckdb.connect()
+    # ───────────── Check if pages table matches file row count ─────────────
+    if table_exists(con, "pages"):
+        logging.info("`pages` table exists. Verifying row count…")
+        db_count = con.execute("SELECT COUNT(*) FROM pages").fetchone()[0]
+        file_count = count_lines_gz(pages_gz)
 
-    print("[INFO] Loading pages …", file=sys.stderr)
-    load_pages_to_duckdb(con, pages_path)
+        logging.info("DB rows: %d, File rows: %d", db_count, file_count)
 
-    print("[INFO] Loading linktargets …", file=sys.stderr)
-    load_linktargets_to_duckdb(con, linktarget_path)
+        if db_count == file_count:
+            logging.info("Row count matches. Keeping existing `pages` table.")
+            rebuild_pages = False
+        else:
+            logging.info("Mismatch detected. Rebuilding `pages` table.")
+            con.execute("DROP TABLE pages")
 
-    print("[INFO] Streaming links and writing output …", file=sys.stderr)
-    stream_and_join_links(con, links_path)
+    # ───────────── Create Pages Table ─────────────
+    if rebuild_pages:
+        logging.info("Creating `pages` table from %s …", pages_gz)
+        con.execute(textwrap.dedent(f"""
+            CREATE TABLE pages AS
+            SELECT
+                column0::UBIGINT  AS page_id,
+                column1::INTEGER  AS ns,
+                column2           AS title
+            FROM read_csv_auto('{pages_gz}',
+                               compression='gzip',
+                               header=false,
+                               delim='\\t',
+                               buffer_size={BUF},
+                               sample_size=-1);
+            CREATE UNIQUE INDEX pages_pk        ON pages(page_id);
+            CREATE         INDEX pages_ns_title ON pages(ns, title);
+        """))
+        logging.info("`pages` table created and indexed.")
 
-    print("[INFO] Done.", file=sys.stderr)
-
+    # ───────────── Perform Join and Stream Output ─────────────
+        logging.info("Performing join to generate edge list…")
+    con.execute(textwrap.dedent(f"""
+        COPY (
+            SELECT
+                l.column0       AS src_id,     -- pl_from
+                tgt.page_id     AS tgt_id      -- resolved target page_id
+            FROM read_csv_auto('{links_gz}', compression='gzip', header=false,
+                               delim='\\t', buffer_size={BUF}, sample_size=-1) AS l
+            JOIN read_csv_auto('{linktarget_gz}', compression='gzip', header=false,
+                               delim='\\t', buffer_size={BUF}, sample_size=-1) AS lt
+              ON lt.column0 = l.column2        -- lt_id = pl_target_id
+            JOIN pages AS tgt
+              ON (tgt.ns, tgt.title) = (lt.column1, lt.column2)
+        )
+        TO '/dev/stdout'
+        (DELIMITER '\t', HEADER false, COMPRESSION 'uncompressed');
+    """))
+    logging.info("Join complete. Output written to stdout.")
+    
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        logging.warning("Interrupted by user (CTRL+C). Exiting…")
+        if con is not None:
+            try:
+                con.interrupt()
+            except Exception:
+                pass
+        sys.exit(130)
