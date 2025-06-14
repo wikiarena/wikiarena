@@ -30,7 +30,7 @@ async def navigate(page: str) -> List[Union[types.TextContent, types.EmbeddedRes
     """
     # Use the centralized service to fetch page data
     wiki_service = LiveWikiService(language="en")
-    page_data = await wiki_service.get_page(page, include_all_namespaces=True)
+    page_data = await wiki_service.get_page(page, include_all_namespaces=False)
     
     # Format links for display - preserve exact order
     if page_data.links:

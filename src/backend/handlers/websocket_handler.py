@@ -31,11 +31,11 @@ class WebSocketHandler:
                 "step": move_data.step,
                 "from_page_title": move_data.from_page_title,
                 "to_page_title": move_data.to_page_title,
-                "timestamp": None,  # Move model doesn't have timestamp
+                "timestamp": None,  # Move model doesn't have timestamp (MoveMetrics does tho)
                 "model_response": move_data.model_response
             },
             "game_over": is_game_over,
-            "current_page": game_state_data.current_page.title if game_state_data.current_page else None,
+            "current_page": game_state_data.current_page,
             "steps": game_state_data.steps,
             "status": game_state_data.status.value
         }
@@ -93,7 +93,7 @@ class WebSocketHandler:
             "game_id": event.game_id,
             "optimal_paths": optimal_paths,
             "optimal_path_length": optimal_path_length,
-            "move_quality": move_quality
+            "move_quality": move_quality # TODO(hunter): the frontend should calculate this
         }
         
         await websocket_manager.broadcast_to_game(event.game_id, message)

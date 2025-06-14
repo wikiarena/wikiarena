@@ -4,6 +4,7 @@ import logging
 from typing import Dict, Set, List, Optional, Any
 from fastapi import WebSocket, WebSocketDisconnect
 from datetime import datetime
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +17,8 @@ class GameWebSocketManager:
         # websocket -> game_id for cleanup
         self.connection_games: Dict[WebSocket, str] = {}
         self.lock = asyncio.Lock()
+        # StateCollector will be injected
+        self.state_collector = None
     
     async def connect(self, websocket: WebSocket, game_id: str):
         """Connect a WebSocket to a specific game."""
@@ -30,12 +33,21 @@ class GameWebSocketManager:
         
         logger.info(f"WebSocket connected to game {game_id}. Total connections: {len(self.game_connections[game_id])}")
         
-        # Send initial connection confirmation
+        # Get complete state if state collector is available
+        complete_state = None
+        if self.state_collector:
+            try:
+                complete_state = await self.state_collector.get_complete_state(game_id)
+            except Exception as e:
+                logger.warning(f"Failed to get complete state for game {game_id}: {e}")
+        
+        # Send enhanced connection confirmation with complete state
         await self._send_to_websocket(websocket, {
             "type": "connection_established",
             "game_id": game_id,
             "timestamp": datetime.now().isoformat(),
-            "message": f"Connected to game {game_id}"
+            "message": f"Connected to game {game_id}",
+            "complete_state": complete_state,
         })
     
     async def disconnect(self, websocket: WebSocket):
@@ -89,11 +101,34 @@ class GameWebSocketManager:
                     self.game_connections[game_id].discard(websocket)
                     self.connection_games.pop(websocket, None)
     
+    def _serialize_message(self, message: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert message to a JSON-serializable format."""
+        def convert_value(obj):
+            if isinstance(obj, BaseModel):
+                return obj.model_dump()
+            elif isinstance(obj, datetime):
+                return obj.isoformat()
+            elif hasattr(obj, '__dict__') and hasattr(obj, '__class__'):
+                # Handle enums and other objects with value attribute
+                if hasattr(obj, 'value'):
+                    return obj.value
+                # Handle other objects by converting to dict
+                return obj.__dict__
+            elif isinstance(obj, dict):
+                return {k: convert_value(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_value(item) for item in obj]
+            else:
+                return obj
+        
+        return convert_value(message)
+
     async def _send_to_websocket(self, websocket: WebSocket, message: Dict[str, Any]):
         """Send a message to a specific WebSocket."""
         try:
-            # Try to serialize the message to catch any JSON serialization issues
-            json_str = json.dumps(message)
+            # Convert message to JSON-serializable format
+            serializable_message = self._serialize_message(message)
+            json_str = json.dumps(serializable_message)
             await websocket.send_text(json_str)
         except TypeError as e:
             # Detailed error for JSON serialization issues

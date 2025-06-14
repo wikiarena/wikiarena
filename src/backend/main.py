@@ -50,9 +50,14 @@ async def lifespan(app: FastAPI):
     # Create event handlers with dependencies
     from backend.handlers.websocket_handler import WebSocketHandler
     from backend.handlers.optimal_path_handler import OptimalPathHandler
+    from backend.utils.state_collector import StateCollector
     
     websocket_handler = WebSocketHandler()
     optimal_path_handler = OptimalPathHandler(event_bus, solver)
+    
+    # Create state collector and wire it to websocket manager
+    state_collector = StateCollector(game_coordinator, optimal_path_handler)
+    websocket_manager.state_collector = state_collector
     
     # Register event handlers
     event_bus.subscribe("move_completed", websocket_handler.handle_move_completed)

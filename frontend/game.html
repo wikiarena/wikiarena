@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wiki Arena - Game Viewer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background-color: #0f172a;
+            color: #e2e8f0;
+            overflow: hidden;
+        }
+
+        .app-container {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background-color: #1e293b;
+            padding: 1rem;
+            border-bottom: 1px solid #334155;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .controls {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .btn {
+            background-color: #3b82f6;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            cursor: pointer;
+            font-size: 0.875rem;
+            transition: background-color 0.2s;
+        }
+
+        .btn:hover {
+            background-color: #2563eb;
+        }
+
+        .btn:disabled {
+            background-color: #64748b;
+            cursor: not-allowed;
+        }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #ef4444;
+        }
+
+        .status-indicator.connected {
+            background-color: #10b981;
+        }
+
+        .main-content {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .graph-container {
+            flex: 1;
+            position: relative;
+            background-color: #020617;
+            width: 100%;
+            height: 100%;
+        }
+
+        #graph-canvas {
+            width: 100%;
+            height: 100%;
+            cursor: grab;
+        }
+
+        #graph-canvas:active {
+            cursor: grabbing;
+        }
+
+        .info-panel {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            width: 280px;
+            max-height: calc(100vh - 120px);
+            background-color: rgba(30, 41, 59, 0.95);
+            backdrop-filter: blur(8px);
+            border: 1px solid #334155;
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            overflow-y: auto;
+            z-index: 10;
+            transition: transform 0.3s ease;
+        }
+
+        .info-panel.collapsed {
+            transform: translateX(calc(100% + 1rem));
+        }
+
+        .info-toggle {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background-color: rgba(30, 41, 59, 0.95);
+            backdrop-filter: blur(8px);
+            border: 1px solid #334155;
+            border-radius: 0.375rem;
+            padding: 0.5rem;
+            cursor: pointer;
+            z-index: 11;
+            color: #e2e8f0;
+            font-size: 1.25rem;
+            transition: background-color 0.2s;
+        }
+
+        .info-toggle:hover {
+            background-color: rgba(51, 65, 85, 0.95);
+        }
+
+        .game-info {
+            margin-bottom: 2rem;
+        }
+
+        .game-info h3 {
+            font-size: 1.125rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: #f8fafc;
+        }
+
+        .info-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #334155;
+        }
+
+        .info-item:last-child {
+            border-bottom: none;
+        }
+
+        .info-label {
+            font-weight: 500;
+            color: #94a3b8;
+        }
+
+        .info-value {
+            color: #e2e8f0;
+            font-weight: 600;
+        }
+
+        .moves-list {
+            margin-top: 2rem;
+        }
+
+        .move-item {
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            background-color: #334155;
+            border-radius: 0.375rem;
+            border-left: 4px solid #64748b;
+        }
+
+        .move-item.good {
+            border-left-color: #10b981;
+        }
+
+        .move-item.neutral {
+            border-left-color: #64748b;
+        }
+
+        .move-item.bad {
+            border-left-color: #ef4444;
+        }
+
+        .move-number {
+            font-size: 0.75rem;
+            color: #94a3b8;
+            margin-bottom: 0.25rem;
+        }
+
+        .move-path {
+            font-size: 0.875rem;
+            color: #e2e8f0;
+        }
+
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            font-size: 1.125rem;
+            color: #94a3b8;
+        }
+
+        .error {
+            background-color: #7f1d1d;
+            color: #fecaca;
+            padding: 1rem;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header with controls -->
+        <header class="header">
+            <h1>Wiki Arena - Game Viewer</h1>
+            <div class="controls">
+                <div class="connection-status">
+                    <div class="status-indicator" id="connection-indicator"></div>
+                    <span id="connection-text">Ready to start</span>
+                </div>
+                <button class="btn" id="start-game-btn">Start New Game</button>
+            </div>
+        </header>
+
+        <!-- Main content area -->
+        <main class="main-content">
+            <!-- Graph visualization -->
+            <div class="graph-container">
+                <div class="loading" id="loading-state">
+                    Waiting for game to start...
+                </div>
+                <svg id="graph-canvas" style="display: none;"></svg>
+                
+                <!-- Info panel toggle -->
+                <button class="info-toggle" id="info-toggle" title="Toggle info panel">
+                    📊
+                </button>
+                
+                <!-- Floating info panel -->
+                <aside class="info-panel" id="info-panel">
+                <div class="game-info">
+                    <h3>Game Info</h3>
+                    <div class="info-item">
+                        <span class="info-label">Game ID:</span>
+                        <span class="info-value" id="game-id">-</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Status:</span>
+                        <span class="info-value" id="game-status">Not Started</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Start Page:</span>
+                        <span class="info-value" id="start-page">-</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Target Page:</span>
+                        <span class="info-value" id="target-page">-</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Current Page:</span>
+                        <span class="info-value" id="current-page">-</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Moves:</span>
+                        <span class="info-value" id="move-count">0</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Optimal Distance:</span>
+                        <span class="info-value" id="optimal-distance">-</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Optimal Paths:</span>
+                        <span class="info-value" id="optimal-paths-count">-</span>
+                    </div>
+                </div>
+
+                <div class="moves-list">
+                    <h3>Recent Moves</h3>
+                    <div id="moves-container">
+                        <!-- Moves will be populated here -->
+                    </div>
+                </div>
+            </aside>
+            </div>
+        </main>
+
+        <!-- Error display -->
+        <div class="error" id="error-display" style="display: none;">
+            <span id="error-message"></span>
+        </div>
+    </div>
+
+    <!-- Load our TypeScript modules -->
+    <script type="module" src="./main.ts"></script>
+</body>
+</html> 
