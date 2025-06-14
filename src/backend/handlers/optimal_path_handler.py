@@ -1,6 +1,7 @@
 import asyncio
 import logging
-from typing import Optional
+from typing import Optional, Dict, Any
+from datetime import datetime
 
 from wiki_arena import GameEvent, EventBus
 from wiki_arena.solver import WikiTaskSolver
@@ -18,7 +19,13 @@ class OptimalPathHandler:
     def __init__(self, event_bus: EventBus, solver: WikiTaskSolver): 
         self.event_bus = event_bus
         self.solver = solver
+        # Cache for latest solver results per game
+        self.cache: Dict[str, Dict[str, Any]] = {}
     
+    def get_cached_results(self, game_id: str) -> Optional[Dict[str, Any]]:
+        """Get cached solver results for a game."""
+        return self.cache.get(game_id)
+
     async def handle_move_completed(self, event: GameEvent):
         """Handle move_completed events by triggering parallel task solver."""
         logger.debug(f"Triggering task solver for game {event.game_id}")
@@ -76,6 +83,18 @@ class OptimalPathHandler:
             
             solver_result = await self.solver.find_shortest_path(from_page, to_page)
             
+            # Cache the results
+            self.cache[game_id] = {
+                "optimal_paths": solver_result.paths,
+                "optimal_path_length": solver_result.path_length,
+                "from_page": from_page,
+                "to_page": to_page,
+                "computation_time_ms": solver_result.computation_time_ms,
+                "step": step,
+                "is_initial": is_initial,
+                "timestamp": datetime.now().isoformat()
+            }
+            
             # Prepare event data
             event_data = {
                 "game_id": game_id,
@@ -85,7 +104,7 @@ class OptimalPathHandler:
                 "optimal_path_length": solver_result.path_length,
                 "computation_time_ms": solver_result.computation_time_ms,
                 "step": step,
-                "is_initial": is_initial
+                "is_initial": is_initial # TODO(hunter): some of this information is not needed
             }
             
             # Emit task solver completed event

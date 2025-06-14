@@ -149,7 +149,7 @@ class GameCoordinator:
                     break
                 
                 # Small delay between moves
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(1.0) # TODO(hunter): why??????
                 
         except asyncio.CancelledError:
             logger.info(f"Background game {game_id} cancelled")
