@@ -3,14 +3,13 @@
 merge_links.py
 ==============
 
-Usage (exactly the same bash line you already have):
-  python merge_links.py pages.txt.gz linktarget.txt.gz links.txt.gz | pigz --fast > …
+Usage:
+  python merge_links.py pages.txt.gz linktarget.txt.gz links.txt.gz | pigz --fast > edges.tsv.gz
 
-Outputs to *stdout*:
-  src_id<TAB>tgt_id   (no header, uncompressed – the shell pipe compresses it)
+Output:
+  TSV to stdout: src_id<TAB>tgt_id (no header, uncompressed – pipe to pigz for compression)
 
-DuckDB creates/uses an on-disk file `wiki.duckdb` the first time it runs so the
-65-million-row `pages` table is only materialised once.
+Creates and uses DuckDB on-disk cache `wiki.duckdb`.
 """
 from __future__ import annotations
 import duckdb
@@ -28,7 +27,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 
-def table_exists(con, name):
+def table_exists(con, name: str) -> bool:
     return con.execute(
         "SELECT 1 FROM information_schema.tables WHERE table_name = ?",
         [name]
@@ -40,6 +39,40 @@ def count_lines_gz(path: str) -> int:
     with gzip.open(path, 'rt', encoding='utf-8') as f:
         return sum(1 for _ in f)
 
+def ensure_table_from_file(con, name: str, path: str, columns: str, indexes: list[str]):
+    """Ensure a DuckDB table exists and matches the .gz line count. Recreate if needed."""
+    recreate = True
+    if table_exists(con, name):
+        logging.info("`%s` table exists. Verifying row count…", name)
+        db_count = con.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0]
+        file_count = count_lines_gz(path)
+        logging.info("DB rows: %d, File rows: %d", db_count, file_count)
+        if db_count == file_count:
+            logging.info("Row count matches. Keeping existing `%s` table.", name)
+            recreate = False
+        else:
+            logging.info("Mismatch detected. Rebuilding `%s` table.", name)
+            con.execute(f"DROP TABLE {name}")
+
+    if recreate:
+        logging.info("Creating `%s` table from %s …", name, path)
+        con.execute(textwrap.dedent(f"""
+            CREATE TABLE {name} AS
+            SELECT {columns}
+            FROM read_csv_auto('{path}',
+                               compression='gzip',
+                               header=false,
+                               delim='\\t',
+                               buffer_size={BUF},
+                               sample_size=-1);
+        """))
+        for index in indexes:
+            # Clean up for valid index name
+            index_cols = index.replace("(", "").replace(")", "")
+            index_name = f"{name}_{'_'.join(index_cols.split(', '))}"
+            con.execute(f"CREATE INDEX {index_name} ON {name} ({index_cols})")
+        logging.info("`%s` table created and indexed.", name)
+
 def main() -> None:
     global con
 
@@ -47,48 +80,29 @@ def main() -> None:
         sys.exit("Usage: merge_links.py pages.txt.gz linktarget.txt.gz links.txt.gz")
 
     pages_gz, linktarget_gz, links_gz = sys.argv[1:]
+
     logging.info("Opening DuckDB database…")
     con = duckdb.connect("wiki.duckdb")
 
-    rebuild_pages = True
+    # ───────────── Ensure `pages` and `linktargets` are loaded and indexed ─────────────
+    ensure_table_from_file(
+        con,
+        name="pages",
+        path=pages_gz,
+        columns="column0::UBIGINT AS page_id, column1::INTEGER AS ns, column2 AS title",
+        indexes=["page_id", "(ns, title)"]
+    )
 
-    # ───────────── Check if pages table matches file row count ─────────────
-    if table_exists(con, "pages"):
-        logging.info("`pages` table exists. Verifying row count…")
-        db_count = con.execute("SELECT COUNT(*) FROM pages").fetchone()[0]
-        file_count = count_lines_gz(pages_gz)
+    ensure_table_from_file(
+        con,
+        name="linktargets",
+        path=linktarget_gz,
+        columns="column0::UBIGINT AS lt_id, column1::INTEGER AS ns, column2 AS title",
+        indexes=["lt_id", "(ns, title)"]
+    )
 
-        logging.info("DB rows: %d, File rows: %d", db_count, file_count)
-
-        if db_count == file_count:
-            logging.info("Row count matches. Keeping existing `pages` table.")
-            rebuild_pages = False
-        else:
-            logging.info("Mismatch detected. Rebuilding `pages` table.")
-            con.execute("DROP TABLE pages")
-
-    # ───────────── Create Pages Table ─────────────
-    if rebuild_pages:
-        logging.info("Creating `pages` table from %s …", pages_gz)
-        con.execute(textwrap.dedent(f"""
-            CREATE TABLE pages AS
-            SELECT
-                column0::UBIGINT  AS page_id,
-                column1::INTEGER  AS ns,
-                column2           AS title
-            FROM read_csv_auto('{pages_gz}',
-                               compression='gzip',
-                               header=false,
-                               delim='\\t',
-                               buffer_size={BUF},
-                               sample_size=-1);
-            CREATE UNIQUE INDEX pages_pk        ON pages(page_id);
-            CREATE         INDEX pages_ns_title ON pages(ns, title);
-        """))
-        logging.info("`pages` table created and indexed.")
-
-    # ───────────── Perform Join and Stream Output ─────────────
-        logging.info("Performing join to generate edge list…")
+    # ───────────── Perform Streaming Join ─────────────
+    logging.info("Performing join to generate edge list…")
     con.execute(textwrap.dedent(f"""
         COPY (
             SELECT
@@ -96,17 +110,14 @@ def main() -> None:
                 tgt.page_id     AS tgt_id      -- resolved target page_id
             FROM read_csv_auto('{links_gz}', compression='gzip', header=false,
                                delim='\\t', buffer_size={BUF}, sample_size=-1) AS l
-            JOIN read_csv_auto('{linktarget_gz}', compression='gzip', header=false,
-                               delim='\\t', buffer_size={BUF}, sample_size=-1) AS lt
-              ON lt.column0 = l.column2        -- lt_id = pl_target_id
-            JOIN pages AS tgt
-              ON (tgt.ns, tgt.title) = (lt.column1, lt.column2)
+            JOIN linktargets AS lt ON lt.lt_id = l.column2
+            JOIN pages AS tgt ON (tgt.ns, tgt.title) = (lt.ns, lt.title)
         )
         TO '/dev/stdout'
         (DELIMITER '\t', HEADER false, COMPRESSION 'uncompressed');
     """))
     logging.info("Join complete. Output written to stdout.")
-    
+
 if __name__ == "__main__":
     try:
         main()
