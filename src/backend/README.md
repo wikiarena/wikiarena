@@ -163,7 +163,6 @@ Example task solver update (sent separately):
   "game_id": "random_20250607_140544_e58ea8ce",
   "optimal_paths": [["Mathematics", "Science", "Philosophy"]],
   "optimal_path_length": 3,
-  "move_quality": "improved"
 }
 ```
 
