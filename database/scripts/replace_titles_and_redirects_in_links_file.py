@@ -42,14 +42,14 @@ def main() -> None:
             line = line.rstrip('\n')
             parts = line.split('\t')
             
-            if len(parts) < 3:
-                print(f'[ERROR] Line {line_num} in pages file has only {len(parts)} parts, expected 3', file=sys.stderr)
+            if len(parts) < 4:
+                print(f'[ERROR] Line {line_num} in pages file has only {len(parts)} parts, expected 4', file=sys.stderr)
                 print(f'[ERROR] Problematic line: {repr(line)}', file=sys.stderr)
                 print(f'[ERROR] Parts: {parts}', file=sys.stderr)
                 continue
             
-            page_id, page_title = parts[0], parts[1]
-            # Ignore the third part (we don't need it)
+            page_id, page_ns, page_title, page_is_redirect = parts[0], parts[1], parts[2], parts[3]
+            # Ignore the ns and redirect we don't need them
             all_page_ids.add(page_id)
             page_titles_to_ids[page_title] = page_id
 
@@ -64,13 +64,13 @@ def main() -> None:
             line = line.rstrip('\n')
             parts = line.split('\t')
             
-            if len(parts) < 2:
-                print(f'[ERROR] Line {line_num} in redirects file has only {len(parts)} parts, expected 2', file=sys.stderr)
+            if len(parts) < 3:
+                print(f'[ERROR] Line {line_num} in redirects file has only {len(parts)} parts, expected 3', file=sys.stderr)
                 print(f'[ERROR] Problematic line: {repr(line)}', file=sys.stderr)
                 print(f'[ERROR] Parts: {parts}', file=sys.stderr)
                 continue
             
-            source_page_id, target_page_id = parts[0], parts[1]
+            source_page_id, source_page_ns, target_page_title = parts[0], parts[1], parts[2]
             redirects[source_page_id] = target_page_id
 
     print(f'[INFO] {len(redirects)} redirects loaded', file=sys.stderr)
@@ -86,13 +86,13 @@ def main() -> None:
             line = line.rstrip('\n')
             parts = line.split('\t')
             
-            if len(parts) < 2:
-                print(f'[ERROR] Line {line_num} in links file has only {len(parts)} parts, expected 2', file=sys.stderr)
+            if len(parts) < 3:
+                print(f'[ERROR] Line {line_num} in links file has only {len(parts)} parts, expected 3', file=sys.stderr)
                 print(f'[ERROR] Problematic line: {repr(line)}', file=sys.stderr)
                 print(f'[ERROR] Parts: {parts}', file=sys.stderr)
                 continue
             
-            source_page_id, target_page_id = parts[0], parts[1]
+            source_page_id, sourse_page_ns, target_page_id = parts[0], parts[1], parts[2]
 
             # resolve redirects
             source_page_id = redirects.get(source_page_id, source_page_id)
