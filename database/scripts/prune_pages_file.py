@@ -36,13 +36,13 @@ def main() -> None:
             line = line.rstrip('\n')
             parts = line.split('\t')
             
-            if len(parts) < 3:
-                print(f'[ERROR] Line {line_num} in redirects file has only {len(parts)} parts, expected 3', file=sys.stderr)
+            if len(parts) < 2:
+                print(f'[ERROR] Line {line_num} in redirects file has only {len(parts)} parts, expected 2', file=sys.stderr)
                 print(f'[ERROR] Problematic line: {repr(line)}', file=sys.stderr)
                 print(f'[ERROR] Parts: {parts}', file=sys.stderr)
                 continue
             
-            source_page_id, source_page_ns, target_page_title = parts[0], parts[1], parts[2]
+            source_page_id = parts[0]
             redirects[source_page_id] = True
 
     # Loop through the pages file, ignoring pages which are marked as redirects but which do not have a

@@ -64,13 +64,13 @@ def main() -> None:
             line = line.rstrip('\n')
             parts = line.split('\t')
             
-            if len(parts) < 3:
-                print(f'[ERROR] Line {line_num} in redirects file has only {len(parts)} parts, expected 3', file=sys.stderr)
+            if len(parts) < 2:
+                print(f'[ERROR] Line {line_num} in redirects file has only {len(parts)} parts, expected 2', file=sys.stderr)
                 print(f'[ERROR] Problematic line: {repr(line)}', file=sys.stderr)
                 print(f'[ERROR] Parts: {parts}', file=sys.stderr)
                 continue
             
-            source_page_id, source_page_ns, target_page_title = parts[0], parts[1], parts[2]
+            source_page_id, target_page_id = parts[0], parts[1]
             redirects[source_page_id] = target_page_id
 
     print(f'[INFO] {len(redirects)} redirects loaded', file=sys.stderr)
@@ -86,13 +86,13 @@ def main() -> None:
             line = line.rstrip('\n')
             parts = line.split('\t')
             
-            if len(parts) < 3:
-                print(f'[ERROR] Line {line_num} in links file has only {len(parts)} parts, expected 3', file=sys.stderr)
+            if len(parts) < 2:
+                print(f'[ERROR] Line {line_num} in links file has only {len(parts)} parts, expected 2', file=sys.stderr)
                 print(f'[ERROR] Problematic line: {repr(line)}', file=sys.stderr)
                 print(f'[ERROR] Parts: {parts}', file=sys.stderr)
                 continue
             
-            source_page_id, sourse_page_ns, target_page_id = parts[0], parts[1], parts[2]
+            source_page_id, target_page_id = parts[0], parts[1]
 
             # resolve redirects
             source_page_id = redirects.get(source_page_id, source_page_id)
