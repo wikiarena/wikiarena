@@ -10,7 +10,6 @@ from wiki_arena.mcp_client.client import MCPClient, SSEServerParameters
 # Mark all tests in this file as integration tests
 pytestmark = pytest.mark.integration
 
-
 class TestMCPClientConnection:
     """Test MCP client connection management."""
 
@@ -111,27 +110,29 @@ class TestMCPClientToolDiscovery:
     """Test MCP client tool discovery capabilities."""
 
     @pytest_asyncio.fixture
-    async def connected_client(self):
-        """Create a connected MCP client."""
+    async def client(self):
+        """Create a fresh MCP client for each test."""
         client = MCPClient()
+        yield client
+        # Clean up in fixture to avoid task issues
+        if client._is_connected:
+            try:
+                await client.disconnect()
+            except Exception:
+                # Ignore cleanup errors - common with asyncio teardown
+                pass
+
+    @pytest.mark.asyncio
+    async def test_list_tools_basic(self, client):
+        """Test basic tool listing functionality."""
         server_params = StdioServerParameters(
             command="python",
             args=["-m", "mcp_server.server"],
             env={"PYTHONPATH": "src"}
         )
-        await client.connect(server_params)
-        yield client
-        # Clean up in fixture to avoid task issues
-        try:
-            await client.disconnect()
-        except Exception:
-            # Ignore cleanup errors - common with asyncio teardown
-            pass
 
-    @pytest.mark.asyncio
-    async def test_list_tools_basic(self, connected_client):
-        """Test basic tool listing functionality."""
-        tools_result = await connected_client.list_tools()
+        await client.connect(server_params)
+        tools_result = await client.list_tools()
         
         assert tools_result is not None
         assert hasattr(tools_result, 'tools')
@@ -139,9 +140,15 @@ class TestMCPClientToolDiscovery:
         assert len(tools_result.tools) > 0
 
     @pytest.mark.asyncio
-    async def test_navigate_tool_available(self, connected_client):
+    async def test_navigate_tool_available(self, client):
         """Test that navigate tool is properly discovered."""
-        tools_result = await connected_client.list_tools()
+        server_params = StdioServerParameters(
+            command="python",
+            args=["-m", "mcp_server.server"],
+            env={"PYTHONPATH": "src"}
+        )
+        await client.connect(server_params)
+        tools_result = await client.list_tools()
         
         # Find navigate tool
         navigate_tool = next((tool for tool in tools_result.tools if tool.name == "navigate"), None)
@@ -150,9 +157,15 @@ class TestMCPClientToolDiscovery:
         assert "page" in str(navigate_tool.inputSchema)
 
     @pytest.mark.asyncio
-    async def test_tool_schema_validation(self, connected_client):
+    async def test_tool_schema_validation(self, client):
         """Test that tool schemas are properly structured."""
-        tools_result = await connected_client.list_tools()
+        server_params = StdioServerParameters(
+            command="python",
+            args=["-m", "mcp_server.server"],
+            env={"PYTHONPATH": "src"}
+        )
+        await client.connect(server_params)
+        tools_result = await client.list_tools()
         
         for tool in tools_result.tools:
             # Each tool should have required fields
@@ -164,12 +177,18 @@ class TestMCPClientToolDiscovery:
             assert tool.inputSchema is not None
 
     @pytest.mark.asyncio
-    async def test_multiple_tool_listings(self, connected_client):
+    async def test_multiple_tool_listings(self, client):
         """Test that multiple tool listings return consistent results."""
         # Get tools multiple times
-        tools_result1 = await connected_client.list_tools()
-        tools_result2 = await connected_client.list_tools()
-        tools_result3 = await connected_client.list_tools()
+        server_params = StdioServerParameters(
+            command="python",
+            args=["-m", "mcp_server.server"],
+            env={"PYTHONPATH": "src"}
+        )
+        await client.connect(server_params)
+        tools_result1 = await client.list_tools()
+        tools_result2 = await client.list_tools()
+        tools_result3 = await client.list_tools()
 
         # Should have same number of tools
         assert len(tools_result1.tools) == len(tools_result2.tools)
@@ -186,28 +205,16 @@ class TestMCPClientToolDiscovery:
 class TestMCPClientToolExecution:
     """Test MCP client tool execution capabilities."""
 
-    @pytest_asyncio.fixture
-    async def connected_client(self):
-        """Create a connected MCP client."""
-        client = MCPClient()
+    @pytest.mark.asyncio
+    async def test_successful_tool_execution(self, client):
+        """Test successful tool execution."""
         server_params = StdioServerParameters(
             command="python",
             args=["-m", "mcp_server.server"],
             env={"PYTHONPATH": "src"}
         )
         await client.connect(server_params)
-        yield client
-        # Clean up in fixture to avoid task issues
-        try:
-            await client.disconnect()
-        except Exception:
-            # Ignore cleanup errors - common with asyncio teardown
-            pass
-
-    @pytest.mark.asyncio
-    async def test_successful_tool_execution(self, connected_client):
-        """Test successful tool execution."""
-        result = await connected_client.call_tool("navigate", {"page": "Python (programming language)"})
+        result = await client.call_tool("navigate", {"page": "Python (programming language)"})
         
         assert result is not None
         assert hasattr(result, 'content')
@@ -217,9 +224,15 @@ class TestMCPClientToolExecution:
         assert len(result.content) > 0
 
     @pytest.mark.asyncio
-    async def test_tool_execution_with_error(self, connected_client):
+    async def test_tool_execution_with_error(self, client):
         """Test tool execution that returns an error."""
-        result = await connected_client.call_tool("navigate", {"page": "NonExistentPageXYZ123"})
+        server_params = StdioServerParameters(
+            command="python",
+            args=["-m", "mcp_server.server"],
+            env={"PYTHONPATH": "src"}
+        )
+        await client.connect(server_params)
+        result = await client.call_tool("navigate", {"page": "NonExistentPageXYZ123"})
         
         assert result is not None
         assert hasattr(result, 'isError')
@@ -232,9 +245,15 @@ class TestMCPClientToolExecution:
         assert isinstance(error_content, types.TextContent)
 
     @pytest.mark.asyncio
-    async def test_tool_execution_invalid_tool_name(self, connected_client):
+    async def test_tool_execution_invalid_tool_name(self, client):
         """Test tool execution with non-existent tool."""
-        result = await connected_client.call_tool("nonexistent_tool", {"arg": "value"})
+        server_params = StdioServerParameters(
+            command="python",
+            args=["-m", "mcp_server.server"],
+            env={"PYTHONPATH": "src"}
+        )
+        await client.connect(server_params)
+        result = await client.call_tool("nonexistent_tool", {"arg": "value"})
         
         # MCP returns error results, not exceptions
         assert result is not None
@@ -248,10 +267,16 @@ class TestMCPClientToolExecution:
         assert "Unknown tool" in error_content.text
 
     @pytest.mark.asyncio
-    async def test_tool_execution_invalid_arguments(self, connected_client):
+    async def test_tool_execution_invalid_arguments(self, client):
         """Test tool execution with invalid arguments."""
         # Missing required parameter
-        result = await connected_client.call_tool("navigate", {})
+        server_params = StdioServerParameters(
+            command="python",
+            args=["-m", "mcp_server.server"],
+            env={"PYTHONPATH": "src"}
+        )
+        await client.connect(server_params)
+        result = await client.call_tool("navigate", {})
         
         # MCP returns error results, not exceptions  
         assert result is not None
@@ -265,11 +290,11 @@ class TestMCPClientToolExecution:
         assert "validation error" in error_content.text.lower()
 
     @pytest.mark.asyncio
-    async def test_tool_execution_timeout(self, connected_client):
+    async def test_tool_execution_timeout(self, client):
         """Test tool execution with timeout handling."""
         try:
             result = await asyncio.wait_for(
-                connected_client.call_tool("navigate", {"page": "Python (programming language)"}),
+                client.call_tool("navigate", {"page": "Python (programming language)"}),
                 timeout=30.0
             )
             # If we get here, the tool executed within timeout
@@ -278,13 +303,13 @@ class TestMCPClientToolExecution:
             pytest.fail("Tool execution timed out")
 
     @pytest.mark.asyncio
-    async def test_multiple_concurrent_tool_calls(self, connected_client):
+    async def test_multiple_concurrent_tool_calls(self, client):
         """Test multiple concurrent tool executions."""
         pages = ["Python (programming language)", "JavaScript", "TypeScript"]
         
         # Execute multiple tools concurrently
         tasks = [
-            connected_client.call_tool("navigate", {"page": page})
+            client.call_tool("navigate", {"page": page})
             for page in pages
         ]
         
