@@ -86,14 +86,12 @@ class WebSocketHandler:
         
         optimal_paths = event.data.get("optimal_paths", [])
         optimal_path_length = event.data.get("optimal_path_length", -1)
-        move_quality = event.data.get("move_quality")
         
         message = {
             "type": "OPTIMAL_PATHS_UPDATED",
             "game_id": event.game_id,
             "optimal_paths": optimal_paths,
             "optimal_path_length": optimal_path_length,
-            "move_quality": move_quality # TODO(hunter): the frontend should calculate this
         }
         
         await websocket_manager.broadcast_to_game(event.game_id, message)

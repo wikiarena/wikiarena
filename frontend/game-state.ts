@@ -140,17 +140,6 @@ export class GameStateManager {
       currentOptimalDistance: event.optimal_path_length || null
     };
 
-    // If we have move quality information, update the most recent move
-    if (event.move_quality && this.state.moves.length > 0) {
-      const updatedMoves = [...this.state.moves];
-      const lastMove = updatedMoves[updatedMoves.length - 1];
-      
-      // Add quality to the move (extending the type temporarily)
-      (lastMove as any).quality = event.move_quality;
-      
-      newState.moves = updatedMoves;
-    }
-
     this.updateState(newState);
   }
 

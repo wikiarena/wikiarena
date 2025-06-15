@@ -193,7 +193,7 @@ class TestWebSocketHandler:
         assert data["type"] == "GAME_MOVE_COMPLETED"
         assert data["game_id"] == game_id
         assert data["game_over"] == False
-        assert data["current_page"] == "Programming language"
+        assert data["current_page"]["title"] == "Programming language"
         assert data["steps"] == 1
         assert data["status"] == "in_progress"
         
@@ -267,7 +267,6 @@ class TestWebSocketHandler:
             data={
                 "optimal_paths": [["Python (programming language)", "Programming language", "JavaScript"]],
                 "optimal_path_length": 3,
-                "move_quality": "optimal"
             }
         )
         
@@ -283,7 +282,6 @@ class TestWebSocketHandler:
         assert data["game_id"] == game_id
         assert data["optimal_paths"] == [["Python (programming language)", "Programming language", "JavaScript"]]
         assert data["optimal_path_length"] == 3
-        assert data["move_quality"] == "optimal"
     
     @pytest.mark.asyncio
     async def test_websocket_handler_game_ended_broadcast(

@@ -60,7 +60,6 @@ export interface OptimalPathsUpdatedEvent extends BaseGameEvent {
   current_page?: string;
   target_page?: string;
   optimal_paths: string[][];
-  move_quality?: 'good' | 'neutral' | 'bad' | null;
   optimal_path_length?: number;
 }
 
