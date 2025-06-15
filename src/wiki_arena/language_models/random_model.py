@@ -28,9 +28,8 @@ class RandomModel(LanguageModel):
         Generates a response by randomly selecting a link.
         """
 
-        # TODO(hunter): add a random delay here
         start_time = time.time()
-        time.sleep(1.0)
+        time.sleep(0.5)
         end_time = time.time()
 
         # Create zero metrics since this is not a real API call
