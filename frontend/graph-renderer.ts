@@ -213,7 +213,6 @@ export class GraphRenderer {
         const oldType = existingNode.type;
         if (oldType === 'start' || oldType === 'target') {
           if (defaultType !== 'start' && defaultType !== 'target') {
-            console.log(`🛡️ Graph: Protecting ${oldType} node "${pageTitle}" from type change to ${defaultType}`);
             // Keep the special type, don't downgrade it
           } else {
             existingNode.type = defaultType;
@@ -257,19 +256,7 @@ export class GraphRenderer {
 
     // Add start node (highest priority)
     if (gameState.startPage && typeof gameState.startPage === 'string') {
-      console.log('🏁 Graph: Processing start node for:', gameState.startPage);
-      const normalizedStartId = normalizeTitle(gameState.startPage);
-      console.log('🏁 Graph: Start node normalized ID:', normalizedStartId);
-      console.log('🏁 Graph: Existing nodeMap has start node?', this.nodeMap.has(normalizedStartId));
-      
-      const startNode = getOrCreateNode(gameState.startPage, 'start');
-      console.log('🏁 Graph: Start node result:', {
-        id: startNode.id, 
-        title: startNode.title, 
-        type: startNode.type,
-        x: startNode.x,
-        y: startNode.y
-      });
+      getOrCreateNode(gameState.startPage, 'start');
     } else {
       console.warn('⚠️ Graph: No valid start page found:', gameState.startPage);
     }
