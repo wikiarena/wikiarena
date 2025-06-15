@@ -5,7 +5,7 @@ import { GameState, GraphNode, GraphEdge, GraphData } from './types.js';
 // Configuration
 // =============================================================================
 
-const MAX_OPTIMAL_PATHS_TO_RENDER = 5; // Limit for performance
+const MAX_OPTIMAL_PATHS_TO_RENDER = 2; // Limit for performance
 
 // =============================================================================
 // Graph Renderer - D3.js visualization for Wiki Arena games
@@ -23,11 +23,10 @@ export class GraphRenderer {
   private edgeGroup!: d3.Selection<SVGGElement, unknown, null, undefined>;
   private pathGroup!: d3.Selection<SVGGElement, unknown, null, undefined>;
   
-  // Current graph data
+  // Current graph data - maintain stable references
   private nodes: GraphNode[] = [];
   private edges: GraphEdge[] = [];
-  private optimalPathNodes: GraphNode[] = [];
-  private optimalPathEdges: GraphEdge[] = [];
+  private nodeMap: Map<string, GraphNode> = new Map(); // For object constancy
 
   // Zoom behavior
   private zoom!: d3.ZoomBehavior<SVGSVGElement, unknown>;
@@ -159,21 +158,36 @@ export class GraphRenderer {
     // Build unified graph data including optimal paths
     const graphData = this.buildUnifiedGraphData(gameState);
     
-    // Update the visualization
-    this.updateGraph(graphData);
+    // Update the visualization with object constancy
+    this.updateGraphWithConstancy(graphData);
   }
 
   private buildUnifiedGraphData(gameState: GameState): GraphData {
-    const nodeMap = new Map<string, GraphNode>();
+    const tempNodeMap = new Map<string, GraphNode>();
     const edges: GraphEdge[] = [];
 
     // Helper function to normalize page titles for consistent matching
+    // Based on Wikipedia's actual title handling and wiki_helpers.py
     const normalizeTitle = (title: string | undefined | null): string => {
       if (!title || typeof title !== 'string') {
         console.warn('⚠️ Graph: Invalid title passed to normalizeTitle:', title);
         return 'unknown-page';
       }
-      return title.trim().toLowerCase(); // Case-insensitive matching
+      
+      // Step 1: Basic cleanup
+      let normalized = title.trim();
+      
+      // Step 2: Replace spaces with underscores (Wikipedia internal format)
+      normalized = normalized.replace(/\s+/g, '_');
+      
+      // Step 3: Wikipedia's case rule: First character case-sensitive, rest case-insensitive
+      // This means "Computer Science" and "Computer science" should both become "Computer_science"
+      if (normalized.length > 0) {
+        // Keep first character as-is, lowercase the rest
+        normalized = normalized.charAt(0) + normalized.slice(1).toLowerCase();
+      }
+      
+      return normalized;
     };
 
     console.log('🔍 Graph: Building unified graph data');
@@ -181,7 +195,7 @@ export class GraphRenderer {
     console.log('🔍 Target page:', gameState.targetPage);
     console.log('🔍 Optimal paths:', gameState.optimalPaths);
 
-    // Helper function to get or create a node
+    // Helper function to get or create a node with object constancy
     const getOrCreateNode = (pageTitle: string, defaultType: GraphNode['type']): GraphNode => {
       // Validate input
       if (!pageTitle || typeof pageTitle !== 'string') {
@@ -191,28 +205,73 @@ export class GraphRenderer {
       
       const normalizedTitle = normalizeTitle(pageTitle);
       
-      if (nodeMap.has(normalizedTitle)) {
-        return nodeMap.get(normalizedTitle)!;
+      // Check if we already have this node in our stable nodeMap
+      if (this.nodeMap.has(normalizedTitle)) {
+        const existingNode = this.nodeMap.get(normalizedTitle)!;
+        
+        // IMPORTANT: Don't override special node types (start/target) with regular types
+        const oldType = existingNode.type;
+        if (oldType === 'start' || oldType === 'target') {
+          if (defaultType !== 'start' && defaultType !== 'target') {
+            console.log(`🛡️ Graph: Protecting ${oldType} node "${pageTitle}" from type change to ${defaultType}`);
+            // Keep the special type, don't downgrade it
+          } else {
+            existingNode.type = defaultType;
+          }
+        } else {
+          existingNode.type = defaultType;
+        }
+        
+        // Update other properties but preserve position
+        existingNode.title = pageTitle; // Keep original title for display
+        tempNodeMap.set(normalizedTitle, existingNode);
+        
+        if (oldType !== existingNode.type) {
+          console.log(`🔄 Graph: Node type changed: "${pageTitle}" ${oldType} -> ${existingNode.type}`);
+        }
+        
+        return existingNode;
       }
       
+      // Create new node with initial positioning
       const node: GraphNode = {
         id: normalizedTitle,
         title: pageTitle, // Keep original title for display
         type: defaultType,
         // Set initial positions for start/target nodes
-        x: defaultType === 'start' || defaultType === 'target' ? this.width * 0.5 : undefined,
-        y: defaultType === 'start' ? this.height * 0.15 : // Top center with padding
-           defaultType === 'target' ? this.height * 0.85 : // Bottom center with padding
-           undefined
+        x: defaultType === 'start' || defaultType === 'target' ? this.width * 0.5 : 
+           this.getNewNodePosition().x,
+        y: defaultType === 'start' ? 40 : // Top center with padding from top edge
+           defaultType === 'target' ? this.height - 40 : // Bottom center with padding from bottom edge
+           this.getNewNodePosition().y,
+        // Set fixed positions for pinning in force simulation
+        fx: defaultType === 'start' || defaultType === 'target' ? this.width * 0.5 : undefined,
+        fy: defaultType === 'start' ? 40 : // Fix start node at top
+            defaultType === 'target' ? this.height - 40 : undefined
       };
       
-      nodeMap.set(normalizedTitle, node);
+      tempNodeMap.set(normalizedTitle, node);
+      console.log(`➕ Graph: Created new node: "${pageTitle}" (${normalizedTitle}) type: ${defaultType}`);
       return node;
     };
 
     // Add start node (highest priority)
     if (gameState.startPage && typeof gameState.startPage === 'string') {
-      getOrCreateNode(gameState.startPage, 'start');
+      console.log('🏁 Graph: Processing start node for:', gameState.startPage);
+      const normalizedStartId = normalizeTitle(gameState.startPage);
+      console.log('🏁 Graph: Start node normalized ID:', normalizedStartId);
+      console.log('🏁 Graph: Existing nodeMap has start node?', this.nodeMap.has(normalizedStartId));
+      
+      const startNode = getOrCreateNode(gameState.startPage, 'start');
+      console.log('🏁 Graph: Start node result:', {
+        id: startNode.id, 
+        title: startNode.title, 
+        type: startNode.type,
+        x: startNode.x,
+        y: startNode.y
+      });
+    } else {
+      console.warn('⚠️ Graph: No valid start page found:', gameState.startPage);
     }
 
     // Add target node (highest priority)
@@ -272,7 +331,7 @@ export class GraphRenderer {
           
           // Get or create node (but don't override start/target/move types)
           const normalizedPage = normalizeTitle(page);
-          const existingNode = nodeMap.get(normalizedPage);
+          const existingNode = tempNodeMap.get(normalizedPage);
           if (!existingNode) {
             getOrCreateNode(page, 'optimal_path');
           }
@@ -299,59 +358,106 @@ export class GraphRenderer {
     }
 
     return { 
-      nodes: Array.from(nodeMap.values()), 
+      nodes: Array.from(tempNodeMap.values()), 
       edges 
     };
   }
 
   // =============================================================================
-  // Graph Rendering
+  // Object Constancy - Smooth Updates
   // =============================================================================
 
-  private updateGraph(graphData: GraphData): void {
-    this.nodes = graphData.nodes;
+  private updateGraphWithConstancy(graphData: GraphData): void {
+    console.log('🔄 Graph: Updating with object constancy');
+    
+    // Identify new nodes for smooth animation
+    const newNodeIds = new Set<string>();
+    const currentNodeIds = new Set(this.nodes.map(n => n.id));
+    
+    graphData.nodes.forEach(node => {
+      if (!currentNodeIds.has(node.id)) {
+        newNodeIds.add(node.id);
+        console.log('➕ New node detected:', node.title);
+      }
+    });
+
+    // Update our stable node map and arrays
+    this.updateStableNodeReferences(graphData);
+
+    // Update edges
     this.edges = graphData.edges;
 
-    // Update simulation if needed
-    this.updateSimulation();
-
-    // Render edges first (they go behind nodes)
+    // Render with constancy - existing nodes maintain positions
+    this.renderNodesWithConstancy(newNodeIds);
     this.renderEdges();
 
-    // Render nodes on top
-    this.renderNodes();
+    // Only apply gentle simulation to new nodes
+    this.applyGentleSimulation(newNodeIds);
   }
 
-  private updateSimulation(): void {
-    // Create or update force simulation
-    this.simulation = d3.forceSimulation(this.nodes)
-      .force('link', d3.forceLink(this.edges)
-        .id((d: any) => d.id)
-        .distance(120)
-        .strength(0.6))
-      .force('charge', d3.forceManyBody()
-        .strength(-400))
-      .force('center', d3.forceCenter(this.width / 2, this.height / 2))
-      .force('collision', d3.forceCollide(35));
+  private updateStableNodeReferences(graphData: GraphData): void {
+    // Create new node map from incoming data
+    const newNodeMap = new Map<string, GraphNode>();
+    
+    graphData.nodes.forEach(newNode => {
+      if (this.nodeMap.has(newNode.id)) {
+        // Keep existing node but update properties (preserve position)
+        const existingNode = this.nodeMap.get(newNode.id)!;
+        existingNode.title = newNode.title;
+        existingNode.type = newNode.type;
+        existingNode.moveNumber = newNode.moveNumber;
+        existingNode.quality = newNode.quality;
+        // Don't update x, y, fx, fy - preserve positions for constancy
+        newNodeMap.set(newNode.id, existingNode);
+      } else {
+        // New node - use the provided positioning
+        newNodeMap.set(newNode.id, newNode);
+      }
+    });
 
-    // Restart simulation
-    this.simulation.alpha(0.8).restart();
+    // Update our stable references
+    this.nodeMap = newNodeMap;
+    this.nodes = Array.from(newNodeMap.values());
   }
 
-  private renderNodes(): void {
-    // Bind data to node elements
+  private getNewNodePosition(): { x: number; y: number } {
+    // Position new nodes near the center with some randomness
+    // They'll be animated to their proper position by the gentle simulation
+    const centerX = this.width / 2;
+    const centerY = this.height / 2;
+    const spread = 100;
+    
+    return {
+      x: centerX + (Math.random() - 0.5) * spread,
+      y: centerY + (Math.random() - 0.5) * spread
+    };
+  }
+
+  private renderNodesWithConstancy(newNodeIds: Set<string>): void {
+    // Debug: Check if start node is in our nodes array
+    const startNodes = this.nodes.filter(n => n.type === 'start');
+    console.log(`🎨 Graph: Rendering ${this.nodes.length} nodes, including ${startNodes.length} start nodes:`, 
+                startNodes.map(n => `${n.title} (${n.id})`));
+    
+    // Bind data to node elements with stable key function
     const nodeSelection = this.nodeGroup
       .selectAll<SVGGElement, GraphNode>('.node')
       .data(this.nodes, (d: GraphNode) => d.id);
 
-    // Remove exiting nodes
-    nodeSelection.exit().remove();
+    // Remove exiting nodes with smooth transition
+    nodeSelection.exit()
+      .transition()
+      .duration(300)
+      .style('opacity', 0)
+      .remove();
 
     // Create new node groups
     const nodeEnter = nodeSelection.enter()
       .append('g')
       .attr('class', 'node')
       .style('cursor', 'pointer')
+      .style('opacity', 0) // Start invisible for smooth fade-in
+      .attr('transform', (d: GraphNode) => `translate(${d.x},${d.y})`)
       .call(this.setupNodeInteractions.bind(this));
 
     // Add circles to new nodes
@@ -360,10 +466,17 @@ export class GraphRenderer {
     // Add labels to new nodes
     nodeEnter.append('text');
 
+    // Animate new nodes in
+    nodeEnter
+      .filter((d: GraphNode) => newNodeIds.has(d.id))
+      .transition()
+      .duration(500)
+      .style('opacity', 1);
+
     // Merge enter and update selections
     const nodeUpdate = nodeEnter.merge(nodeSelection);
 
-    // Update circle properties
+    // Update circle properties (no transition for existing nodes)
     nodeUpdate.select('circle')
       .attr('r', (d: GraphNode) => this.getNodeRadius(d))
       .attr('fill', (d: GraphNode) => this.getNodeColor(d))
@@ -381,18 +494,84 @@ export class GraphRenderer {
       .style('font-weight', 'bold')
       .style('text-shadow', '1px 1px 2px rgba(0,0,0,0.8)');
 
-    // Set up force simulation tick
-    if (this.simulation) {
-      this.simulation.on('tick', () => {
-        // Update node positions
-        nodeUpdate
-          .attr('transform', (d: GraphNode) => `translate(${d.x},${d.y})`);
-
-        // Update edge positions
-        this.updateEdgePositions();
-      });
-    }
+    // Ensure existing nodes remain visible
+    nodeUpdate
+      .filter((d: GraphNode) => !newNodeIds.has(d.id))
+      .style('opacity', 1);
   }
+
+  private applyGentleSimulation(newNodeIds: Set<string>): void {
+    // Only restart simulation if we have new nodes or no simulation exists
+    if (newNodeIds.size === 0 && this.simulation) {
+      return; // No new nodes, no need to restart simulation
+    }
+
+    console.log('🔄 Applying gentle simulation for', newNodeIds.size, 'new nodes');
+
+    // Create or update force simulation with reduced intensity
+    this.simulation = d3.forceSimulation(this.nodes)
+      .force('link', d3.forceLink(this.edges)
+        .id((d: any) => d.id)
+        .distance(120)
+        .strength(0.3)) // Reduced strength for gentler movement
+      .force('charge', d3.forceManyBody()
+        .strength(-200)) // Reduced repulsion
+      .force('center', d3.forceCenter(this.width / 2, this.height / 2))
+      .force('collision', d3.forceCollide(35))
+      // Gentle positioning forces
+      .force('position', d3.forceX().strength((d: any) => {
+        // Strong constraint for start/target, weak for existing nodes, medium for new
+        if (d.type === 'start' || d.type === 'target') return 0.8;
+        if (newNodeIds.has(d.id)) return 0.1; // Gentle pull for new nodes
+        return 0.01; // Very weak for existing nodes
+      }).x(this.width / 2))
+      .force('positionY', d3.forceY().strength((d: any) => {
+        if (d.type === 'start' || d.type === 'target') return 1.0;
+        if (newNodeIds.has(d.id)) return 0.1; // Gentle pull for new nodes
+        return 0.01; // Very weak for existing nodes
+      }).y((d: any) => {
+        if (d.type === 'start') return 40;
+        if (d.type === 'target') return this.height - 40;
+        return this.height / 2;
+      }));
+
+    // Set up tick handler with gentle movement
+    this.simulation.on('tick', () => {
+      // Enforce fixed positions for special nodes
+      this.nodes.forEach(node => {
+        if (node.type === 'target') {
+          node.x = this.width / 2;
+          node.y = this.height - 40;
+          node.fx = this.width / 2;
+          node.fy = this.height - 40;
+        } else if (node.type === 'start') {
+          node.x = this.width / 2;
+          node.y = 40;
+          node.fx = this.width / 2;
+          node.fy = 40;
+        }
+      });
+      
+      // Smooth position updates
+      this.nodeGroup.selectAll<SVGGElement, GraphNode>('.node')
+        .attr('transform', (d: GraphNode) => `translate(${d.x},${d.y})`);
+
+      // Update edge positions
+      this.updateEdgePositions();
+    });
+
+    // Gentle restart - lower alpha for smoother movement
+    this.simulation.alpha(0.3).restart();
+    
+    // Stop simulation sooner to reduce unnecessary movement
+    this.simulation.on('end', () => {
+      console.log('✅ Gentle simulation completed');
+    });
+  }
+
+  // =============================================================================
+  // Graph Rendering
+  // =============================================================================
 
   private renderEdges(): void {
     // Bind data to edge elements
@@ -543,19 +722,6 @@ export class GraphRenderer {
     console.log('Clicked node:', node.title, node.type);
   }
 
-  // =============================================================================
-  // Utility Methods
-  // =============================================================================
-
-  private findNodeById(id: string): GraphNode | undefined {
-    return this.nodes.find(n => n.id === id) || 
-           this.optimalPathNodes.find(n => n.id === id);
-  }
-
-  private truncateLabel(text: string, maxLength: number): string {
-    if (text.length <= maxLength) return text;
-    return text.substring(0, maxLength - 3) + '...';
-  }
 
   // =============================================================================
   // Public API
@@ -567,8 +733,7 @@ export class GraphRenderer {
     this.pathGroup.selectAll('*').remove();
     this.nodes = [];
     this.edges = [];
-    this.optimalPathNodes = [];
-    this.optimalPathEdges = [];
+    this.nodeMap.clear(); // Clear stable references
     
     if (this.simulation) {
       this.simulation.stop();
@@ -596,10 +761,14 @@ export class GraphRenderer {
       this.nodes.forEach(node => {
         if (node.type === 'start') {
           node.x = this.width * 0.5;
-          node.y = this.height * 0.15;
+          node.y = 40;
+          node.fx = this.width * 0.5; // Update fixed x position
+          node.fy = 40; // Update fixed y position
         } else if (node.type === 'target') {
           node.x = this.width * 0.5;
-          node.y = this.height * 0.85;
+          node.y = this.height - 40;
+          node.fx = this.width * 0.5; // Update fixed x position
+          node.fy = this.height - 40; // Update fixed y position
         } else if (node.x !== undefined && node.y !== undefined && oldWidth > 0 && oldHeight > 0) {
           // Scale other nodes proportionally
           node.x = (node.x / oldWidth) * this.width;
@@ -641,13 +810,11 @@ export class GraphRenderer {
   }
 
   private getGraphBounds(): { minX: number; maxX: number; minY: number; maxY: number } {
-    const allNodes = [...this.nodes, ...this.optimalPathNodes];
-    
     return {
-      minX: Math.min(...allNodes.map(n => n.x || 0)),
-      maxX: Math.max(...allNodes.map(n => n.x || 0)),
-      minY: Math.min(...allNodes.map(n => n.y || 0)),
-      maxY: Math.max(...allNodes.map(n => n.y || 0))
+      minX: Math.min(...this.nodes.map(n => n.x || 0)),
+      maxX: Math.max(...this.nodes.map(n => n.x || 0)),
+      minY: Math.min(...this.nodes.map(n => n.y || 0)),
+      maxY: Math.max(...this.nodes.map(n => n.y || 0))
     };
   }
 }

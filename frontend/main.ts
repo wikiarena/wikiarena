@@ -185,7 +185,7 @@ class WikiArenaApp {
     
     // Add the random model for testing
     const gameRequest = {
-      start_page: 'Computer Science',
+      start_page: 'Computer science',
       target_page: 'Philosophy',
       model_name: 'random',
       model_provider: 'random',

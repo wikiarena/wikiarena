@@ -118,9 +118,7 @@ export class UIController {
       ['current-page', state.currentPage || '-'],
       ['move-count', state.totalMoves.toString()],
       ['optimal-distance', state.currentOptimalDistance?.toString() || '-'],
-      ['optimal-paths-count', state.optimalPaths.length > 0 ? 
-        (state.optimalPaths.length > 5 ? `${state.optimalPaths.length} (showing 5)` : state.optimalPaths.length.toString()) : 
-        '-']
+      ['optimal-paths-count', state.optimalPaths.length > 0 ? state.optimalPaths.length.toString() : '-']
     ];
 
     updates.forEach(([elementId, value]) => {

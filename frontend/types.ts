@@ -124,6 +124,8 @@ export interface GraphNode {
   type: 'start' | 'target' | 'move' | 'optimal_path';
   x?: number;
   y?: number;
+  fx?: number; // Fixed x position for D3 force simulation
+  fy?: number; // Fixed y position for D3 force simulation
   moveNumber?: number;
   quality?: 'good' | 'neutral' | 'bad';
 }
