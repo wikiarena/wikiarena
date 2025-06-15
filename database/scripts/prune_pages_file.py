@@ -52,16 +52,16 @@ def main() -> None:
             line = line.rstrip('\n')
             parts = line.split('\t')
             
-            if len(parts) < 3:
-                print(f'[ERROR] Line {line_num} in pages file has only {len(parts)} parts, expected 3', file=sys.stderr)
+            if len(parts) < 4:
+                print(f'[ERROR] Line {line_num} in pages file has only {len(parts)} parts, expected 4', file=sys.stderr)
                 print(f'[ERROR] Problematic line: {repr(line)}', file=sys.stderr)
                 print(f'[ERROR] Parts: {parts}', file=sys.stderr)
                 continue
             
-            page_id, page_title, is_redirect = parts[0], parts[1], parts[2]
+            page_id, page_namespace, page_title, is_redirect = parts[0], parts[1], parts[2], parts[3]
 
             if is_redirect == '0' or page_id in redirects:
-                print(f'{page_id}\t{page_title}\t{is_redirect}')
+                print(f'{page_id}\t{page_namespace}\t{page_title}\t{is_redirect}')
 
 if __name__ == '__main__':
     main()

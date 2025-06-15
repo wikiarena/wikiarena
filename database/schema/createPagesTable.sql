@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS pages
 (
   id INTEGER PRIMARY KEY,
+  namespace INTEGER NOT NULL,
   title TEXT NOT NULL,
   is_redirect INTEGER NOT NULL 
 );
