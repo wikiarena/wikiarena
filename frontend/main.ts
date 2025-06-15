@@ -175,21 +175,90 @@ class WikiArenaApp {
     }
   }
 
+  public async handleStartCustomGame(startPage: string, targetPage: string): Promise<void> {
+    console.log(`🎲 User requested custom game: ${startPage} -> ${targetPage}`);
+
+    // Show loading state
+    this.uiController.showGameStarting();
+    this.uiController.setButtonLoading('start-game-btn', true, 'Starting...');
+
+    try {
+      // Make API call to start custom game
+      const response = await this.startCustomGame(startPage, targetPage);
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('✅ Custom game started:', data);
+        
+        // Extract game ID from response
+        const gameId = data.game_id;
+        if (!gameId) {
+          throw new Error('No game ID returned from server');
+        }
+        
+        // Reset game state for new game
+        this.gameStateManager.reset();
+        
+        // Connect to game-specific WebSocket
+        const gameWebSocketUrl = `ws://localhost:8000/api/games/${gameId}/ws`;
+        this.websocketClient.updateUrl(gameWebSocketUrl);
+        this.websocketClient.connect();
+        
+        console.log(`🔌 Connecting to custom game WebSocket: ${gameWebSocketUrl}`);
+      } else {
+        const errorText = await response.text();
+        throw new Error(`Failed to start custom game: ${response.status} - ${errorText}`);
+      }
+    } catch (error) {
+      console.error('❌ Failed to start custom game:', error);
+      this.uiController.showError(`Failed to start custom game: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      this.uiController.updateLoadingState('Click "Start New Game" to try again');
+    } finally {
+      this.uiController.setButtonLoading('start-game-btn', false);
+    }
+  }
+
   // =============================================================================
   // API Calls
   // =============================================================================
+
+  private async startCustomGame(startPage: string, targetPage: string): Promise<Response> {
+    const apiUrl = 'http://localhost:8000/api/games?background=true';
+    
+    const gameRequest = {
+      task_strategy: {
+        type: 'custom',
+        start_page: startPage,
+        target_page: targetPage
+      },
+      model_name: 'random',
+      model_provider: 'random',
+      max_steps: 10
+    };
+    
+    return fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(gameRequest)
+    });
+  }
 
   private async startNewGame(request: StartGameRequest = {}): Promise<Response> {
     // Use the correct backend API endpoint structure with background query parameter
     const apiUrl = 'http://localhost:8000/api/games?background=true'; // Background as query param
     
-    // Add the random model for testing
+    // Create a game request with random task selection strategy
     const gameRequest = {
-      start_page: 'Computer science',
-      target_page: 'Philosophy',
+      task_strategy: {
+        type: 'random',
+        language: 'en',
+        max_retries: 3
+      },
       model_name: 'random',
       model_provider: 'random',
-      max_steps: 5, // Reduced for testing
+      max_steps: 10, // Reduced for testing
       ...request
     };
     
@@ -263,6 +332,7 @@ function initializeApp(): void {
       app,
       debug: () => app?.debug(),
       startGame: () => app?.handleStartGame(),
+      startCustomGame: (start: string, target: string) => app?.handleStartCustomGame(start, target),
       centerGraph: () => app?.centerGraph(),
       clearGraph: () => app?.clearGraph()
     };

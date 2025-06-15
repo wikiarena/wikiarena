@@ -10,6 +10,7 @@ from wiki_arena.language_models import create_model
 from wiki_arena.mcp_client.client import MCPClient
 
 from backend.models.api_models import StartGameRequest, StartGameResponse
+from backend.services.task_selector_service import task_selector_service
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,16 @@ class GameCoordinator:
         
     async def start_game(self, request: StartGameRequest, background: bool = False) -> StartGameResponse:
         """Start a new game and optionally run it in the background."""
-        logger.info(f"Starting game: {request.start_page} -> {request.target_page}")
+        logger.info(f"Starting game with strategy: {request.task_strategy.type}")
+        
+        # Select task using the specified strategy
+        task = await task_selector_service.select_task(request.task_strategy)
+        logger.debug(f"Task selection result: {task} (type: {type(task)})")
+        
+        if not task:
+            raise ValueError("Failed to select a valid task")
+        
+        logger.info(f"Selected task: {task.start_page_title} -> {task.target_page_title}")
         
         # Create model configuration
         model = create_model(request.model_provider)
@@ -46,8 +56,8 @@ class GameCoordinator:
         
         # Create game configuration
         game_config = GameConfig(
-            start_page_title=request.start_page,
-            target_page_title=request.target_page,
+            start_page_title=task.start_page_title,
+            target_page_title=task.target_page_title,
             max_steps=request.max_steps,
             model=model.model_config
         )
@@ -65,8 +75,8 @@ class GameCoordinator:
         
         # Start background execution if requested
         if background:
-            task = asyncio.create_task(self._run_game_background(initial_state.game_id))
-            self.background_tasks[initial_state.game_id] = task
+            background_task = asyncio.create_task(self._run_game_background(initial_state.game_id))
+            self.background_tasks[initial_state.game_id] = background_task
             
         # Emit game_started event
         await self.event_bus.publish(GameEvent(
@@ -75,10 +85,18 @@ class GameCoordinator:
             data={"game_state": initial_state}
         ))
         
+        # Get task strategy info for response
+        task_info = task_selector_service.get_strategy_info(request.task_strategy)
+        task_info.update({
+            "start_page": task.start_page_title,
+            "target_page": task.target_page_title
+        })
+        
         logger.info(f"Game {initial_state.game_id} started successfully")
         return StartGameResponse(
             game_id=initial_state.game_id,
-            message="Game started successfully"
+            message="Game started successfully",
+            task_info=task_info
         )
     
     async def get_game_state(self, game_id: str) -> Optional[GameState]:
