@@ -1,5 +1,5 @@
 import * as d3 from "d3";
-import { GameState, GraphNode, GraphEdge, GraphData } from './types.js';
+import { GameState, GraphNode, GraphEdge, GraphData, Move } from './types.js';
 
 // =============================================================================
 // Configuration
@@ -280,7 +280,11 @@ export class GraphRenderer {
       // Create or update destination node
       const destNode = getOrCreateNode(move.to_page_title, 'move');
       destNode.moveNumber = move.step;
-      destNode.quality = (move as any).quality || 'neutral';
+      
+      // Initially set quality as unknown until we can calculate it from optimal paths
+      if (!destNode.qualityCalculated) {
+        destNode.quality = 'unknown';
+      }
 
       // Add edge for this move (using normalized titles for references)
       edges.push({
@@ -344,11 +348,109 @@ export class GraphRenderer {
       });
     }
 
+    // Update distance information and calculate move qualities
+    this.updateDistancesAndMoveQualities(Array.from(tempNodeMap.values()), gameState);
+
     return { 
       nodes: Array.from(tempNodeMap.values()), 
       edges 
     };
   }
+
+  // =============================================================================
+  // Move Quality Calculation
+  // =============================================================================
+
+  private updateDistancesAndMoveQualities(nodes: GraphNode[], gameState: GameState): void {
+    // Set target node distance to 0
+    const targetNode = nodes.find(n => n.type === 'target');
+    if (targetNode) {
+      targetNode.distanceToTarget = 0;
+    }
+
+    // Set start node distance based on optimal path length
+    const startNode = nodes.find(n => n.type === 'start');
+    if (startNode && gameState.optimalPaths && gameState.optimalPaths.length > 0) {
+      const shortestPathLength = Math.min(...gameState.optimalPaths.map(path => path.length));
+      startNode.distanceToTarget = shortestPathLength - 1; // -1 because path includes both start and target
+      console.log(`📏 Start node distance: ${startNode.title} = ${startNode.distanceToTarget} steps to target`);
+    }
+
+        // Update distances based on optimal paths
+    if (gameState.optimalPaths && gameState.optimalPaths.length > 0) {
+      console.log('📏 Graph: Updating distances from all optimal paths');
+
+      // Process ALL optimal paths, not just the shortest one
+      gameState.optimalPaths.forEach((path, pathIndex) => {
+        console.log(`📏 Processing path ${pathIndex + 1}:`, path);
+        
+        // Set distance for each node in this path
+        path.forEach((pageTitle, index) => {
+          // Use the same normalization logic as in buildUnifiedGraphData
+          const normalizedId = pageTitle.trim().replace(/\s+/g, '_').charAt(0) + pageTitle.trim().replace(/\s+/g, '_').slice(1).toLowerCase();
+          const node = nodes.find(n => n.id === normalizedId);
+          if (node) {
+            // Distance is how many steps remain to reach target
+            const distanceInThisPath = path.length - 1 - index;
+            
+            // If node already has a distance set, keep the shorter one
+            if (node.distanceToTarget === undefined || distanceInThisPath < node.distanceToTarget) {
+              node.distanceToTarget = distanceInThisPath;
+              console.log(`📏 Distance: ${pageTitle} = ${node.distanceToTarget} steps to target (from path ${pathIndex + 1})`);
+            }
+          }
+        });
+      });
+    }
+
+    // Calculate move qualities by comparing distances
+    this.calculateMoveQualities(nodes, gameState.moves);
+  }
+
+  private calculateMoveQualities(nodes: GraphNode[], moves: Move[]): void {
+    console.log('🎯 Graph: Calculating move qualities');
+    
+    moves.forEach(move => {
+      // Use the same normalization logic as in buildUnifiedGraphData
+      const normalizeTitle = (title: string) => {
+        return title.trim().replace(/\s+/g, '_').charAt(0) + title.trim().replace(/\s+/g, '_').slice(1).toLowerCase();
+      };
+      
+      const fromNodeId = normalizeTitle(move.from_page_title);
+      const toNodeId = normalizeTitle(move.to_page_title);
+      
+      const fromNode = nodes.find(n => n.id === fromNodeId);
+      const toNode = nodes.find(n => n.id === toNodeId);
+      
+      if (fromNode && toNode && 
+          fromNode.distanceToTarget !== undefined && 
+          toNode.distanceToTarget !== undefined) {
+        
+        const distanceChange = fromNode.distanceToTarget - toNode.distanceToTarget;
+        
+        if (distanceChange > 0) {
+          toNode.quality = 'good';  // Got closer to target
+          console.log(`🟢 Move ${move.step}: ${move.to_page_title} (good) - distance decreased by ${distanceChange}`);
+        } else if (distanceChange === 0) {
+          toNode.quality = 'neutral';  // Same distance
+          console.log(`🟡 Move ${move.step}: ${move.to_page_title} (neutral) - distance unchanged`);
+        } else {
+          toNode.quality = 'bad';  // Got further from target
+          console.log(`🔴 Move ${move.step}: ${move.to_page_title} (bad) - distance increased by ${Math.abs(distanceChange)}`);
+        }
+        
+        toNode.qualityCalculated = true;
+      } else {
+        // Keep as unknown if we don't have distance information yet
+        if (toNode && !toNode.qualityCalculated) {
+          toNode.quality = 'unknown';
+          console.log(`❓ Move ${move.step}: ${move.to_page_title} (unknown) - insufficient distance data`);
+        }
+      }
+    });
+  }
+
+
 
   // =============================================================================
   // Object Constancy - Smooth Updates
@@ -450,8 +552,19 @@ export class GraphRenderer {
     // Add circles to new nodes
     nodeEnter.append('circle');
     
-    // Add labels to new nodes
-    nodeEnter.append('text');
+    // Add distance numbers inside circles
+    nodeEnter.append('text')
+      .attr('class', 'distance-text')
+      .attr('text-anchor', 'middle')
+      .attr('dy', '0.35em') // Center vertically
+      .style('fill', 'white')
+      .style('font-size', (d: GraphNode) => this.getDistanceFontSize(d))
+      .style('font-weight', 'bold')
+      .style('pointer-events', 'none'); // Don't interfere with clicks
+    
+    // Add title labels above nodes
+    nodeEnter.append('text')
+      .attr('class', 'title-text');
 
     // Animate new nodes in
     nodeEnter
@@ -471,8 +584,14 @@ export class GraphRenderer {
       .attr('stroke-width', 3)
       .style('filter', (d: GraphNode) => d.type === 'start' || d.type === 'target' ? 'drop-shadow(0 0 10px rgba(255,255,255,0.5))' : 'none');
 
-    // Update text labels
-    nodeUpdate.select('text')
+    // Update distance numbers inside circles
+    nodeUpdate.select('.distance-text')
+      .text((d: GraphNode) => this.getDistanceText(d))
+      .style('font-size', (d: GraphNode) => this.getDistanceFontSize(d))
+      .style('display', (d: GraphNode) => d.distanceToTarget !== undefined ? 'block' : 'none');
+
+    // Update title labels above nodes
+    nodeUpdate.select('.title-text')
       .text((d: GraphNode) => this.getNodeLabel(d))
       .attr('text-anchor', 'middle')
       .attr('dy', -30)
@@ -630,12 +749,14 @@ export class GraphRenderer {
   private getMoveNodeColor(quality?: string): string {
     switch (quality) {
       case 'good':
-        return '#10b981'; // Green
+        return '#10b981'; // Green - move got closer to target
       case 'bad':
-        return '#ef4444'; // Red
+        return '#ef4444'; // Red - move got further from target
       case 'neutral':
-      default:
-        return '#64748b'; // Gray
+        return '#f59e0b'; // Amber - move stayed same distance
+      // TODO(hunter): add color for super bad where distance is >1 worse than previous
+        default:
+        return '#64748b'; // Gray - quality not yet determined
     }
   }
 
@@ -655,12 +776,14 @@ export class GraphRenderer {
   private getMoveNodeStroke(quality?: string): string {
     switch (quality) {
       case 'good':
-        return '#059669';
+        return '#059669'; // Dark green stroke
       case 'bad':
-        return '#dc2626';
+        return '#dc2626'; // Dark red stroke
       case 'neutral':
+        return '#d97706'; // Dark amber stroke
+      case 'unknown':
       default:
-        return '#475569';
+        return '#475569'; // Dark gray stroke
     }
   }
 
@@ -676,6 +799,20 @@ export class GraphRenderer {
     // }
     
     return label;
+  }
+
+  private getDistanceText(node: GraphNode): string {
+    if (node.distanceToTarget === undefined) {
+      return '?'; // Show question mark for unknown distances
+    }
+    return node.distanceToTarget.toString();
+  }
+
+  private getDistanceFontSize(node: GraphNode): string {
+    // Scale font size based on node radius for better readability
+    const radius = this.getNodeRadius(node);
+    const fontSize = Math.max(10, Math.min(16, radius * 0.6)); // Scale with node size but keep readable
+    return `${fontSize}px`;
   }
 
   // =============================================================================

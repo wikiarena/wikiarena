@@ -118,6 +118,7 @@
             border-radius: 0.5rem;
             padding: 1.5rem;
             overflow-y: auto;
+            overflow-x: auto;
             z-index: 10;
             transition: transform 0.3s ease;
         }
@@ -162,6 +163,8 @@
             justify-content: space-between;
             padding: 0.5rem 0;
             border-bottom: 1px solid #334155;
+            gap: 0.5rem;
+            min-width: 0;
         }
 
         .info-item:last-child {
@@ -171,46 +174,79 @@
         .info-label {
             font-weight: 500;
             color: #94a3b8;
+            flex-shrink: 0;
         }
 
         .info-value {
             color: #e2e8f0;
             font-weight: 600;
+            text-align: right;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .moves-list {
             margin-top: 2rem;
         }
 
-        .move-item {
+        .page-item {
             padding: 0.75rem;
             margin-bottom: 0.5rem;
             background-color: #334155;
             border-radius: 0.375rem;
             border-left: 4px solid #64748b;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
         }
 
-        .move-item.good {
+        .page-item:hover {
+            background-color: #475569;
+        }
+
+        .page-item.start {
             border-left-color: #10b981;
         }
 
-        .move-item.neutral {
-            border-left-color: #64748b;
+        .page-item.target {
+            border-left-color: #f59e0b;
         }
 
-        .move-item.bad {
-            border-left-color: #ef4444;
+        .page-item.visited {
+            border-left-color: #3b82f6;
         }
 
-        .move-number {
+        .page-item.current {
+            border-left-color: #8b5cf6;
+            background-color: #3f1d7a;
+        }
+
+        .page-item.current:hover {
+            background-color: #4a2284;
+        }
+
+        .page-number {
             font-size: 0.75rem;
             color: #94a3b8;
             margin-bottom: 0.25rem;
         }
 
-        .move-path {
+        .page-title {
             font-size: 0.875rem;
             color: #e2e8f0;
+            text-decoration: none;
+        }
+
+        .page-item:hover .page-title {
+            color: #60a5fa;
+            text-decoration: underline;
+        }
+
+        .page-link {
+            color: inherit;
+            text-decoration: none;
+            display: block;
         }
 
         .loading {
@@ -297,9 +333,9 @@
                 </div>
 
                 <div class="moves-list">
-                    <h3>Recent Moves</h3>
+                    <h3>Page History</h3>
                     <div id="moves-container">
-                        <!-- Moves will be populated here -->
+                        <!-- Page history will be populated here -->
                     </div>
                 </div>
             </aside>

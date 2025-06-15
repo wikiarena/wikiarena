@@ -127,7 +127,11 @@ export interface GraphNode {
   fx?: number; // Fixed x position for D3 force simulation
   fy?: number; // Fixed y position for D3 force simulation
   moveNumber?: number;
-  quality?: 'good' | 'neutral' | 'bad';
+  quality?: 'good' | 'neutral' | 'bad' | 'unknown';
+  
+  // New properties for move quality calculation
+  distanceToTarget?: number; // Shortest path length to target (undefined if unknown)
+  qualityCalculated?: boolean; // Whether we've calculated the move quality yet
 }
 
 export interface GraphEdge {

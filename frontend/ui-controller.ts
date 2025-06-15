@@ -102,8 +102,8 @@ export class UIController {
     // Update game info panel
     this.updateGameInfo(state);
 
-    // Update moves list
-    this.updateMovesList(state.moves);
+    // Update page history
+    this.updatePageHistory(state);
 
     // Update graph visibility
     this.updateGraphVisibility(state);
@@ -142,37 +142,83 @@ export class UIController {
     }
   }
 
-  private updateMovesList(moves: any[]): void {
+  private updatePageHistory(state: GameState): void {
     const container = this.elements.get('moves-container');
     if (!container) return;
 
-    // Clear existing moves
+    // Clear existing content
     container.innerHTML = '';
 
-    // Show latest moves first (reverse order)
-    moves.forEach(move => {
-      const moveElement = this.createMoveElement(move);
-      container.appendChild(moveElement);
+    // Build page history - start with start page, then all move destinations
+    const pageHistory: Array<{title: string, type: 'start' | 'target' | 'visited' | 'current', step?: number}> = [];
+    
+    // Add start page
+    if (state.startPage) {
+      pageHistory.push({
+        title: state.startPage,
+        type: state.currentPage === state.startPage ? 'current' : 'start'
+      });
+    }
+
+    // Add pages from moves
+    state.moves.forEach((move, index) => {
+      const isCurrentPage = move.to_page_title === state.currentPage;
+      const isTargetPage = move.to_page_title === state.targetPage;
+      
+      let pageType: 'start' | 'target' | 'visited' | 'current';
+      if (isCurrentPage) {
+        pageType = 'current';
+      } else if (isTargetPage) {
+        pageType = 'target';
+      } else {
+        pageType = 'visited';
+      }
+
+      pageHistory.push({
+        title: move.to_page_title,
+        type: pageType,
+        step: index + 1
+      });
     });
 
-    if (moves.length === 0) {
-      container.innerHTML = '<div style="color: #64748b; font-style: italic; padding: 1rem; text-align: center;">No moves yet</div>';
+    // Create page elements
+    pageHistory.forEach(page => {
+      const pageElement = this.createPageElement(page);
+      container.appendChild(pageElement);
+    });
+
+    if (pageHistory.length === 0) {
+      container.innerHTML = '<div style="color: #64748b; font-style: italic; padding: 1rem; text-align: center;">No pages visited yet</div>';
     }
   }
 
-  private createMoveElement(move: any): HTMLElement {
-    const moveElement = document.createElement('div');
+  private createPageElement(page: {title: string, type: 'start' | 'target' | 'visited' | 'current', step?: number}): HTMLElement {
+    const pageElement = document.createElement('div');
+    pageElement.className = `page-item ${page.type}`;
     
-    // Determine move quality class
-    const quality = (move as any).quality || 'neutral';
-    moveElement.className = `move-item ${quality}`;
+    // Create Wikipedia URL - encode the title properly for Wikipedia URLs
+    const wikipediaUrl = `https://en.wikipedia.org/wiki/${encodeURIComponent(page.title.replace(/ /g, '_'))}`;
     
-    moveElement.innerHTML = `
-                      <div class="move-number">Move ${move.step}</div>
-                <div class="move-path">${move.from_page_title} → ${move.to_page_title}</div>
+    // Create the page number/label
+    let pageLabel = '';
+    if (page.type === 'start') {
+      pageLabel = 'Start';
+    } else if (page.type === 'target') {
+      pageLabel = 'Target';
+    } else if (page.type === 'current') {
+      pageLabel = `Step ${page.step} (Current)`;
+    } else {
+      pageLabel = `Step ${page.step}`;
+    }
+    
+    pageElement.innerHTML = `
+      <a href="${wikipediaUrl}" target="_blank" rel="noopener noreferrer" class="page-link">
+        <div class="page-number">${pageLabel}</div>
+        <div class="page-title">${page.title}</div>
+      </a>
     `;
 
-    return moveElement;
+    return pageElement;
   }
 
   private updateGraphVisibility(state: GameState): void {
