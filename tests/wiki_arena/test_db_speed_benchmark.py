@@ -6,7 +6,7 @@ from typing import List
 
 from wiki_arena.solver.static_db import StaticSolverDB, static_solver_db
 
-REPEAT = 20
+REPEAT = 100
 
 @pytest_asyncio.fixture(scope="function")
 async def solver_db():
@@ -25,7 +25,7 @@ async def time_async_fn(fn, *args, repeat=REPEAT):
 
 @pytest.mark.asyncio
 async def test_page_id_lookup_speed(solver_db: StaticSolverDB):
-    title = "Philosophy"
+    title = "United_States"
     times = await time_async_fn(solver_db.get_page_id, title)
     print(f"\n🧠 get_page_id('{title}'): {mean(times):.2f} ± {stdev(times):.2f} ms")
     assert mean(times) < 100
@@ -33,7 +33,7 @@ async def test_page_id_lookup_speed(solver_db: StaticSolverDB):
 
 @pytest.mark.asyncio
 async def test_page_title_lookup_speed(solver_db: StaticSolverDB):
-    page_id = await solver_db.get_page_id("Philosophy")
+    page_id = await solver_db.get_page_id("United_States")
     assert page_id is not None
     times = await time_async_fn(solver_db.get_page_title, page_id)
     print(f"📘 get_page_title({page_id}): {mean(times):.2f} ± {stdev(times):.2f} ms")
@@ -42,7 +42,7 @@ async def test_page_title_lookup_speed(solver_db: StaticSolverDB):
 
 @pytest.mark.asyncio
 async def test_outgoing_links_speed(solver_db: StaticSolverDB):
-    page_id = await solver_db.get_page_id("Philosophy")
+    page_id = await solver_db.get_page_id("United_States")
     assert page_id is not None
     times = await time_async_fn(solver_db.get_outgoing_links, page_id)
     print(f"🔗 get_outgoing_links({page_id}): {mean(times):.2f} ± {stdev(times):.2f} ms")
@@ -51,7 +51,7 @@ async def test_outgoing_links_speed(solver_db: StaticSolverDB):
 
 @pytest.mark.asyncio
 async def test_incoming_links_speed(solver_db: StaticSolverDB):
-    page_id = await solver_db.get_page_id("Philosophy")
+    page_id = await solver_db.get_page_id("United_States")
     assert page_id is not None
     times = await time_async_fn(solver_db.get_incoming_links, page_id)
     print(f"🔗 get_incoming_links({page_id}): {mean(times):.2f} ± {stdev(times):.2f} ms")
@@ -61,7 +61,7 @@ async def test_incoming_links_speed(solver_db: StaticSolverDB):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("batch_size", [1, 5, 20, 100, 500])
 async def test_batch_title_scaling(solver_db: StaticSolverDB, batch_size):
-    page_id = await solver_db.get_page_id("Philosophy")
+    page_id = await solver_db.get_page_id("United_States")
     ids = await solver_db.get_outgoing_links(page_id)
     sample_ids = ids[:batch_size]
     times = await time_async_fn(solver_db.batch_get_page_titles, sample_ids)
@@ -80,16 +80,16 @@ async def test_batch_id_scaling(solver_db: StaticSolverDB, batch_size):
 
 @pytest.mark.asyncio
 async def test_link_counts(solver_db: StaticSolverDB):
-    page_id = await solver_db.get_page_id("Philosophy")
+    page_id = await solver_db.get_page_id("United_States")
     outgoing = await solver_db.get_outgoing_links(page_id)
     incoming = await solver_db.get_incoming_links(page_id)
-    print(f"📈 Link counts for 'Philosophy': {len(outgoing)} outgoing, {len(incoming)} incoming")
+    print(f"📈 Link counts for 'United_States': {len(outgoing)} outgoing, {len(incoming)} incoming")
     assert isinstance(outgoing, list) and isinstance(incoming, list)
 
 
 @pytest.mark.asyncio
 async def test_redirect_resolution_time(solver_db: StaticSolverDB):
-    title = "USA"
+    title = "United_States"
     times = await time_async_fn(solver_db.get_page_id, title)
     print(f"↪️ Redirect resolution '{title}': {mean(times):.2f} ± {stdev(times):.2f} ms")
 
