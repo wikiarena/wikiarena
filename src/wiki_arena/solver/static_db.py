@@ -42,27 +42,41 @@ class StaticSolverDB:
         
     async def get_page_id(self, title: str, namespace: int = 0) -> Optional[int]:
         """
-        Get the page ID for a given title and namespace, handling redirects and capitalization.
+        Get the page ID for a given title, optionally filtering by namespace.
+        Handles redirects and capitalization.
+
         Args:
-            title: The page title to look up.
-            namespace: The namespace to restrict the search to (default: 0 for articles).
+            title (str): The page title to look up.
+            namespace (int): Namespace to restrict search to. Use -1 to search across all namespaces.
+                            Default is 0 (main/article namespace).
+
         Returns:
-            Optional[int]: The page ID, or None if not found.
+            Optional[int]: The resolved page ID, or None if not found.
         """
         validate_page_title(title)
         sanitized_title = get_sanitized_page_title(title)
 
         async with aiosqlite.connect(self.db_path) as db:
-            query = """
-                SELECT id, title, is_redirect
-                FROM pages
-                WHERE title = ? COLLATE NOCASE AND namespace = ?
-            """
-            async with db.execute(query, (sanitized_title, namespace)) as cursor:
+            if namespace == -1:
+                query = """
+                    SELECT id, title, is_redirect
+                    FROM pages
+                    WHERE title = ? COLLATE NOCASE
+                """
+                args = (sanitized_title,)
+            else:
+                query = """
+                    SELECT id, title, is_redirect
+                    FROM pages
+                    WHERE title = ? COLLATE NOCASE AND namespace = ?
+                """
+                args = (sanitized_title, namespace)
+
+            async with db.execute(query, args) as cursor:
                 results = await cursor.fetchall()
 
             if not results:
-                logger.warning(f"No page found for title: '{title}' in namespace {namespace} (sanitized: '{sanitized_title}')")
+                logger.warning(f"No page found for title: '{title}' in namespace={namespace} (sanitized: '{sanitized_title}')")
                 return None
 
             for page_id, db_title, is_redirect in results:
