@@ -1,4 +1,5 @@
 import random
+import asyncio
 import time
 from typing import Any, Dict, List, Optional
 from datetime import datetime
@@ -29,7 +30,7 @@ class RandomModel(LanguageModel):
         """
 
         start_time = time.time()
-        time.sleep(0.5)
+        await asyncio.sleep(1.0)
         end_time = time.time()
 
         # Create zero metrics since this is not a real API call

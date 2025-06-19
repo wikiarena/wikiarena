@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Dict, Optional
+from typing import Dict, Optional, Set
 from datetime import datetime
 
 from wiki_arena import EventBus, GameEvent
@@ -23,6 +23,7 @@ class GameCoordinator:
     - Create games using core library
     - Coordinate background game execution
     - Handle request/response conversion where needed
+    - Wait for initial paths before starting gameplay
     
     Does NOT handle:
     - WebSocket broadcasting (handled by WebSocketHandler)
@@ -35,6 +36,8 @@ class GameCoordinator:
         self.mcp_client = mcp_client
         self.active_games: Dict[str, GameManager] = {}
         self.background_tasks: Dict[str, asyncio.Task] = {}
+        # Track games waiting for initial paths to be ready
+        self.games_waiting_for_initial_paths: Set[str] = set()
         
     async def start_game(self, request: StartGameRequest, background: bool = False) -> StartGameResponse:
         """Start a new game and optionally run it in the background."""
@@ -73,12 +76,14 @@ class GameCoordinator:
         # Store active game
         self.active_games[initial_state.game_id] = game_manager
         
-        # Start background execution if requested
+        # Mark game as waiting for initial paths if background execution requested
         if background:
+            self.games_waiting_for_initial_paths.add(initial_state.game_id)
             background_task = asyncio.create_task(self._run_game_background(initial_state.game_id))
             self.background_tasks[initial_state.game_id] = background_task
+            logger.info(f"Game {initial_state.game_id} marked as waiting for initial paths")
             
-        # Emit game_started event
+        # Emit game_started event (this will trigger initial path calculation)
         await self.event_bus.publish(GameEvent(
             type="game_started",
             game_id=initial_state.game_id,
@@ -98,6 +103,15 @@ class GameCoordinator:
             message="Game started successfully",
             task_info=task_info
         )
+    
+    async def handle_initial_paths_ready(self, event: GameEvent):
+        """Handle initial_paths_ready event and allow background game execution to proceed."""
+        game_id = event.game_id
+        if game_id in self.games_waiting_for_initial_paths:
+            self.games_waiting_for_initial_paths.remove(game_id)
+            logger.info(f"Initial paths ready for game {game_id}, gameplay can now proceed")
+        else:
+            logger.debug(f"Received initial_paths_ready for game {game_id} but game was not waiting")
     
     async def get_game_state(self, game_id: str) -> Optional[GameState]:
         """Get current state of a game."""
@@ -152,13 +166,25 @@ class GameCoordinator:
         # Clear everything
         self.active_games.clear()
         self.background_tasks.clear()
+        self.games_waiting_for_initial_paths.clear()
         
         logger.info("GameCoordinator shutdown complete")
     
     async def _run_game_background(self, game_id: str):
-        """Run a game in the background until completion."""
+        """Run a game in the background until completion, waiting for initial paths first."""
         try:
             logger.info(f"Starting background execution for game {game_id}")
+            
+            # Wait for initial paths to be ready before starting gameplay
+            logger.info(f"Waiting for initial paths to be ready for game {game_id}")
+            while game_id in self.games_waiting_for_initial_paths:
+                if game_id not in self.active_games:
+                    # Game was terminated while waiting
+                    logger.info(f"Game {game_id} was terminated while waiting for initial paths")
+                    return
+                await asyncio.sleep(0.1)  # Small polling interval
+            
+            logger.info(f"Initial paths ready, starting gameplay for game {game_id}")
             
             while game_id in self.active_games:
                 game_state = await self.play_turn(game_id)
@@ -167,7 +193,7 @@ class GameCoordinator:
                     break
                 
                 # Small delay between moves
-                await asyncio.sleep(1.0) # TODO(hunter): why??????
+                await asyncio.sleep(1.0)
                 
         except asyncio.CancelledError:
             logger.info(f"Background game {game_id} cancelled")
@@ -188,5 +214,9 @@ class GameCoordinator:
         # Remove from active games
         if game_id in self.active_games:
             del self.active_games[game_id]
+        
+        # Remove from waiting set if still there
+        if game_id in self.games_waiting_for_initial_paths:
+            self.games_waiting_for_initial_paths.remove(game_id)
         
         logger.info(f"Cleaned up game {game_id}")

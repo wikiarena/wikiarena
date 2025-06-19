@@ -66,6 +66,8 @@ async def lifespan(app: FastAPI):
     event_bus.subscribe("game_started", optimal_path_handler.handle_game_started)
     event_bus.subscribe("game_ended", websocket_handler.handle_game_ended)
     event_bus.subscribe("optimal_paths_found", websocket_handler.handle_optimal_paths_found)
+    event_bus.subscribe("initial_paths_ready", game_coordinator.handle_initial_paths_ready)
+    event_bus.subscribe("initial_paths_ready", websocket_handler.handle_optimal_paths_found) # NOTE: finding initial paths is a special case of optimal paths found
     # TODO(hunter): add storage and maybe metrics handler
 
     logger.info("Event handlers registered")
