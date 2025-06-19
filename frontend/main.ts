@@ -1,9 +1,9 @@
 // Main entry point for Wiki Arena event-driven frontend
 import { WebSocketClient } from './websocket.js';
-import { GameStateManager } from './game-state.js';
+import { GameSequenceManager } from './game-sequence.js';
 import { UIController } from './ui-controller.js';
-import { GraphRenderer } from './graph-renderer.js';
-import { StartGameRequest } from './types.js';
+import { PageGraphRenderer } from './page-graph-renderer.js';
+import { StartGameRequest, GameSequence } from './types.js';
 
 // =============================================================================
 // Main Application Class - Orchestrates all components
@@ -11,18 +11,18 @@ import { StartGameRequest } from './types.js';
 
 class WikiArenaApp {
   private websocketClient: WebSocketClient;
-  private gameStateManager: GameStateManager;
+  private gameSequenceManager: GameSequenceManager;
   private uiController: UIController;
-  private graphRenderer: GraphRenderer;
+  private pageGraphRenderer: PageGraphRenderer;
   private unsubscribeFunctions: (() => void)[] = [];
 
   constructor() {
-    console.log('🚀 Wiki Arena Frontend initializing...');
+    console.log('🚀 Wiki Arena Frontend initializing (page-centric architecture)...');
 
     // Initialize components
-    this.gameStateManager = new GameStateManager();
+    this.gameSequenceManager = new GameSequenceManager();
     this.uiController = new UIController();
-    this.graphRenderer = new GraphRenderer('graph-canvas');
+    this.pageGraphRenderer = new PageGraphRenderer('graph-canvas');
     
     // Initialize WebSocket client (but don't connect yet)
     // Note: We'll set the URL when we start a game and get a game ID
@@ -37,7 +37,7 @@ class WikiArenaApp {
 
     // Ensure graph renderer has correct initial dimensions
     setTimeout(() => {
-      this.graphRenderer.resize();
+      this.pageGraphRenderer.resize();
     }, 100);
 
     console.log('✅ Wiki Arena Frontend ready');
@@ -48,9 +48,9 @@ class WikiArenaApp {
   // =============================================================================
 
   private setupEventFlow(): void {
-    // WebSocket events → Game State Manager
+    // WebSocket events → Game Sequence Manager
     const unsubscribeWebSocket = this.websocketClient.onMessage(event => {
-      this.gameStateManager.handleEvent(event);
+      this.gameSequenceManager.handleEvent(event);
     });
 
     // WebSocket status → UI Controller
@@ -58,30 +58,73 @@ class WikiArenaApp {
       this.uiController.updateConnectionStatus(status);
     });
 
-    // Game State → UI Controller
-    const unsubscribeState = this.gameStateManager.subscribe(state => {
-      this.uiController.updateGameState(state);
+    // Game Sequence → Page Graph Renderer
+    const unsubscribePageGraph = this.gameSequenceManager.subscribe(() => {
+      const pageGraphData = this.gameSequenceManager.getVisualizationData();
+      this.pageGraphRenderer.updateFromPageGraphData(pageGraphData);
     });
 
-    // Game State → Graph Renderer
-    const unsubscribeGraph = this.gameStateManager.subscribe(state => {
-      this.graphRenderer.updateFromGameState(state);
+    // Game Sequence → UI Controller (with stepping info)
+    const unsubscribeSequenceUI = this.gameSequenceManager.subscribe(sequence => {
+      // Convert GameSequence to legacy GameState format for UI compatibility
+      const legacyState = this.convertSequenceToLegacyState(sequence);
+      
+      // Get stepping information from GameSequenceManager
+      const steppingInfo = {
+        currentMoveIndex: sequence.currentPageIndex,
+        viewingMoveIndex: sequence.viewingPageIndex,
+        renderingMode: sequence.renderingMode,
+        canStepForward: this.gameSequenceManager.canStepForward(),
+        canStepBackward: this.gameSequenceManager.canStepBackward()
+      };
+      
+      this.uiController.updateGameState(legacyState, steppingInfo);
     });
 
     // Store unsubscribe functions for cleanup
     this.unsubscribeFunctions.push(
       unsubscribeWebSocket,
       unsubscribeStatus,
-      unsubscribeState,
-      unsubscribeGraph
+      unsubscribePageGraph,
+      unsubscribeSequenceUI
     );
 
-    console.log('✅ Event flow setup complete');
+    console.log('✅ Event flow setup complete (page-centric architecture)');
+  }
+
+  // TODO(hunter): refactor UI to use new GameSequence data structure and remove old GameState
+  private convertSequenceToLegacyState(sequence: GameSequence): any {
+    // Convert the page-centric GameSequence to legacy GameState format for UI compatibility
+    const currentPageState = sequence.pageStates[sequence.viewingPageIndex];
+    const moves = sequence.pageStates.slice(1).map((state) => ({
+      from_page_title: state.visitedFromPage || '',
+      to_page_title: state.pageTitle,
+      step: state.moveIndex,
+      distanceChange: state.distanceChange
+    }));
+
+    return {
+      gameId: sequence.gameId,
+      status: sequence.status,
+      startPage: sequence.startPage,
+      targetPage: sequence.targetPage,
+      currentPage: currentPageState?.pageTitle || null,
+      moves: moves,
+      optimalPaths: currentPageState?.optimalPaths || [],
+      currentDistance: currentPageState?.distanceToTarget || null,
+      initialOptimalDistance: sequence.initialOptimalDistance,
+      totalMoves: sequence.pageStates.length - 1, // Subtract 1 for start page
+      success: sequence.success
+    };
   }
 
   private setupUIHandlers(): void {
     this.uiController.setupEventListeners({
-      onStartGame: () => this.handleStartGame()
+      onStartGame: () => this.handleStartGame(),
+      onStepBackward: () => this.handleStepBackward(),
+      onStepForward: () => this.handleStepForward(),
+      onEnterLiveMode: () => this.handleEnterLiveMode(),
+      onStepToMove: (moveIndex: number) => this.handleStepToMove(moveIndex)
     });
     
     // Setup info panel toggle
@@ -121,7 +164,7 @@ class WikiArenaApp {
       // Debounce resize events
       clearTimeout(resizeTimeout);
       resizeTimeout = window.setTimeout(() => {
-        this.graphRenderer.resize();
+        this.pageGraphRenderer.resize();
       }, 100);
     });
   }
@@ -129,8 +172,6 @@ class WikiArenaApp {
   // =============================================================================
   // User Action Handlers
   // =============================================================================
-
-
 
   public async handleStartGame(): Promise<void> {
     console.log('🎲 User requested new game');
@@ -154,7 +195,7 @@ class WikiArenaApp {
         }
         
         // Reset game state for new game
-        this.gameStateManager.reset();
+        this.resetGameManagers();
         
         // Connect to game-specific WebSocket
         const gameWebSocketUrl = `ws://localhost:8000/api/games/${gameId}/ws`;
@@ -197,7 +238,7 @@ class WikiArenaApp {
         }
         
         // Reset game state for new game
-        this.gameStateManager.reset();
+        this.resetGameManagers();
         
         // Connect to game-specific WebSocket
         const gameWebSocketUrl = `ws://localhost:8000/api/games/${gameId}/ws`;
@@ -216,6 +257,38 @@ class WikiArenaApp {
     } finally {
       this.uiController.setButtonLoading('start-game-btn', false);
     }
+  }
+
+  // =============================================================================
+  // Stepping Control Handlers - PAGE-CENTRIC
+  // =============================================================================
+
+  public handleStepBackward(): void {
+    console.log('⬅️ User stepping backward');
+    this.gameSequenceManager.stepBackward();
+  }
+
+  public handleStepForward(): void {
+    console.log('➡️ User stepping forward');
+    this.gameSequenceManager.stepForward();
+  }
+
+  public handleEnterLiveMode(): void {
+    console.log('🔴 User entering live mode');
+    this.gameSequenceManager.enterLiveMode();
+  }
+
+  public handleStepToMove(moveIndex: number): void {
+    console.log(`🎯 User stepping to page ${moveIndex}`);
+    this.gameSequenceManager.goToPageIndex(moveIndex);
+  }
+
+  // =============================================================================
+  // Helper Methods
+  // =============================================================================
+
+  private resetGameManagers(): void {
+    this.gameSequenceManager.reset();
   }
 
   // =============================================================================
@@ -291,11 +364,11 @@ class WikiArenaApp {
   // =============================================================================
 
   public centerGraph(): void {
-    this.graphRenderer.centerGraph();
+    this.pageGraphRenderer.centerGraph();
   }
 
   public clearGraph(): void {
-    this.graphRenderer.clear();
+    this.pageGraphRenderer.clear();
   }
 
   // =============================================================================
@@ -305,10 +378,10 @@ class WikiArenaApp {
   debug(): void {
     console.log('🐛 Debug Info:');
     console.log('WebSocket Status:', this.websocketClient.getStatus());
-    console.log('Game State:', this.gameStateManager.getState());
-    this.gameStateManager.debugState();
+    console.log('Game Sequence:', this.gameSequenceManager.getSequence());
+    this.gameSequenceManager.debugState();
     this.uiController.debugElements();
-    console.log('Graph Renderer:', this.graphRenderer);
+    console.log('Page Graph Renderer:', this.pageGraphRenderer);
   }
 }
 
@@ -334,7 +407,12 @@ function initializeApp(): void {
       startGame: () => app?.handleStartGame(),
       startCustomGame: (start: string, target: string) => app?.handleStartCustomGame(start, target),
       centerGraph: () => app?.centerGraph(),
-      clearGraph: () => app?.clearGraph()
+      clearGraph: () => app?.clearGraph(),
+      // New stepping controls
+      stepBackward: () => app?.handleStepBackward(),
+      stepForward: () => app?.handleStepForward(),
+      enterLiveMode: () => app?.handleEnterLiveMode(),
+      stepToMove: (moveIndex: number) => app?.handleStepToMove(moveIndex)
     };
     
     console.log('🎮 Wiki Arena loaded! Use window.wikiArena for debugging.');
@@ -364,4 +442,4 @@ if (document.readyState === 'loading') {
 // Cleanup on page unload
 window.addEventListener('beforeunload', destroyApp);
 
-export { WikiArenaApp }; 
+export { WikiArenaApp };

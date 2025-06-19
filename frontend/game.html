@@ -64,6 +64,69 @@
             cursor: not-allowed;
         }
 
+        .btn-secondary {
+            background-color: #64748b;
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background-color: #475569;
+        }
+
+        .btn-accent {
+            background-color: #dc2626;
+        }
+
+        .btn-accent:hover:not(:disabled) {
+            background-color: #b91c1c;
+        }
+
+        .stepping-controls {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.5rem;
+            background-color: rgba(51, 65, 85, 0.5);
+            border-radius: 0.5rem;
+            border: 1px solid #475569;
+        }
+
+        .step-info {
+            font-size: 0.875rem;
+            color: #e2e8f0;
+            font-weight: 500;
+            min-width: 120px;
+            text-align: center;
+        }
+
+        .vertical-progress-bar {
+            position: absolute;
+            left: 20px;
+            top: 20px;
+            bottom: 20px;
+            width: 8px;
+            background-color: rgba(30, 41, 59, 0.8);
+            border-radius: 4px;
+            border: 1px solid rgba(71, 85, 105, 0.6);
+            overflow: visible;
+            z-index: 5;
+            backdrop-filter: blur(4px);
+        }
+
+        .vertical-progress-fill {
+            width: 100%;
+            position: absolute;
+            left: 0;
+            border-radius: 3px;
+            transition: height 0.8s ease, top 0.8s ease, background 0.5s ease;
+            background: #10b981;
+            height: 2%;
+            top: 0;
+        }
+
+        .vertical-progress-fill.negative {
+            background: #ef4444;
+        }
+
         .connection-status {
             display: flex;
             align-items: center;
@@ -226,6 +289,37 @@
             background-color: #4a2284;
         }
 
+        .page-item.future {
+            border-left-color: #6b7280;
+            background-color: #374151;
+            opacity: 0.6;
+        }
+
+        .page-item.future:hover {
+            background-color: #4b5563;
+            opacity: 0.8;
+        }
+
+        .page-item.viewing {
+            border-left-color: #06b6d4;
+            background-color: #164e63;
+            box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3);
+        }
+
+        .page-item.viewing:hover {
+            background-color: #155e75;
+        }
+
+        .page-item.clickable {
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .page-item.clickable:hover {
+            transform: translateX(2px);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
         .page-number {
             font-size: 0.75rem;
             color: #94a3b8;
@@ -264,6 +358,80 @@
             padding: 1rem;
             text-align: center;
         }
+
+        /* Physics Controls Styling */
+        .physics-controls {
+            font-family: system-ui, -apple-system, sans-serif !important;
+        }
+
+        .physics-controls input[type="range"] {
+            appearance: none;
+            background: transparent;
+            cursor: pointer;
+        }
+
+        .physics-controls input[type="range"]::-webkit-slider-track {
+            background: #475569;
+            height: 4px;
+            border-radius: 2px;
+        }
+
+        .physics-controls input[type="range"]::-webkit-slider-thumb {
+            appearance: none;
+            background: #f59e0b;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        .physics-controls input[type="range"]::-webkit-slider-thumb:hover {
+            background: #fbbf24;
+            transform: scale(1.1);
+            transition: all 0.2s ease;
+        }
+
+        .physics-controls input[type="range"]::-moz-range-track {
+            background: #475569;
+            height: 4px;
+            border-radius: 2px;
+        }
+
+        .physics-controls input[type="range"]::-moz-range-thumb {
+            background: #f59e0b;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: none;
+        }
+
+        .physics-controls input[type="range"]::-moz-range-thumb:hover {
+            background: #fbbf24;
+        }
+
+        .physics-controls button {
+            transition: all 0.2s ease;
+        }
+
+        .physics-controls button:hover {
+            background: #047857 !important;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .physics-controls button:active {
+            transform: translateY(0);
+        }
+
+        /* Graph node dragging visual feedback */
+        .node.dragging circle {
+            filter: drop-shadow(0 0 15px rgba(255,255,255,0.8)) !important;
+        }
+
+        .node {
+            transition: filter 0.2s ease;
+        }
     </style>
 </head>
 <body>
@@ -272,6 +440,16 @@
         <header class="header">
             <h1>Wiki Arena - Game Viewer</h1>
             <div class="controls">
+                <!-- Stepping Controls -->
+                <div class="stepping-controls" id="stepping-controls" style="display: none;">
+                    <button class="btn btn-secondary" id="step-backward-btn" title="Step backward">⬅️</button>
+                    <span class="step-info" id="step-info">Live Mode</span>
+                    <button class="btn btn-secondary" id="step-forward-btn" title="Step forward">➡️</button>
+                    <button class="btn btn-accent" id="live-mode-btn" title="Return to live mode">🔴 Live</button>
+                </div>
+
+
+                
                 <div class="connection-status">
                     <div class="status-indicator" id="connection-indicator"></div>
                     <span id="connection-text">Ready to start</span>
@@ -288,6 +466,11 @@
                     Waiting for game to start...
                 </div>
                 <div id="graph-canvas"></div>
+                
+                <!-- Vertical Progress Bar -->
+                <div class="vertical-progress-bar" id="progress-bar-container" style="display: none;">
+                    <div class="vertical-progress-fill" id="progress-bar-fill"></div>
+                </div>
                 
                 <!-- Info panel toggle -->
                 <button class="info-toggle" id="info-toggle" title="Toggle info panel">

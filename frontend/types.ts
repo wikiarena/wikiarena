@@ -1,4 +1,83 @@
 // =============================================================================
+// Page-Centric Game State Types - NEW ARCHITECTURE
+// =============================================================================
+
+// Core page state representing the game at a specific page in navigation history
+export interface PageState {
+  pageTitle: string;
+  moveIndex: number; // Which move brought us here (0 for start page)
+  timestamp: Date;
+  
+  // Optimal path data (will arrive asynchronously)
+  optimalPaths: string[][]; // Paths from this page to target
+  optimalPathLength?: number;
+  distanceToTarget?: number;
+  
+  // Navigation context
+  isStartPage: boolean;
+  isTargetPage: boolean;
+  visitedFromPage?: string; // Previous page title (for move edge)
+  
+  // Move distance assessment
+  distanceChange?: number; // How this move affected distance to target
+}
+
+// Sequential game state - collection of page states
+export interface GameSequence {
+  gameId: string;
+  startPage: string;
+  targetPage: string;
+  status: 'not_started' | 'in_progress' | 'finished';
+  success: boolean | null;
+  
+  // Core sequential data
+  pageStates: PageState[]; // One per unique page visited, in order
+  currentPageIndex: number; // Index of latest page reached in actual game
+  viewingPageIndex: number; // Index of page currently being viewed (for stepping)
+  
+  // Progress tracking
+  initialOptimalDistance: number | null; // Initial distance from start to target
+  
+  // Rendering mode
+  renderingMode: 'live' | 'stepping';
+}
+
+// Page node for graph visualization - represents a Wikipedia page
+export interface PageNode {
+  pageTitle: string;
+  type: 'start' | 'target' | 'visited' | 'optimal_path';
+  
+  // Derived from PageState or optimal paths
+  distanceToTarget?: number;
+  distanceChange?: number; // For visited pages only
+  isCurrentlyViewing?: boolean; // For highlighting in stepping mode
+  
+  // Positioning (for D3 force simulation)
+  x?: number;
+  y?: number;
+  fx?: number; // Fixed positions
+  fy?: number;
+}
+
+// Navigation edge - represents a move or potential move
+export interface NavigationEdge {
+  id: string;
+  sourcePageTitle: string;
+  targetPageTitle: string;
+  type: 'move' | 'optimal_path';
+  
+  // For move edges only
+  moveIndex?: number;
+  distanceChange?: number; // How this move affected distance to target
+}
+
+// Complete graph data for visualization
+export interface PageGraphData {
+  pages: PageNode[];
+  edges: NavigationEdge[];
+}
+
+// =============================================================================
 // WebSocket Event Types
 // =============================================================================
 
@@ -57,8 +136,8 @@ export interface GameMoveCompletedEvent extends BaseGameEvent {
 
 export interface OptimalPathsUpdatedEvent extends BaseGameEvent {
   type: 'OPTIMAL_PATHS_UPDATED';
-  current_page?: string;
-  target_page?: string;
+  from_page_title?: string;
+  to_page_title?: string;
   optimal_paths: string[][];
   optimal_path_length?: number;
 }
@@ -94,10 +173,11 @@ export interface Move {
   step: number;
   timestamp?: string | null;
   model_response?: string;
+  distanceChange?: number; // Positive = got closer, negative = got further, 0 = same, undefined = unknown
 }
 
 // =============================================================================
-// Game State Types
+// Legacy Game State Types (for backward compatibility during transition)
 // =============================================================================
 
 export interface GameState {
@@ -106,15 +186,16 @@ export interface GameState {
   startPage: string | null;
   targetPage: string | null;
   currentPage: string | null;
-  moves: Move[];
+  moves: Move[]; // All moves for page history
+  viewingMoves?: Move[]; // Moves up to viewing index for graph rendering
   optimalPaths: string[][];
-  currentOptimalDistance: number | null;
+  currentDistance: number | null;
   totalMoves: number;
   success: boolean | null;
 }
 
 // =============================================================================
-// Graph Visualization Types
+// Legacy Graph Visualization Types (for backward compatibility)
 // =============================================================================
 
 export interface GraphNode {
@@ -125,12 +206,9 @@ export interface GraphNode {
   y?: number;
   fx?: number; // Fixed x position for D3 force simulation
   fy?: number; // Fixed y position for D3 force simulation
-  moveNumber?: number;
-  quality?: 'good' | 'neutral' | 'bad' | 'unknown';
-  
-  // New properties for move quality calculation
+  // Distance info for rendering numbers in circles
   distanceToTarget?: number; // Shortest path length to target (undefined if unknown)
-  qualityCalculated?: boolean; // Whether we've calculated the move quality yet
+  distanceChange?: number; // Positive = got closer, negative = got further, 0 = same, undefined = unknown
 }
 
 export interface GraphEdge {
@@ -138,7 +216,6 @@ export interface GraphEdge {
   source: string;
   target: string;
   type: 'move' | 'optimal_path';
-  moveNumber?: number;
 }
 
 export interface GraphData {
@@ -192,6 +269,35 @@ export interface EventHandlers {
 }
 
 // =============================================================================
+// Sequential State Management Types
+// =============================================================================
+
+export interface OptimalPathResult {
+  paths: string[][];
+  fromMoveIndex: number;
+  timestamp: Date;
+  optimalPathLength?: number;
+}
+
+export interface GameMetadata {
+  gameId: string | null;
+  startPage: string | null;
+  targetPage: string | null;
+  status: 'not_started' | 'in_progress' | 'finished';
+  success: boolean | null;
+}
+// this isnt really used
+export interface StateEvent {
+  type: 'MOVE' | 'OPTIMAL_PATHS' | 'GAME_STARTED' | 'GAME_FINISHED';
+  moveIndex?: number;
+  timestamp: Date;
+  data: any;
+}
+
+// Rendering modes for the game state
+export type RenderingMode = 'live' | 'stepping';
+
+// =============================================================================
 // API Types (for starting games)
 // =============================================================================
 
@@ -199,8 +305,3 @@ export interface StartGameRequest {
   start_page?: string;
   target_page?: string;
 }
-
-export interface StartGameResponse {
-  game_id: string;
-  message: string;
-} 
