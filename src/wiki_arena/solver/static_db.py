@@ -62,31 +62,53 @@ class StaticSolverDB:
         except Exception as e:
             logger.warning(f"Failed to read SQLite variable limit: {e}, using default: {self.max_variables}")
         
-    async def get_page_id(self, title: str) -> Optional[int]:
-        """Get the page ID for a given title, handling redirects and capitalization.
-        Corresponds to fetch_page in sdow/database.py but simplified to return ID.
-        Titles are assumed to be stored in sanitized form in wiki_graph.sqlite 'pages' table.
+    async def get_page_id(self, title: str, namespace: int = 0) -> Optional[int]:
+        """
+        Get the page ID for a given title, optionally filtering by namespace.
+        Handles redirects and capitalization.
+
+        Args:
+            title (str): The page title to look up.
+            namespace (int): Namespace to restrict search to. Use -1 to search across all namespaces.
+                            Default is 0 (main/article namespace).
+
+        Returns:
+            Optional[int]: The resolved page ID, or None if not found.
         """
         validate_page_title(title)
         sanitized_title = get_sanitized_page_title(title)
 
         async with aiosqlite.connect(self.db_path) as db:
-            query = "SELECT id, title, is_redirect FROM pages WHERE title = ? COLLATE NOCASE"
-            async with db.execute(query, (sanitized_title,)) as cursor:
+            if namespace == -1:
+                query = """
+                    SELECT id, title, is_redirect
+                    FROM pages
+                    WHERE title = ? COLLATE NOCASE
+                """
+                args = (sanitized_title,)
+            else:
+                query = """
+                    SELECT id, title, is_redirect
+                    FROM pages
+                    WHERE title = ? COLLATE NOCASE AND namespace = ?
+                """
+                args = (sanitized_title, namespace)
+
+            async with db.execute(query, args) as cursor:
                 results = await cursor.fetchall()
 
             if not results:
-                logger.warning(f"No page found for title: '{title}' (sanitized: '{sanitized_title}')")
+                logger.warning(f"No page found for title: '{title}' in namespace={namespace} (sanitized: '{sanitized_title}')")
                 return None
 
             for page_id, db_title, is_redirect in results:
                 if db_title == sanitized_title and not is_redirect:
                     return page_id
-            
+
             for page_id, db_title, is_redirect in results:
                 if not is_redirect:
                     return page_id
-            
+
             first_result_id, _, _ = results[0]
             redirect_query = "SELECT target_id FROM redirects WHERE source_id = ?"
             async with db.execute(redirect_query, (first_result_id,)) as cursor:
@@ -94,8 +116,11 @@ class StaticSolverDB:
                 if redirect_row:
                     return redirect_row[0]
                 else:
-                    logger.warning(f"Page '{title}' is a redirect but no target found in redirects table for ID {first_result_id}.")
+                    logger.warning(
+                        f"Page '{title}' (namespace={namespace}) is a redirect but no target found for ID {first_result_id}."
+                    )
                     return None
+
         return None
 
     async def get_page_title(self, page_id: int) -> Optional[str]:
