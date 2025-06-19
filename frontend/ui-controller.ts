@@ -43,7 +43,8 @@ export class UIController {
       'stepping-controls',
       // Progress bar
       'progress-bar-container',
-      'progress-bar-fill'
+      'progress-bar-fill',
+      'progress-indicator'
     ];
 
     elementIds.forEach(id => {
@@ -264,8 +265,9 @@ export class UIController {
   private updateProgressBar(state: any): void {
     const progressContainer = this.elements.get('progress-bar-container');
     const progressFill = this.elements.get('progress-bar-fill');
+    const progressIndicator = this.elements.get('progress-indicator');
 
-    if (!progressContainer || !progressFill) return;
+    if (!progressContainer || !progressFill || !progressIndicator) return;
 
     // Show/hide progress bar based on game state
     if (state.status === 'not_started' || !state.initialOptimalDistance) {
@@ -278,7 +280,7 @@ export class UIController {
     const initialDistance = state.initialOptimalDistance;
     const currentDistance = state.currentDistance || initialDistance;
 
-    // Calculate progress with baseline: start at 2%, 100% at target
+    // Calculate progress with baseline: start at 1%, 100% at target
     const baselinePercent = 1; // Start with 1% visible progress (just enough to see)
     const progressRatio = (initialDistance - currentDistance) / initialDistance;
     const progressPercent = baselinePercent + (progressRatio * (100 - baselinePercent));
@@ -299,10 +301,16 @@ export class UIController {
       progressFill.style.height = `${totalHeight}%`;
       progressFill.style.top = `${negativeTop}%`;
       
+      // Position robot emoji at the top of the negative progress (above container)
+      progressIndicator.style.top = `${negativeTop - 2}%`;
+      
     } else {
       // Positive or zero progress - normal green behavior from baseline
       progressFill.style.height = `${Math.max(baselinePercent, progressPercent)}%`;
       progressFill.style.top = '0%';
+      
+      // Position robot emoji at the current progress level
+      progressIndicator.style.top = `${Math.max(baselinePercent, progressPercent) - 2}%`;
     }
 
     console.log(`📊 Vertical Progress: ${currentDistance}/${initialDistance} (${(progressRatio * 100).toFixed(1)}%) - Display: ${progressPercent.toFixed(1)}%`);

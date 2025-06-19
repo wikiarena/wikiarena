@@ -101,8 +101,8 @@
         .vertical-progress-bar {
             position: absolute;
             left: 20px;
-            top: 20px;
-            bottom: 20px;
+            top: 100px;
+            bottom: 100px;
             width: 8px;
             background-color: rgba(30, 41, 59, 0.8);
             border-radius: 4px;
@@ -125,6 +125,20 @@
 
         .vertical-progress-fill.negative {
             background: #ef4444;
+        }
+
+        .progress-indicator {
+            position: absolute;
+            left: -8px;
+            width: 24px;
+            height: 24px;
+            font-size: 16px;
+            line-height: 24px;
+            text-align: center;
+            z-index: 6;
+            transition: top 0.8s ease;
+            pointer-events: none;
+            text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
         }
 
         .connection-status {
@@ -470,6 +484,7 @@
                 <!-- Vertical Progress Bar -->
                 <div class="vertical-progress-bar" id="progress-bar-container" style="display: none;">
                     <div class="vertical-progress-fill" id="progress-bar-fill"></div>
+                    <div class="progress-indicator" id="progress-indicator">🤖</div>
                 </div>
                 
                 <!-- Info panel toggle -->
