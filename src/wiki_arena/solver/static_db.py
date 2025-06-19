@@ -9,6 +9,7 @@ from typing import List, Set, Optional, Tuple, Dict
 from pathlib import Path
 import asyncio
 import aiosqlite
+import math
 
 from wiki_arena.utils.wiki_helpers import (
     get_sanitized_page_title, 
@@ -39,6 +40,27 @@ class StaticSolverDB:
             # Consider raising an error here if the DB is essential for startup
             # For now, proceeding will likely lead to errors in DB operations.
         self._connection_pool = {}
+        
+        self.max_variables = 32766 # Safe default for 3.32.0 and later, will be updated from PRAGMA
+        self._initialize_variable_limit()
+        
+    def _initialize_variable_limit(self):
+        """Initialize the SQLite variable limit by reading from PRAGMA compile_options."""
+        try:
+            # Use sync connection for initialization
+            with sqlite3.connect(self.db_path) as db:
+                cursor = db.execute("PRAGMA compile_options")
+                for row in cursor:
+                    option = row[0]
+                    if option.startswith("MAX_VARIABLE_NUMBER="):
+                        max_vars = int(option.split("=")[1])
+                        self.max_variables = int(max_vars)
+                        logger.info(f"SQLite MAX_VARIABLE_NUMBER: {max_vars}, using limit: {self.max_variables}")
+                        break
+                else:
+                    logger.warning(f"Could not find MAX_VARIABLE_NUMBER in PRAGMA, using default: {self.max_variables}")
+        except Exception as e:
+            logger.warning(f"Failed to read SQLite variable limit: {e}, using default: {self.max_variables}")
         
     async def get_page_id(self, title: str) -> Optional[int]:
         """Get the page ID for a given title, handling redirects and capitalization.
@@ -125,8 +147,11 @@ class StaticSolverDB:
         for pid in page_ids:
             validate_page_id(pid)
 
+        # Handle large batches by splitting them
+        if len(page_ids) > self.max_variables:
+            return await self._batch_get_page_titles_chunked(page_ids)
+
         id_to_index = {page_id: i for i, page_id in enumerate(page_ids)}
-        
         results = [None] * len(page_ids)
             
         placeholders = ",".join("?" * len(page_ids))
@@ -138,6 +163,23 @@ class StaticSolverDB:
                     if row_id in id_to_index:
                         readable_title = get_readable_page_title(sanitized_title)
                         results[id_to_index[row_id]] = readable_title
+        return results
+
+    async def _batch_get_page_titles_chunked(self, page_ids: List[int]) -> List[str]:
+        """Handle large page_ids lists by chunking them into smaller batches."""
+        results = [None] * len(page_ids)
+        chunk_size = self.max_variables
+
+        logger.debug(f"Chunking {len(page_ids)} page IDs into batches of {chunk_size}")
+        
+        for i in range(0, len(page_ids), chunk_size):
+            chunk = page_ids[i:i + chunk_size]
+            chunk_results = await self.batch_get_page_titles(chunk)
+            
+            # Copy chunk results to the correct positions in the full results
+            for j, result in enumerate(chunk_results):
+                results[i + j] = result
+                
         return results
     
     async def batch_get_page_ids(self, titles: List[str]) -> Dict[str, Optional[int]]:
@@ -185,16 +227,34 @@ class StaticSolverDB:
         for pid in page_ids:
             validate_page_id(pid)
 
-        placeholders = ",".join("?" * len(page_ids))
         if count_column_name not in ["outgoing_links_count", "incoming_links_count"]:
             raise ValueError(f"Invalid count column name: {count_column_name}")
 
+        # Handle large batches by chunking them
+        if len(page_ids) > self.max_variables:
+            return await self._fetch_links_count_chunked(page_ids, count_column_name)
+
+        placeholders = ",".join("?" * len(page_ids))
         query = f"SELECT SUM({count_column_name}) FROM links WHERE id IN ({placeholders})"
         
         async with aiosqlite.connect(self.db_path) as db:
             async with db.execute(query, page_ids) as cursor:
                 row = await cursor.fetchone()
                 return row[0] if row and row[0] is not None else 0
+
+    async def _fetch_links_count_chunked(self, page_ids: List[int], count_column_name: str) -> int:
+        """Handle large page_ids lists by chunking them and summing the results."""
+        total_count = 0
+        chunk_size = self.max_variables
+        
+        logger.debug(f"Chunking {len(page_ids)} page IDs into batches of {chunk_size}")
+        
+        for i in range(0, len(page_ids), chunk_size):
+            chunk = page_ids[i:i + chunk_size]
+            chunk_count = await self._fetch_links_count_helper(chunk, count_column_name)
+            total_count += chunk_count
+            
+        return total_count
 
 
 # Global instance for the static solver database
