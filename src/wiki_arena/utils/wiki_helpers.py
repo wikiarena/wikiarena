@@ -17,25 +17,22 @@ def get_sanitized_page_title(page_title: str) -> str:
       "Notre Dame Fighting Irish"   =>   "Notre_Dame_Fighting_Irish"
       "Farmers' market"             =>   "Farmers\'_market"
       "3.5\" Floppy disk"            =>   "3.5\\\"_Floppy_disk"
-      "Nip/Tuck"                    =>   "Nip\\Tuck" # Adjusted for Python string literals
+      "Nip/Tuck"                    =>   "Nip\\Tuck"
 
     Raises:
       ValueError: If the provided page title is invalid.
     """
     validate_page_title(page_title)
-    # Python's replace method doesn't need to escape ' like in the example's implied SQL context.
-    # For "\" -> \\", in Python string, \\ becomes a literal backslash.
-    # To store a literal backslash before a quote for some downstream SQL-like system,
-    # it would be page_title.replace('"', '\\"')
-    # However, the original examples suggest a transformation for a specific storage/querying syntax.
-    # Let's stick to the direct replaces shown, assuming they target that syntax after Python processing.
-    # "Farmers' market" -> "Farmers'_market" (original example)
-    # Python: .replace("'", "\\'") would give "Farmers\'_market" if we want literal backslash then quote
-    # If the target system itself interprets \' as an escaped quote, then .replace("'", "\'") is fine.
-    # Given the example "Nip/Tuck" => "Nip\Tuck", it seems a single backslash is the goal for some non-python representation.
-    # Let's assume the examples imply the *final string representation* for the database.
-    # In Python string literals, '\\' represents a single backslash.
-    return page_title.strip().replace(' ', '_').replace("'", "\'").replace('"', '\"')
+    # Escape special characters as they appear in the database:
+    # - Single quotes become \'
+    # - Double quotes become \"
+    # - Backslashes become \\
+    # - Spaces become underscores
+    return (page_title.strip()
+            .replace('\\', '\\\\')  # Escape backslashes first
+            .replace("'", "\\'")    # Escape single quotes
+            .replace('"', '\\"')    # Escape double quotes
+            .replace(' ', '_'))     # Replace spaces with underscores
 
 
 def get_readable_page_title(sanitized_page_title: str) -> str:
@@ -53,7 +50,11 @@ def get_readable_page_title(sanitized_page_title: str) -> str:
       "3.5\\\"_Floppy_disk"           => "3.5\" Floppy disk"
       "Nip\\Tuck"                   => "Nip/Tuck"
     """
-    return sanitized_page_title.strip().replace('_', ' ').replace("\'", "'").replace('\"', '"')
+    return (sanitized_page_title.strip()
+            .replace('_', ' ')      # Replace underscores with spaces
+            .replace('\\"', '"')    # Unescape double quotes
+            .replace("\\'", "'")    # Unescape single quotes
+            .replace('\\\\', '\\')) # Unescape backslashes last
 
 
 def is_str(val) -> bool:

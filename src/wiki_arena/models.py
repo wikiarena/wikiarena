@@ -3,7 +3,7 @@ from datetime import datetime
 from enum import Enum
 from pydantic import BaseModel, Field, field_validator, ValidationInfo
 
-from common.utils.wiki_helpers import get_sanitized_page_title
+from wiki_arena.utils.wiki_helpers import get_sanitized_page_title
 
 # --- Enums ---
 

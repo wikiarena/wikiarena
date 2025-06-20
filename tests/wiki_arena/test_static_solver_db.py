@@ -244,12 +244,12 @@ class TestUtilityFunctions:
     def test_get_sanitized_page_title(self):
         """Test page title sanitization."""
         assert get_sanitized_page_title("Notre Dame Fighting Irish") == "Notre_Dame_Fighting_Irish"
-        assert get_sanitized_page_title("Farmers' market") == "Farmers'_market"
+        assert get_sanitized_page_title("Farmers' market") == "Farmers\\'_market"
         
     def test_get_readable_page_title(self):
         """Test converting sanitized titles back to readable format."""
         assert get_readable_page_title("Notre_Dame_Fighting_Irish") == "Notre Dame Fighting Irish"
-        assert get_readable_page_title("Farmers'_market") == "Farmers' market"
+        assert get_readable_page_title("Farmers\\'_market") == "Farmers' market"
 
     def test_validate_page_title(self):
         """Test page title validation."""
