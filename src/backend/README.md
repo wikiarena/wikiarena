@@ -149,7 +149,6 @@ Example move completion event:
     "to_page_title": "Mathematics",
     "model_response": "Navigating to Mathematics..."
   },
-  "game_over": false,
   "current_page": "Mathematics",
   "steps": 3,
   "status": "in_progress"
