@@ -178,7 +178,6 @@ class TestWebSocketHandler:
             data={
                 "game_state": sample_game_state,
                 "move": sample_move,
-                "is_game_over": False
             }
         )
         
@@ -192,7 +191,6 @@ class TestWebSocketHandler:
         data = json.loads(messages[0])
         assert data["type"] == "GAME_MOVE_COMPLETED"
         assert data["game_id"] == game_id
-        assert data["game_over"] == False
         assert data["current_page"]["title"] == "Programming language"
         assert data["steps"] == 1
         assert data["status"] == "in_progress"
@@ -443,7 +441,6 @@ class TestWebSocketHandler:
             data={
                 "game_state": sample_game_state,
                 "move": sample_move,
-                "is_game_over": False
             }
         )
         
@@ -465,4 +462,3 @@ class TestWebSocketHandler:
         assert data["type"] == "GAME_MOVE_COMPLETED"
         assert isinstance(data["move"], dict)
         assert isinstance(data["steps"], int)
-        assert isinstance(data["game_over"], bool) 

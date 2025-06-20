@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Optional
 
 from wiki_arena.game.game_manager import GameManager
-from wiki_arena.data_models.game_models import (
+from wiki_arena.models import (
     GameConfig, GameState, GameStatus, Page, Move, GameError, ErrorType, ModelConfig
 )
 from wiki_arena.mcp_client.client import MCPClient

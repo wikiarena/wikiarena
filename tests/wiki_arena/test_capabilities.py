@@ -5,7 +5,7 @@ Tests for capability interfaces and implementations.
 import pytest
 from unittest.mock import AsyncMock, Mock
 from wiki_arena.capabilities.navigation import NavigationResult, INavigationCapability
-from wiki_arena.data_models.game_models import Page
+from wiki_arena.models import Page
 
 
 class TestNavigationResult:

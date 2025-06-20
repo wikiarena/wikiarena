@@ -10,7 +10,7 @@ from typing import List
 
 from wiki_arena import EventBus, GameEvent
 from wiki_arena.models import GameState, GameConfig, ModelConfig, Page, Move, GameStatus
-from backend.handlers.optimal_path_handler import OptimalPathHandler
+from backend.handlers import OptimalPathHandler
 
 logger = logging.getLogger(__name__)
 
@@ -48,10 +48,10 @@ class TestOptimalPathHandler:
         
         result = analysis_results[0]
         assert "optimal_path_length" in result
-        assert "from_page" in result
-        assert "to_page" in result
-        assert result["from_page"] == "Programming language"  # Current page after move
-        assert result["to_page"] == "JavaScript"              # Target page
+        assert "from_page_title" in result
+        assert "to_page_title" in result
+        assert result["from_page_title"] == "Programming language"  # Current page after move
+        assert result["to_page_title"] == "JavaScript"              # Target page
         assert isinstance(result["optimal_path_length"], int)
         assert result["optimal_path_length"] >= 0
     
@@ -69,8 +69,8 @@ class TestOptimalPathHandler:
             analysis_results.append(event.data)
             logger.info(f"Initial analysis: {event.data.get('optimal_path_length')} steps")
         
-        event_bus.subscribe("optimal_paths_found", track_analysis)
         event_bus.subscribe("game_started", optimal_path_handler.handle_game_started)
+        event_bus.subscribe("initial_paths_ready", track_analysis)
         
         await event_bus.publish(game_started_event)
         
@@ -83,8 +83,8 @@ class TestOptimalPathHandler:
         result = analysis_results[0]
         assert result["is_initial"] == True
         assert result["step"] == 0
-        assert result["from_page"] == "Python (programming language)"
-        assert result["to_page"] == "JavaScript"
+        assert result["from_page_title"] == "Python (programming language)"
+        assert result["to_page_title"] == "JavaScript"
     
     @pytest.mark.asyncio
     async def test_path_analysis_error_handling(

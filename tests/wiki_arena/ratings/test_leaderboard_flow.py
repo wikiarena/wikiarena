@@ -5,12 +5,11 @@ from pathlib import Path
 from datetime import datetime, timezone
 from typing import Dict, Any
 
-from wiki_arena.data_models.game_models import (
+from wiki_arena.models import (
     GameResult, GameConfig, ModelConfig, GameStatus, MoveMetrics, Task
 )
-from wiki_arena.storage.storage_config import StorageConfig
-from wiki_arena.storage.game_repository import GameRepository
-from wiki_arena.ratings.leaderboard_generator import LeaderboardGenerator
+from wiki_arena.storage import StorageConfig, GameRepository
+from wiki_arena.ratings import LeaderboardGenerator
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')

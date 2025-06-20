@@ -25,7 +25,6 @@ class TestWikiTaskSolverBasicOperations:
         """Fixture to provide a WikiTaskSolver instance for testing."""
         # Use a fresh instance for each test to avoid cache interference
         solver = WikiTaskSolver()
-        await solver.initialize()
         return solver
 
     @pytest.mark.asyncio
@@ -120,7 +119,6 @@ class TestWikiTaskSolverCaching:
     async def solver(self):
         """Fixture providing a solver instance for caching tests."""
         solver = WikiTaskSolver()
-        await solver.initialize()
         return solver
 
     @pytest.mark.asyncio
@@ -277,7 +275,6 @@ class TestWikiTaskSolverPathIntegrity:
     async def solver(self):
         """Fixture providing a solver instance."""
         solver = WikiTaskSolver()
-        await solver.initialize()
         return solver
 
     @pytest.mark.asyncio
@@ -348,7 +345,6 @@ class TestWikiTaskSolverPerformance:
     async def solver(self):
         """Fixture providing a solver instance."""
         solver = WikiTaskSolver()
-        await solver.initialize()
         return solver
 
     @pytest.mark.asyncio
@@ -412,7 +408,6 @@ class TestWikiTaskSolverDatabaseIntegration:
     async def solver(self):
         """Fixture providing a solver instance."""
         solver = WikiTaskSolver()
-        await solver.initialize()
         return solver
 
     @pytest.mark.asyncio
@@ -421,8 +416,6 @@ class TestWikiTaskSolverDatabaseIntegration:
         # Create a custom database instance
         custom_db = StaticSolverDB()
         solver_with_custom_db = WikiTaskSolver(db=custom_db)
-        
-        await solver_with_custom_db.initialize()
         
         # Should work with custom database
         response = await solver_with_custom_db.find_shortest_path("Philosophy", "Science")
@@ -480,7 +473,6 @@ class TestWikiTaskSolverEdgeCases:
     async def solver(self):
         """Fixture providing a solver instance."""
         solver = WikiTaskSolver()
-        await solver.initialize()
         return solver
 
     @pytest.mark.asyncio
@@ -522,17 +514,20 @@ class TestWikiTaskSolverEdgeCases:
             assert "not found" in str(e)
 
     @pytest.mark.asyncio
-    async def test_initialization_idempotency(self, solver: WikiTaskSolver):
-        """Test that multiple initializations don't break the solver."""
-        # Initialize multiple times
-        await solver.initialize()
-        await solver.initialize()
-        await solver.initialize()
+    async def test_solver_reuse(self, solver: WikiTaskSolver):
+        """Test that the solver can be reused for multiple calls."""
+        # Use solver multiple times
+        response1 = await solver.find_shortest_path("Philosophy", "Science")
+        response2 = await solver.find_shortest_path("Philosophy", "Mathematics")
+        response3 = await solver.find_shortest_path("Science", "Mathematics")
         
-        # Should still work
-        response = await solver.find_shortest_path("Philosophy", "Science")
-        assert isinstance(response, SolverResponse)
-        assert response.path_length >= 0
+        # Should work for all calls
+        assert isinstance(response1, SolverResponse)
+        assert isinstance(response2, SolverResponse)
+        assert isinstance(response3, SolverResponse)
+        assert response1.path_length >= 0
+        assert response2.path_length >= 0
+        assert response3.path_length >= 0
         
     @pytest.mark.asyncio
     async def test_concurrent_operations(self, solver: WikiTaskSolver):
@@ -570,7 +565,7 @@ class TestWikiTaskSolverArchitecturalCompliance:
         
         # Should only have path-finding related methods
         expected_methods = {
-            'initialize', 'find_shortest_path'
+            'find_shortest_path'
         }
         
         # Get public methods
@@ -624,7 +619,6 @@ class TestWikiTaskSolverArchitecturalCompliance:
     async def test_purely_analytical(self):
         """Test that WikiTaskSolver is purely analytical (no side effects)."""
         solver = WikiTaskSolver()
-        await solver.initialize()
         
         # Multiple calls with same parameters should give same results
         start_page = "Philosophy"
