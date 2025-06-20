@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Wiki Arena - Game Viewer</title>
+    <title>Wiki Arena</title>
     <style>
         * {
             margin: 0;
@@ -101,8 +101,8 @@
         .vertical-progress-bar {
             position: absolute;
             left: 20px;
-            top: 100px;
-            bottom: 100px;
+            top: 20%;
+            bottom: 20%;
             width: 8px;
             background-color: rgba(30, 41, 59, 0.8);
             border-radius: 4px;
@@ -139,6 +139,26 @@
             transition: top 0.8s ease;
             pointer-events: none;
             text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
+        }
+
+        .progress-target {
+            position: absolute;
+            left: -8px;
+            bottom: -12px;
+            width: 24px;
+            height: 24px;
+            font-size: 18px;
+            line-height: 24px;
+            text-align: center;
+            z-index: 6;
+            pointer-events: none;
+            text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 0.8; }
+            50% { transform: scale(1.1); opacity: 1; }
         }
 
         .connection-status {
@@ -452,14 +472,14 @@
     <div class="app-container">
         <!-- Header with controls -->
         <header class="header">
-            <h1>Wiki Arena - Game Viewer</h1>
+            <h1>Wiki Arena</h1>
             <div class="controls">
                 <!-- Stepping Controls -->
                 <div class="stepping-controls" id="stepping-controls" style="display: none;">
-                    <button class="btn btn-secondary" id="step-backward-btn" title="Step backward">⬅️</button>
-                    <span class="step-info" id="step-info">Live Mode</span>
-                    <button class="btn btn-secondary" id="step-forward-btn" title="Step forward">➡️</button>
                     <button class="btn btn-accent" id="live-mode-btn" title="Return to live mode">🔴 Live</button>
+                    <span class="step-info" id="step-info">Live Mode</span>
+                    <button class="btn btn-secondary" id="step-backward-btn" title="Step backward">⬅️</button>
+                    <button class="btn btn-secondary" id="step-forward-btn" title="Step forward">➡️</button>
                 </div>
 
 
@@ -485,6 +505,7 @@
                 <div class="vertical-progress-bar" id="progress-bar-container" style="display: none;">
                     <div class="vertical-progress-fill" id="progress-bar-fill"></div>
                     <div class="progress-indicator" id="progress-indicator">🤖</div>
+                    <div class="progress-target" id="progress-target">🏆</div>
                 </div>
                 
                 <!-- Info panel toggle -->
