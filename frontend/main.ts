@@ -306,7 +306,7 @@ class WikiArenaApp {
       },
       model_name: 'random',
       model_provider: 'random',
-      max_steps: 10
+      max_steps: 30
     };
     
     return fetch(apiUrl, {
@@ -331,7 +331,7 @@ class WikiArenaApp {
       },
       model_name: 'random',
       model_provider: 'random',
-      max_steps: 10, // Reduced for testing
+      max_steps: 30,
       ...request
     };
     
