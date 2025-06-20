@@ -42,7 +42,7 @@ export class PageGraphRenderer {
 
   // Enhanced physics configuration with sensible defaults
   private physicsConfig: PhysicsConfig = {
-    chargeStrength: -300,
+    chargeStrength: -300, // easter egg: put this to 100 and link distance to 30 for snake mode 🐍
     linkDistance: 80,
     linkStrength: 2,
     alphaDecay: 0.01,
