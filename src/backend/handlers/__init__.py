@@ -7,5 +7,6 @@ Each handler has a single responsibility (WebSocket broadcasting, task solver, e
 
 from .websocket_handler import WebSocketHandler
 from .optimal_path_handler import OptimalPathHandler
+from .storage_handler import StorageHandler
 
-__all__ = ['WebSocketHandler', 'OptimalPathHandler'] 
+__all__ = ['WebSocketHandler', 'OptimalPathHandler', 'StorageHandler'] 
