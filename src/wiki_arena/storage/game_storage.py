@@ -141,7 +141,3 @@ class GameStorageService:
             self.logger.warning(f"Partial storage failure for game {game_result.game_id}")
             
         return success 
-    
-    # TODO(hunter): read from storage functions
-
-    

@@ -21,7 +21,6 @@ class WebSocketHandler:
         # Extract data from event
         move_data = event.data.get("move")
         game_state_data = event.data.get("game_state")
-        is_game_over = event.data.get("is_game_over", False)
         
         # Create WebSocket message
         message = {
@@ -34,7 +33,6 @@ class WebSocketHandler:
                 "timestamp": None,  # Move model doesn't have timestamp (MoveMetrics does tho)
                 "model_response": move_data.model_response
             },
-            "game_over": is_game_over,
             "current_page": game_state_data.current_page,
             "steps": game_state_data.steps,
             "status": game_state_data.status.value

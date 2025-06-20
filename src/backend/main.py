@@ -50,10 +50,12 @@ async def lifespan(app: FastAPI):
     # Create event handlers with dependencies
     from backend.handlers.websocket_handler import WebSocketHandler
     from backend.handlers.optimal_path_handler import OptimalPathHandler
+    from backend.handlers.storage_handler import StorageHandler
     from backend.utils.state_collector import StateCollector
     
     websocket_handler = WebSocketHandler()
     optimal_path_handler = OptimalPathHandler(event_bus, solver)
+    storage_handler = StorageHandler()
     
     # Create state collector and wire it to websocket manager
     state_collector = StateCollector(game_coordinator, optimal_path_handler)
@@ -65,10 +67,10 @@ async def lifespan(app: FastAPI):
     event_bus.subscribe("game_started", websocket_handler.handle_game_started)
     event_bus.subscribe("game_started", optimal_path_handler.handle_game_started)
     event_bus.subscribe("game_ended", websocket_handler.handle_game_ended)
+    event_bus.subscribe("game_ended", storage_handler.handle_game_ended)
     event_bus.subscribe("optimal_paths_found", websocket_handler.handle_optimal_paths_found)
     event_bus.subscribe("initial_paths_ready", game_coordinator.handle_initial_paths_ready)
     event_bus.subscribe("initial_paths_ready", websocket_handler.handle_optimal_paths_found) # NOTE: finding initial paths is a special case of optimal paths found
-    # TODO(hunter): add storage and maybe metrics handler
 
     logger.info("Event handlers registered")
     

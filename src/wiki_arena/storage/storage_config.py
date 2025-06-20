@@ -1,12 +1,22 @@
 from typing import List
 from pathlib import Path
 from pydantic import BaseModel, Field
+import os
 
 from wiki_arena.models import ErrorType
 
 class StorageConfig(BaseModel):
     """Configuration for game result storage."""
-    storage_dir: str = Field("./game_results", description="Directory to store game results")
+    storage_dir: str = Field(
+        default_factory=lambda: os.environ.get(
+            "WIKI_ARENA_STORAGE_DIR",
+            os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), 
+                "game_results"
+            )
+        ),
+        description="Directory to store game results"
+    )
 
     store_won_games: bool = Field(True, description="Store games that reached the target")
     store_lost_games: bool = Field(True, description="Store games that failed due to max steps")

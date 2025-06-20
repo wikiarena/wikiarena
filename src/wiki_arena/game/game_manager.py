@@ -152,6 +152,7 @@ class GameManager:
             if validation_error:
                 self._create_error_move(current_step, current_page_title, validation_error, tool_call_request)
                 self.state.status = GameStatus.LOST_INVALID_MOVE
+                await self._emit_game_ended_event()
                 return True
             
             # Extract target page from tool call
@@ -159,6 +160,7 @@ class GameManager:
             if extraction_error:
                 self._create_error_move(current_step, current_page_title, extraction_error, tool_call_request)
                 self.state.status = GameStatus.LOST_INVALID_MOVE
+                await self._emit_game_ended_event()
                 return True
             
             # Validate the link exists on current page
@@ -166,6 +168,7 @@ class GameManager:
             if link_error:
                 self._create_error_move(current_step, current_page_title, link_error, tool_call_request)
                 self.state.status = GameStatus.LOST_INVALID_MOVE
+                await self._emit_game_ended_event()
                 return True
             
             # Attempt navigation
@@ -178,6 +181,7 @@ class GameManager:
                 )
                 self._create_error_move(current_step, current_page_title, nav_error, tool_call_request)
                 self.state.status = GameStatus.ERROR  # Navigation failures are system errors
+                await self._emit_game_ended_event()
                 return True
             
             # Success! Create successful move and update game state
@@ -349,13 +353,24 @@ class GameManager:
                 data={
                     "move": move,
                     "game_state": self.state,
-                    "is_game_over": game_over,
                     "from_page": from_page,
                     "to_page": nav_result.page.title
                 }
             ))
+            
+            if game_over:
+                await self._emit_game_ended_event()
         
         return game_over
+
+    async def _emit_game_ended_event(self):
+        """Helper method to emit game_ended event."""
+        if self.event_bus:
+            await self.event_bus.publish(GameEvent(
+                type="game_ended",
+                game_id=self.state.game_id,
+                data={"game_state": self.state}
+            ))
 
     def _create_error_move(self, step: int, from_page: str, error: GameError, tool_call_request):
         """Create a move record for an error case."""
@@ -418,4 +433,9 @@ class GameManager:
         
         self.state.status = GameStatus.ERROR
         logging.error(f"Game {self.state.game_id}: {error.message}", exc_info=True)
+        
+        # Emit game_ended event if event bus is available
+        if self.event_bus:
+            asyncio.create_task(self._emit_game_ended_event())
+        
         return True
