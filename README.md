@@ -4,19 +4,15 @@
 
 **Ready to run?** See [STARTUP.md](STARTUP.md) for complete setup instructions.
 
-**TL;DR:** Start 3 terminals:
+**TL;DR:** Start 2 terminals:
 ```bash
 # Terminal 1: MCP Server
-cd mcp_server && uv run python server.py
+cd ~/wiki-arena && uv run uvicorn src.backend.main:app --host 0.0.0.0 --port 8000 --reload
 
-# Terminal 2: Backend API  
-cd backend && uv run python -m backend.main
-
-# Terminal 3: Frontend UI
-cd frontend && npm run dev
+# Terminal 2: Frontend UI
+cd ~/wiki-arena/frontend && npm run dev-game
 ```
-Then open http://localhost:5173/
-
+Then open http://localhost:3000/
 ---
 
 # TODO:

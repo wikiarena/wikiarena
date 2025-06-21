@@ -124,15 +124,14 @@ The `backend` is a consumer of the `wiki_arena` library. It exposes the library'
 ```
 src/backend/
 ├── main.py                      # FastAPI app + EventBus setup
-├── config.py                    # Configuration management
+├── config.py                    # Configuration management (pydantic models loaded from yaml?)
 ├── dependencies.py              # Dependency injection (EventBus, GameCoordinator)
 │
 ├── api/                         # HTTP endpoints
-│   ├── games.py                # Game management REST API
-│   └── solver.py               # Path solving endpoints
+│   └── games.py                # Game management REST API
 │
 ├── models/                      # API data models
-│   └── api_models.py           # Request/response Pydantic models
+│   └── api_models.py           # Request/response Pydantic models  (do we need these? should all api communication be JSON?)
 │
 ├── coordinators/               # Business orchestration
 │   └── game_coordinator.py    # Game lifecycle management
