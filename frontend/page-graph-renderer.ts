@@ -43,7 +43,7 @@ export class PageGraphRenderer {
   // Enhanced physics configuration with sensible defaults
   private physicsConfig: PhysicsConfig = {
     chargeStrength: -300, // easter egg: put this to 100 and link distance to 30 for snake mode 🐍
-    linkDistance: 80,
+    linkDistance: 80, // maybe 50
     linkStrength: 2,
     alphaDecay: 0.01,
     velocityDecay: 0.5,
@@ -651,9 +651,6 @@ export class PageGraphRenderer {
         }
         if (newPage.distanceChange !== undefined) {
           existingPage.distanceChange = newPage.distanceChange;
-        }
-        if (newPage.isCurrentlyViewing !== undefined) {
-          existingPage.isCurrentlyViewing = newPage.isCurrentlyViewing;
         }
         
         newPageMap.set(newPage.pageTitle, existingPage);

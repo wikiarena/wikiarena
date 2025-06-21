@@ -1,16 +1,14 @@
 // =============================================================================
-// Page-Centric Game State Types - NEW ARCHITECTURE
+// Core Page-Centric Game State Types
 // =============================================================================
 
 // Core page state representing the game at a specific page in navigation history
 export interface PageState {
   pageTitle: string;
   moveIndex: number; // Which move brought us here (0 for start page)
-  timestamp: Date;
   
   // Optimal path data (will arrive asynchronously)
   optimalPaths: string[][]; // Paths from this page to target
-  optimalPathLength?: number;
   distanceToTarget?: number;
   
   // Navigation context
@@ -28,7 +26,6 @@ export interface GameSequence {
   startPage: string;
   targetPage: string;
   status: 'not_started' | 'in_progress' | 'finished';
-  success: boolean | null;
   
   // Core sequential data
   pageStates: PageState[]; // One per unique page visited, in order
@@ -42,6 +39,10 @@ export interface GameSequence {
   renderingMode: 'live' | 'stepping';
 }
 
+// =============================================================================
+// Graph Visualization Types
+// =============================================================================
+
 // Page node for graph visualization - represents a Wikipedia page
 export interface PageNode {
   pageTitle: string;
@@ -50,7 +51,6 @@ export interface PageNode {
   // Derived from PageState or optimal paths
   distanceToTarget?: number;
   distanceChange?: number; // For visited pages only
-  isCurrentlyViewing?: boolean; // For highlighting in stepping mode
   
   // Positioning (for D3 force simulation)
   x?: number;
@@ -81,7 +81,7 @@ export interface PageGraphData {
 // WebSocket Event Types
 // =============================================================================
 
-// Updated to match backend event format (flat structure with "type")
+// Base interface for all game events
 export interface BaseGameEvent {
   type: string;
   game_id: string;
@@ -195,35 +195,6 @@ export interface GameState {
 }
 
 // =============================================================================
-// Legacy Graph Visualization Types (for backward compatibility)
-// =============================================================================
-
-export interface GraphNode {
-  id: string;
-  title: string;
-  type: 'start' | 'target' | 'move' | 'optimal_path';
-  x?: number;
-  y?: number;
-  fx?: number; // Fixed x position for D3 force simulation
-  fy?: number; // Fixed y position for D3 force simulation
-  // Distance info for rendering numbers in circles
-  distanceToTarget?: number; // Shortest path length to target (undefined if unknown)
-  distanceChange?: number; // Positive = got closer, negative = got further, 0 = same, undefined = unknown
-}
-
-export interface GraphEdge {
-  id: string;
-  source: string;
-  target: string;
-  type: 'move' | 'optimal_path';
-}
-
-export interface GraphData {
-  nodes: GraphNode[];
-  edges: GraphEdge[];
-}
-
-// =============================================================================
 // WebSocket Connection Types
 // =============================================================================
 
@@ -241,65 +212,12 @@ export interface ConnectionStatus {
 }
 
 // =============================================================================
-// UI State Types
-// =============================================================================
-
-export interface UIState {
-  selectedGameId: string | null;
-  showControls: boolean;
-  showDebugInfo: boolean;
-  graphViewport: {
-    zoom: number;
-    panX: number;
-    panY: number;
-  };
-}
-
-// =============================================================================
-// Event Handler Types
+// Utility Types
 // =============================================================================
 
 export type EventHandler<T extends GameEvent = GameEvent> = (event: T) => void;
 
-export interface EventHandlers {
-  onGameStarted: EventHandler<GameStartedEvent>;
-  onMoveCompleted: EventHandler<GameMoveCompletedEvent>;
-  onOptimalPathsUpdated: EventHandler<OptimalPathsUpdatedEvent>;
-  onGameFinished: EventHandler<GameFinishedEvent>;
-}
-
-// =============================================================================
-// Sequential State Management Types
-// =============================================================================
-
-export interface OptimalPathResult {
-  paths: string[][];
-  fromMoveIndex: number;
-  timestamp: Date;
-  optimalPathLength?: number;
-}
-
-export interface GameMetadata {
-  gameId: string | null;
-  startPage: string | null;
-  targetPage: string | null;
-  status: 'not_started' | 'in_progress' | 'finished';
-  success: boolean | null;
-}
-// this isnt really used
-export interface StateEvent {
-  type: 'MOVE' | 'OPTIMAL_PATHS' | 'GAME_STARTED' | 'GAME_FINISHED';
-  moveIndex?: number;
-  timestamp: Date;
-  data: any;
-}
-
-// Rendering modes for the game state
 export type RenderingMode = 'live' | 'stepping';
-
-// =============================================================================
-// API Types (for starting games)
-// =============================================================================
 
 export interface StartGameRequest {
   start_page?: string;

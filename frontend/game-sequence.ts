@@ -34,7 +34,6 @@ export class GameSequenceManager {
       startPage: '',
       targetPage: '',
       status: 'not_started',
-      success: null,
       pageStates: [],
       currentPageIndex: -1,
       viewingPageIndex: -1,
@@ -85,7 +84,6 @@ export class GameSequenceManager {
       this.gameSequence.targetPage = gameData.config.target_page_title;
       this.gameSequence.status = gameData.status === 'in_progress' ? 'in_progress' : 
                                gameData.status === 'won' ? 'finished' : 'not_started';
-      this.gameSequence.success = gameData.status === 'won';
       
       // Build page states from move history
       this.buildPageStatesFromMoveHistory(gameData.move_history, gameData.config);
@@ -122,7 +120,6 @@ export class GameSequenceManager {
     const startPageState: PageState = {
       pageTitle: event.start_page.title,
       moveIndex: 0,
-      timestamp: new Date(),
       optimalPaths: [],
       isStartPage: true,
       isTargetPage: event.start_page.title === event.target_page.title,
@@ -150,7 +147,6 @@ export class GameSequenceManager {
     const newPageState: PageState = {
       pageTitle: move.to_page_title,
       moveIndex: move.step,
-      timestamp: new Date(),
       optimalPaths: [],
       isStartPage: false,
       isTargetPage: isTargetPageCheck,
@@ -193,7 +189,6 @@ export class GameSequenceManager {
     console.log('🏁 Page-centric: handling game finished');
     
     this.gameSequence.status = 'finished';
-    this.gameSequence.success = event.success;
     
     this.notifyListeners();
   }
@@ -209,7 +204,6 @@ export class GameSequenceManager {
     const startPageState: PageState = {
       pageTitle: config.start_page_title,
       moveIndex: 0,
-      timestamp: new Date(),
       optimalPaths: [],
       isStartPage: true,
       isTargetPage: config.start_page_title === config.target_page_title,
@@ -223,7 +217,6 @@ export class GameSequenceManager {
       const pageState: PageState = {
         pageTitle: move.to_page_title,
         moveIndex: move.step,
-        timestamp: new Date(),
         optimalPaths: [],
         isStartPage: false,
         isTargetPage: move.to_page_title === config.target_page_title,
@@ -245,7 +238,6 @@ export class GameSequenceManager {
     if (pageStateIndex >= 0) {
       const pageState = this.gameSequence.pageStates[pageStateIndex];
       pageState.optimalPaths = paths;
-      pageState.optimalPathLength = pathLength;
       pageState.distanceToTarget = pathLength;
       
       // Capture initial optimal distance if this is the start page and we don't have it yet
@@ -286,13 +278,12 @@ export class GameSequenceManager {
     const viewingPageStates = this.gameSequence.pageStates.slice(0, viewingIndex + 1);
     
     // Create page nodes for visited pages
-    const visitedPages: PageNode[] = viewingPageStates.map((state, index) => ({
+    const visitedPages: PageNode[] = viewingPageStates.map((state) => ({
       pageTitle: state.pageTitle,
       type: state.isStartPage ? 'start' : 
             state.isTargetPage ? 'target' : 'visited',
       distanceToTarget: state.distanceToTarget,
       distanceChange: state.distanceChange,
-      isCurrentlyViewing: index === viewingIndex
     }));
 
     // Always include target page if it hasn't been visited yet
@@ -305,7 +296,6 @@ export class GameSequenceManager {
         pageTitle: this.gameSequence.targetPage!,
         type: 'target',
         distanceToTarget: 0, // It is the target page
-        isCurrentlyViewing: false
       });
       console.log(`🎯 Added standalone target page: ${this.gameSequence.targetPage}`);
     }

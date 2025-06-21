@@ -114,7 +114,6 @@ class WikiArenaApp {
       currentDistance: currentPageState?.distanceToTarget || null,
       initialOptimalDistance: sequence.initialOptimalDistance,
       totalMoves: sequence.pageStates.length - 1, // Subtract 1 for start page
-      success: sequence.success
     };
   }
 
