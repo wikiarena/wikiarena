@@ -649,9 +649,10 @@ export class PageGraphRenderer {
         if (newPage.distanceToTarget !== undefined) {
           existingPage.distanceToTarget = newPage.distanceToTarget;
         }
-        if (newPage.distanceChange !== undefined) {
-          existingPage.distanceChange = newPage.distanceChange;
-        }
+        
+        // Update type and visits array
+        existingPage.type = newPage.type;
+        existingPage.visits = newPage.visits;
         
         newPageMap.set(newPage.pageTitle, existingPage);
       } else {
@@ -994,7 +995,9 @@ export class PageGraphRenderer {
       case 'target':
         return 'url(#target-gradient)';
       case 'visited':
-        return this.getVisitedPageColor(page.distanceChange);
+        // Use first visit for color (in multi-game, first visit takes precedence)
+        const firstVisit = page.visits[0];
+        return this.getVisitedPageColor(firstVisit?.distanceChange);
       case 'optimal_path':
         return '#374151';
       default:
@@ -1025,7 +1028,9 @@ export class PageGraphRenderer {
       case 'target':
         return '#d97706';
       case 'visited':
-        return this.getVisitedPageStroke(page.distanceChange);
+        // Use first visit for stroke (in multi-game, first visit takes precedence)
+        const firstVisit = page.visits[0];
+        return this.getVisitedPageStroke(firstVisit?.distanceChange);
       default:
         return '#475569';
     }

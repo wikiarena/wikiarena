@@ -2,11 +2,6 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks, WebSocket, WebSoc
 from typing import Dict, Any, Annotated
 import logging
 
-from backend.models.api_models import (
-    StartGameRequest,
-    StartGameResponse, 
-    ErrorResponse
-)
 from wiki_arena.models import GameState
 from backend.coordinators.game_coordinator import GameCoordinator
 from backend.websockets.game_hub import websocket_manager
@@ -16,18 +11,6 @@ router = APIRouter(prefix="/api/games", tags=["games"])
 logger = logging.getLogger(__name__)
 
 GameCoordinatorDep = Annotated[GameCoordinator, Depends(get_game_coordinator)]
-
-@router.post("", response_model=StartGameResponse)
-async def start_game(request: StartGameRequest, coordinator: GameCoordinatorDep, background: bool = Query(False, description="Run game in background")) -> StartGameResponse:
-    """Start a new game with the specified configuration."""
-    try:
-        return await coordinator.start_game(request, background=background)
-    except Exception as e:
-        logger.error(f"Failed to start game: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to start game: {str(e)}"
-        )
 
 @router.get("/{game_id}", response_model=GameState)
 async def get_game_state(game_id: str, coordinator: GameCoordinatorDep) -> GameState:
@@ -39,29 +22,6 @@ async def get_game_state(game_id: str, coordinator: GameCoordinatorDep) -> GameS
             detail=f"Game {game_id} not found"
         )
     return state
-
-@router.post("/{game_id}/turn", response_model=GameState)
-async def play_turn(game_id: str, coordinator: GameCoordinatorDep) -> GameState:
-    """Play a single turn of the game."""
-    state = await coordinator.play_turn(game_id)
-    if not state:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Game {game_id} not found"
-        )
-    return state
-
-@router.delete("/{game_id}", status_code=204)
-async def terminate_game(game_id: str, coordinator: GameCoordinatorDep):
-    """Forcibly terminate a game and clean up all its resources."""
-    try:
-        await coordinator.terminate_game(game_id)
-    except Exception as e:
-        logger.error(f"Failed to terminate game {game_id}: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to terminate game: {str(e)}"
-        )
 
 @router.get("/{game_id}/status")
 async def get_game_status(game_id: str, coordinator: GameCoordinatorDep) -> Dict[str, Any]:

@@ -45,13 +45,13 @@ class GameManager:
         
         return f"{model_key}_{date_str}_{uuid_short}"
 
-    async def start_game(self, config: GameConfig) -> GameState:
+    async def initialize_game(self, config: GameConfig) -> GameState: # TODO(hunter): this is more like initialize_game
         """Start a new game with the given configuration."""
         self.state = GameState(
             game_id=self._generate_game_id(config.model),
             config=config,
             status=GameStatus.NOT_STARTED,
-            error_message=None # Initialize error_message
+            error_message=None
         )
 
         # Initialize Language Model using simplified system
@@ -108,7 +108,7 @@ class GameManager:
                 return self.state
 
             self.state.current_page = nav_result.page
-            self.state.status = GameStatus.IN_PROGRESS
+            self.state.status = GameStatus.IN_PROGRESS # TODO(hunter): this should update state to NOT_STARTED from INITIALIZING
             self.state.steps = 0 # Start at 0 steps, first move will increment it to 1
             
             logging.info(f"Game started. ID: {self.state.game_id}. Start: '{config.start_page_title}', Target: '{config.target_page_title}'")

@@ -48,12 +48,12 @@ class Task(BaseModel):
             raise ValueError("Start and target page titles must be different.")
         return v
 
-    @property
+    @property # NOTE: this may be confused with TaskCordinator's task_id, this one is used for Leaderboard
     def task_id(self) -> str:
         """Generate a unique task ID by concatenating sanitized start and target page titles."""
         start = get_sanitized_page_title(self.start_page_title)
         target = get_sanitized_page_title(self.target_page_title)
-        return f"{start}_to_{target}"
+        return f"{start}__to__{target}"
 
 class GameError(BaseModel):
     """Structured error information for analysis and debugging."""
@@ -85,7 +85,6 @@ class ModelConfig(BaseModel):
     model_name: str = Field(..., description="Specific model name for the provider")
     settings: Dict[str, Any] = Field(default_factory=dict, description="Provider-specific settings")
     
-    # Add pricing info
     input_cost_per_1m_tokens: Optional[float] = Field(None, description="Cost per 1M input tokens in USD")
     output_cost_per_1m_tokens: Optional[float] = Field(None, description="Cost per 1M output tokens in USD")
     

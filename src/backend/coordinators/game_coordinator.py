@@ -1,117 +1,103 @@
 import asyncio
 import logging
-from typing import Dict, Optional, Set
+from typing import Dict, Optional
 from datetime import datetime
 
 from wiki_arena import EventBus, GameEvent
 from wiki_arena.game.game_manager import GameManager
-from wiki_arena.models import GameConfig, GameState, GameStatus
+from wiki_arena.models import GameConfig, GameState, GameStatus, Task
 from wiki_arena.language_models import create_model
 from wiki_arena.mcp_client.client import MCPClient
 
-from backend.models.api_models import StartGameRequest, StartGameResponse
-from backend.services.task_selector_service import task_selector_service
+from backend.models.api_models import ModelSelection
 
 logger = logging.getLogger(__name__)
 
 class GameCoordinator:
     """
-    Coordinates game lifecycle and orchestrates between core library and web layer.
+    Coordinates individual game lifecycle and execution.
     
     Responsibilities:
-    - Manage active game instances
-    - Create games using core library
-    - Coordinate background game execution
-    - Handle request/response conversion where needed
-    - Wait for initial paths before starting gameplay
+    - Initialize individual games
+    - Manage game execution and background tasks
+    - Handle game-level events
+    - Clean up game resources
     
     Does NOT handle:
+    - Task coordination (handled by TaskCoordinator)
     - WebSocket broadcasting (handled by WebSocketHandler)
-    - task solver (handled by OptimalPathHandler) 
-    - Storage (handled by StorageHandler - future)
+    - Path solving (handled by OptimalPathHandler) 
+    - Storage (handled by StorageHandler)
     """
     
     def __init__(self, event_bus: EventBus, mcp_client: MCPClient):
         self.event_bus = event_bus
         self.mcp_client = mcp_client
-        self.active_games: Dict[str, GameManager] = {}
-        self.background_tasks: Dict[str, asyncio.Task] = {}
-        # Track games waiting for initial paths to be ready
-        self.games_waiting_for_initial_paths: Set[str] = set()
+        self.active_games: Dict[str, GameManager] = {} # { game_id: GameManager }
+        # background was because we thought we would support an interactive mode (viewer can step through)
+        # TODO(hunter): refactor this as everything is background now
+        self.background_tasks: Dict[str, asyncio.Task] = {} # { game_id: asyncio.Task }
         
-    async def start_game(self, request: StartGameRequest, background: bool = False) -> StartGameResponse:
-        """Start a new game and optionally run it in the background."""
-        logger.info(f"Starting game with strategy: {request.task_strategy.type}")
-        
-        # Select task using the specified strategy
-        task = await task_selector_service.select_task(request.task_strategy)
-        logger.debug(f"Task selection result: {task} (type: {type(task)})")
-        
-        if not task:
-            raise ValueError("Failed to select a valid task")
-        
-        logger.info(f"Selected task: {task.start_page_title} -> {task.target_page_title}")
+    async def setup_game(self, task: Task, model_selection: ModelSelection, max_steps: int = 30) -> str:
+        """Initialize a new game without starting execution. Returns game_id."""
+        logger.info(f"Setting up game: {model_selection.model_name} for task {task.start_page_title} -> {task.target_page_title}")
         
         # Create model configuration
-        model = create_model(request.model_provider)
-        if request.model_name != "random":
-            model.model_config.model_name = request.model_name
-        
+        model = create_model(model_selection.model_name)
+
         # Create game configuration
         game_config = GameConfig(
             start_page_title=task.start_page_title,
             target_page_title=task.target_page_title,
-            max_steps=request.max_steps,
+            max_steps=max_steps,
             model=model.model_config
         )
         
         # Create GameManager with event bus
-        game_manager = GameManager(self.mcp_client, event_bus=self.event_bus)
-        initial_state = await game_manager.start_game(game_config)
+        # TODO(hunter): we could pass the language model and config to the constructor?
+        game_manager = GameManager(self.mcp_client, event_bus=self.event_bus) 
+        initial_state = await game_manager.initialize_game(game_config)
         
         if initial_state.status == GameStatus.ERROR:
-            logger.error(f"Failed to start game: {initial_state.error_message}")
+            logger.error(f"Failed to initialize game: {initial_state.error_message}")
             raise ValueError(f"Game initialization failed: {initial_state.error_message}")
         
         # Store active game
         self.active_games[initial_state.game_id] = game_manager
         
-        # Mark game as waiting for initial paths if background execution requested
-        if background:
-            self.games_waiting_for_initial_paths.add(initial_state.game_id)
-            background_task = asyncio.create_task(self._run_game_background(initial_state.game_id))
-            self.background_tasks[initial_state.game_id] = background_task
-            logger.info(f"Game {initial_state.game_id} marked as waiting for initial paths")
-            
-        # Emit game_started event (this will trigger initial path calculation)
+        # Emit game_started event
         await self.event_bus.publish(GameEvent(
             type="game_started",
             game_id=initial_state.game_id,
             data={"game_state": initial_state}
         ))
         
-        # Get task strategy info for response
-        task_info = task_selector_service.get_strategy_info(request.task_strategy)
-        task_info.update({
-            "start_page": task.start_page_title,
-            "target_page": task.target_page_title
-        })
-        
-        logger.info(f"Game {initial_state.game_id} started successfully")
-        return StartGameResponse(
-            game_id=initial_state.game_id,
-            message="Game started successfully",
-            task_info=task_info
-        )
+        logger.info(f"Game {initial_state.game_id} initialized successfully")
+        return initial_state.game_id
     
-    async def handle_initial_paths_ready(self, event: GameEvent):
-        """Handle initial_paths_ready event and allow background game execution to proceed."""
-        game_id = event.game_id
-        if game_id in self.games_waiting_for_initial_paths:
-            self.games_waiting_for_initial_paths.remove(game_id)
-            logger.info(f"Initial paths ready for game {game_id}, gameplay can now proceed")
-        else:
-            logger.debug(f"Received initial_paths_ready for game {game_id} but game was not waiting")
+    async def start_game_execution(self, game_id: str, background: bool = True) -> bool:
+        """Start execution for an initialized game."""
+        if game_id not in self.active_games:
+            logger.error(f"Cannot start execution for unknown game: {game_id}")
+            return False
+        
+        if background:
+            # Start background execution
+            background_task = asyncio.create_task(self._run_game_background(game_id))
+            self.background_tasks[game_id] = background_task
+            logger.info(f"Started background execution for game {game_id}")
+        
+        return True
+    
+    async def start_games(self, game_ids: list[str], background: bool = True) -> int:
+        """Start execution for multiple games. Returns number of successfully started games."""
+        started_count = 0
+        for game_id in game_ids:
+            if await self.start_game_execution(game_id, background):
+                started_count += 1
+        
+        logger.info(f"Started execution for {started_count}/{len(game_ids)} games")
+        return started_count
     
     async def get_game_state(self, game_id: str) -> Optional[GameState]:
         """Get current state of a game."""
@@ -147,7 +133,7 @@ class GameCoordinator:
     def get_active_games(self) -> Dict[str, str]:
         """List all active games and their execution mode."""
         return {
-            game_id: "background" if game_id in self.background_tasks else "interactive"
+            game_id: "background" if game_id in self.background_tasks else "inactive"
             for game_id in self.active_games.keys()
         }
     
@@ -166,25 +152,13 @@ class GameCoordinator:
         # Clear everything
         self.active_games.clear()
         self.background_tasks.clear()
-        self.games_waiting_for_initial_paths.clear()
         
         logger.info("GameCoordinator shutdown complete")
     
     async def _run_game_background(self, game_id: str):
-        """Run a game in the background until completion, waiting for initial paths first."""
+        """Run a game in the background until completion."""
         try:
             logger.info(f"Starting background execution for game {game_id}")
-            
-            # Wait for initial paths to be ready before starting gameplay
-            logger.info(f"Waiting for initial paths to be ready for game {game_id}")
-            while game_id in self.games_waiting_for_initial_paths:
-                if game_id not in self.active_games:
-                    # Game was terminated while waiting
-                    logger.info(f"Game {game_id} was terminated while waiting for initial paths")
-                    return
-                await asyncio.sleep(0.1)  # Small polling interval
-            
-            logger.info(f"Initial paths ready, starting gameplay for game {game_id}")
             
             while game_id in self.active_games:
                 game_state = await self.play_turn(game_id)
@@ -200,23 +174,22 @@ class GameCoordinator:
         except Exception as e:
             logger.error(f"Error in background game {game_id}: {e}", exc_info=True)
         finally:
-            # Ensure cleanup happens
-            if game_id in self.active_games:
-                await self._cleanup_game(game_id)
+            # Clean up background task reference
+            self.background_tasks.pop(game_id, None)
     
     async def _cleanup_game(self, game_id: str):
-        """Clean up game resources."""
-        # Cancel background task if exists
+        """Clean up a completed or terminated game."""
+        # Cancel background task if running
         if game_id in self.background_tasks:
             self.background_tasks[game_id].cancel()
+            try:
+                await self.background_tasks[game_id]
+            except asyncio.CancelledError:
+                pass
             del self.background_tasks[game_id]
         
         # Remove from active games
         if game_id in self.active_games:
             del self.active_games[game_id]
         
-        # Remove from waiting set if still there
-        if game_id in self.games_waiting_for_initial_paths:
-            self.games_waiting_for_initial_paths.remove(game_id)
-        
-        logger.info(f"Cleaned up game {game_id}")
+        logger.debug(f"Cleaned up game {game_id}")

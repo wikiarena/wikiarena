@@ -1,42 +1,42 @@
 // =============================================================================
-// Core Page-Centric Game State Types
+// Core Task-Centric Data Types
 // =============================================================================
 
-// Core page state representing the game at a specific page in navigation history
+// Task object containing multiple games competing on same start/target pages
+export interface Task {
+  startPage: string;
+  targetPage: string;
+  shortestPathLength: number | undefined; // NOTE: will be undefined until initial shortest paths are found
+  games: Map<string, GameSequence>; // keyed by game_id
+  
+  // Viewing information
+  renderingMode: 'live' | 'stepping';
+  viewingPageIndex: number;
+  currentPageIndex: number;
+}
+
+// Game sequence object per player
+export interface GameSequence {
+  gameId: string; // for websocket connection
+  status: 'not_started' | 'in_progress' | 'finished';
+  pageStates: PageState[]; // sequence of page states
+}
+
+// Page state representing the game at a specific page in navigation history
 export interface PageState {
+  gameId: string; // required for multi-player support
   pageTitle: string;
   moveIndex: number; // Which move brought us here (0 for start page)
   
   // Optimal path data (will arrive asynchronously)
   optimalPaths: string[][]; // Paths from this page to target
   distanceToTarget?: number;
+  distanceChange?: number; // How this move affected distance to target
   
   // Navigation context
   isStartPage: boolean;
   isTargetPage: boolean;
   visitedFromPage?: string; // Previous page title (for move edge)
-  
-  // Move distance assessment
-  distanceChange?: number; // How this move affected distance to target
-}
-
-// Sequential game state - collection of page states
-export interface GameSequence {
-  gameId: string;
-  startPage: string;
-  targetPage: string;
-  status: 'not_started' | 'in_progress' | 'finished';
-  
-  // Core sequential data
-  pageStates: PageState[]; // One per unique page visited, in order
-  currentPageIndex: number; // Index of latest page reached in actual game
-  viewingPageIndex: number; // Index of page currently being viewed (for stepping)
-  
-  // Progress tracking
-  initialOptimalDistance: number | null; // Initial distance from start to target
-  
-  // Rendering mode
-  renderingMode: 'live' | 'stepping';
 }
 
 // =============================================================================
@@ -47,10 +47,14 @@ export interface GameSequence {
 export interface PageNode {
   pageTitle: string;
   type: 'start' | 'target' | 'visited' | 'optimal_path';
+  distanceToTarget?: number; // Same for all visits - property of the graph
   
-  // Derived from PageState or optimal paths
-  distanceToTarget?: number;
-  distanceChange?: number; // For visited pages only
+  // Array of visits from games (only when node is visited during a game)
+  visits: Array<{
+    gameId: string;
+    moveIndex: number;
+    distanceChange?: number;
+  }>;
   
   // Positioning (for D3 force simulation)
   x?: number;
@@ -61,7 +65,7 @@ export interface PageNode {
 
 // Navigation edge - represents a move or potential move
 export interface NavigationEdge {
-  id: string;
+  id: string; // includes game_id for uniqueness
   sourcePageTitle: string;
   targetPageTitle: string;
   type: 'move' | 'optimal_path';

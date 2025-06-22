@@ -82,7 +82,7 @@ async def main():
 
         # 6. Create and start game
         game_manager = GameManager(mcp_client)
-        initial_state = await game_manager.start_game(game_config)
+        initial_state = await game_manager.initialize_game(game_config)
         logging.info(f"Game started: {initial_state.game_id}")
         logging.info(f"Current page: {initial_state.current_page.title}")
         logging.info(f"Available links: {len(initial_state.current_page.links)}")

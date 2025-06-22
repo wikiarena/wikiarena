@@ -19,9 +19,13 @@ class OptimalPathHandler:
     def __init__(self, event_bus: EventBus, solver: WikiTaskSolver): 
         self.event_bus = event_bus
         self.solver = solver
-        # Cache for latest solver results per game
+        # Cache for latest solver results per game # TODO(hunter): this should be per task
+        # why is this only caching the initial solve? (it's for the connection_initialized event)
+        # shouldn't we be caching all start pages for the same task (target page)? 
+        # Dict[target, Dict[start, solver_result]]
         self.cache: Dict[str, Dict[str, Any]] = {}
     
+    # TODO(hunter): do we still need this once we fix game init?
     def get_cached_results(self, game_id: str) -> Optional[Dict[str, Any]]:
         """Get cached solver results for a game."""
         return self.cache.get(game_id)
@@ -43,33 +47,89 @@ class OptimalPathHandler:
             event.game_id,
             game_state.current_page.title,
             game_state.config.target_page_title,
-            move.step
         ))
     
-    async def handle_game_started(self, event: GameEvent):
-        """Handle game_started events by analyzing initial optimal paths."""
-        logger.debug(f"Analyzing initial paths for game {event.game_id}")
+    
+    async def handle_task_selected(self, event: GameEvent):
+        """Handle task_selected events by solving the task once for all games."""
+        # TODO(hunter): we may need to change GameEvent
+        logger.debug(f"Solving task for task_id: {event.game_id}")  # game_id is actually task_id for task events
         
-        game_state = event.data.get("game_state")
-        if not game_state:
-            logger.warning(f"Missing game_state in game_started event for game {event.game_id}")
+        task = event.data.get("task")
+        task_id = event.data.get("task_id")
+        game_ids = event.data.get("game_ids", [])
+        
+        if not task or not task_id:
+            logger.warning(f"Missing task data in task_selected event")
             return
         
-        # Analyze initial path (non-blocking, but will emit initial_paths_ready event)
-        asyncio.create_task(self._find_optimal_paths(
-            event.game_id,
-            game_state.config.start_page_title,
-            game_state.config.target_page_title,
-            step=0,
-            is_initial=True
-        ))
+        # Solve the task once
+        try:
+            logger.info(f"Solving task {task_id}: {task.start_page_title} -> {task.target_page_title}")
+            
+            solver_result = await self.solver.find_shortest_path(
+                task.start_page_title, 
+                task.target_page_title
+            )
+            
+            # Cache results for all games in this task
+            cache_data = {
+                "optimal_paths": solver_result.paths,
+                "optimal_path_length": solver_result.path_length,
+                "from_page_title": task.start_page_title,
+                "to_page_title": task.target_page_title,
+                "computation_time_ms": solver_result.computation_time_ms,
+                "is_initial": True,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # Cache for all games in this task
+            for game_id in game_ids:
+                self.cache[game_id] = cache_data.copy()
+            
+            # Emit task_solved event
+            await self.event_bus.publish(GameEvent(
+                type="task_solved",
+                game_id=task_id,  # Use task_id as game_id for task-level events
+                data={
+                    "task_id": task_id,
+                    "game_ids": game_ids,
+                    "optimal_paths": solver_result.paths,
+                    "optimal_path_length": solver_result.path_length,
+                    "from_page_title": task.start_page_title,
+                    "to_page_title": task.target_page_title,
+                    "computation_time_ms": solver_result.computation_time_ms
+                }
+            ))
+            
+            logger.info(
+                f"Task {task_id} solved: "
+                f"{task.start_page_title} -> {task.target_page_title} "
+                f"(length: {solver_result.path_length}, "
+                f"time: {solver_result.computation_time_ms:.1f}ms, "
+                f"games: {len(game_ids)})"
+            )
+            
+        except Exception as e:
+            logger.error(f"Failed to solve task {task_id}: {e}", exc_info=True)
+            
+            # Emit failure event
+            await self.event_bus.publish(GameEvent(
+                type="task_solve_failed",
+                game_id=task_id,
+                data={
+                    "error": str(e),
+                    "task_id": task_id,
+                    "start_page": task.start_page_title,
+                    "target_page": task.target_page_title
+                }
+            ))
     
     async def _find_optimal_paths(
         self, 
         game_id: str, 
         from_page: str, 
         to_page: str, 
-        step: int,
         is_initial: bool = False
     ):
         """
@@ -91,11 +151,10 @@ class OptimalPathHandler:
                 "from_page_title": from_page,
                 "to_page_title": to_page,
                 "computation_time_ms": solver_result.computation_time_ms,
-                "step": step,
                 "is_initial": is_initial,
                 "timestamp": datetime.now().isoformat()
             }
-            
+            # TODO(hunter): why do we do this twice? 
             # Prepare event data
             event_data = {
                 "game_id": game_id,
@@ -104,7 +163,6 @@ class OptimalPathHandler:
                 "optimal_paths": solver_result.paths,
                 "optimal_path_length": solver_result.path_length,
                 "computation_time_ms": solver_result.computation_time_ms,
-                "step": step,
                 "is_initial": is_initial
             }
             
@@ -143,9 +201,8 @@ class OptimalPathHandler:
                 game_id=game_id,
                 data={
                     "error": str(e),
-                    "from_page": from_page,
-                    "to_page": to_page,
-                    "step": step,
+                    "from_page_title": from_page,
+                    "to_page_title": to_page,
                     "is_initial": is_initial
                 }
             )) 

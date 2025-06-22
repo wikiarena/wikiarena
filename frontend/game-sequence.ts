@@ -1,4 +1,16 @@
+// =============================================================================
+// DEPRECATED: GameSequenceManager - Replaced by TaskManager
+// =============================================================================
+// This file has been deprecated in favor of the new task-centric architecture.
+// The GameSequenceManager has been replaced by TaskManager which handles
+// multiple games within a task and supports global stepping.
+//
+// TODO: Remove this file once migration is complete
+// =============================================================================
+
+/*
 import { 
+  Task,
   GameSequence,
   PageState,
   PageGraphData,
@@ -522,4 +534,5 @@ export class GameSequenceManager {
       }))
     });
   }
-} 
+}
+*/ 

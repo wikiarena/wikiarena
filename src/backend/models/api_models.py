@@ -50,21 +50,25 @@ TaskStrategy = Union[
     CustomTaskStrategy,
 ]
 
-# API Request Models
-class StartGameRequest(BaseModel):
-    """Request to start a new game with flexible task selection."""
-    task_strategy: TaskStrategy = Field(..., description="How to select the start/target pages")
-    max_steps: int = Field(30, description="Maximum number of steps allowed")
+# Game Configuration Models
+class ModelSelection(BaseModel):
+    """Configuration for a single game within a task."""
     model_provider: str = Field("random", description="Model provider (anthropic, openai, random)")
     model_name: str = Field("random", description="Specific model name")
 
-# API Response Models
-class StartGameResponse(BaseModel):
-    """Response when starting a new game."""
-    game_id: str
-    message: str
-    task_info: Dict[str, str] = Field(..., description="Information about the selected task")
-    # Note: We'll embed the full GameState from core library directly
+# Task API Models
+class CreateTaskRequest(BaseModel):
+    """Request to create a new task with multiple competing games."""
+    task_strategy: TaskStrategy = Field(..., description="How to select the start/target pages")
+    model_selections: List[ModelSelection] = Field(..., description="Configuration for each game in the task")
+    max_steps: int = Field(30, description="Maximum number of steps allowed per game")
+
+class CreateTaskResponse(BaseModel):
+    """Response when creating a new task."""
+    task_id: str
+    start_page: str
+    target_page: str
+    game_ids: List[str]
 
 class ErrorResponse(BaseModel):
     """Standard error response."""
