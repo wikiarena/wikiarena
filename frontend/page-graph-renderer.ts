@@ -520,10 +520,10 @@ export class PageGraphRenderer {
   private getSmartSpawnPosition(page: PageNode): { x: number; y: number } {
     switch (page.type) {
       case 'start':
-        return { x: this.width / 2, y: this.height * 0.15 };
+        return { x: this.width * 0.1, y: this.height * 0.5 };
         
       case 'target':
-        return { x: this.width / 2, y: this.height * 0.85 };
+        return { x: this.width * 0.9, y: this.height * 0.5 };
         
       case 'visited':
         return this.getVisitedNodeSpawnPosition(page);

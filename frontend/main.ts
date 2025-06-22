@@ -3,7 +3,6 @@ import { TaskManager } from './task-manager.js';
 import { TaskConnectionManager } from './task-connection-manager.js';
 import { UIController } from './ui-controller.js';
 import { PageGraphRenderer } from './page-graph-renderer.js';
-import { Task } from './types.js';
 
 // =============================================================================
 // Main Application Class - Orchestrates all components
@@ -45,10 +44,9 @@ class WikiArenaApp {
   private setupEventFlow(): void {
     // Connection Manager → UI Controller (task-level status)
     const unsubscribeConnectionStatus = this.connectionManager.onStatusChange(taskStatus => {
-      // TODO: Convert TaskConnectionStatus to legacy ConnectionStatus format
       console.log('📊 Task connection status:', taskStatus);
       
-      // For now, create a legacy status object from overall task status
+      // Convert TaskConnectionStatus to legacy ConnectionStatus format
       const legacyStatus = {
         connected: taskStatus.overallStatus === 'connected',
         connecting: taskStatus.overallStatus === 'connecting',
@@ -65,22 +63,26 @@ class WikiArenaApp {
       this.pageGraphRenderer.updateFromPageGraphData(pageGraphData);
     });
 
-    // Task → UI Controller (with stepping info)
+    // Task → UI Controller
     const unsubscribeTaskUI = this.taskManager.subscribe(task => {
-      // Convert Task to legacy GameState format for UI compatibility
-      const legacyState = this.convertTaskToLegacyState(task);
-      
       // Get stepping information from TaskManager
       const steppingInfo = {
-        currentMoveIndex: task.currentPageIndex,
-        viewingMoveIndex: task.viewingPageIndex,
+        currentPageIndex: task.currentPageIndex,
+        viewingPageIndex: task.viewingPageIndex,
         renderingMode: task.renderingMode,
         canStepForward: this.taskManager.canStepForward(),
         canStepBackward: this.taskManager.canStepBackward()
       };
       
-      // Update UI with converted task data
-      this.uiController.updateGameState(legacyState, steppingInfo);
+      // Update UI with Task data directly (NEW approach)
+      this.uiController.updateTask(task, steppingInfo);
+      
+      // Check if user selected a different game and update accordingly
+      const selectedGameId = this.uiController.getSelectedGameId();
+      if (selectedGameId && task.games.has(selectedGameId)) {
+        // Re-render with updated selection if needed
+        this.uiController.updateTask(task, steppingInfo);
+      }
     });
 
     // Store unsubscribe functions for cleanup
@@ -90,56 +92,7 @@ class WikiArenaApp {
       unsubscribeTaskUI
     );
 
-    console.log('✅ Event flow setup complete (page-centric architecture)');
-  }
-
-  // Convert Task to legacy GameState format for UI compatibility
-  private convertTaskToLegacyState(task: Task): any {
-    // Use the first/primary game for legacy compatibility
-    const primaryGame = Array.from(task.games.values())[0];
-    
-    if (!primaryGame) {
-      // Return empty state if no games
-      return {
-        gameId: null,
-        status: 'not_started',
-        startPage: task.startPage || null,
-        targetPage: task.targetPage || null,
-        currentPage: null,
-        moves: [],
-        optimalPaths: [],
-        currentDistance: null,
-        totalMoves: 0,
-        success: null
-      };
-    }
-
-    // Get current and viewing page states
-    const viewingPageState = primaryGame.pageStates[task.viewingPageIndex];
-    const currentPageState = primaryGame.pageStates[primaryGame.pageStates.length - 1];
-    
-    // Convert page states to legacy moves format (excluding start page)
-    const moves = primaryGame.pageStates.slice(1).map((state) => ({
-      from_page_title: state.visitedFromPage || '',
-      to_page_title: state.pageTitle,
-      step: state.moveIndex,
-      distanceChange: state.distanceChange
-    }));
-
-    return {
-      gameId: primaryGame.gameId,
-      status: primaryGame.status,
-      startPage: task.startPage,
-      targetPage: task.targetPage,
-      currentPage: currentPageState?.pageTitle || null,
-      moves: moves,
-      optimalPaths: viewingPageState?.optimalPaths || [],
-      currentDistance: viewingPageState?.distanceToTarget || null,
-      initialOptimalDistance: task.shortestPathLength || null,
-      totalMoves: primaryGame.pageStates.length - 1, // Subtract 1 for start page
-      success: primaryGame.status === 'finished' ? 
-               (currentPageState?.isTargetPage || false) : null
-    };
+    console.log('✅ Event flow setup complete (task-centric architecture)');
   }
 
   private setupUIHandlers(): void {
@@ -163,7 +116,12 @@ class WikiArenaApp {
     const infoPanel = document.getElementById('info-panel');
     
     if (toggleButton && infoPanel) {
-      let isCollapsed = false;
+      // Panel starts collapsed by default
+      let isCollapsed = true;
+      
+      // Set initial button state to match collapsed panel
+      toggleButton.textContent = '📊';
+      toggleButton.title = 'Show info panel';
       
       toggleButton.addEventListener('click', () => {
         isCollapsed = !isCollapsed;
@@ -333,6 +291,7 @@ class WikiArenaApp {
 
   private resetTaskManager(): void {
     this.taskManager.reset();
+    this.uiController.resetTaskUI(); // Updated to use new method name
   }
 
   // =============================================================================
@@ -389,6 +348,10 @@ class WikiArenaApp {
           model_provider: 'random',
           model_name: 'random'
         },
+        // {
+        //   model_provider: 'random',
+        //   model_name: 'random'
+        // },
       ],
       max_steps: 10
     };

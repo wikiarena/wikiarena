@@ -1,4 +1,4 @@
-import { GameState, ConnectionStatus, RenderingMode } from './types.js';
+import { Task, GameSequence, ConnectionStatus, RenderingMode } from './types.js';
 
 // =============================================================================
 // UI Controller - Handles all DOM updates and user interactions
@@ -7,6 +7,7 @@ import { GameState, ConnectionStatus, RenderingMode } from './types.js';
 export class UIController {
   private elements: Map<string, HTMLElement> = new Map();
   private onStepToMove?: (moveIndex: number) => void;
+  private selectedGameId: string | null = null; // For game switching in info panel
 
   constructor() {
     this.initializeElements();
@@ -22,14 +23,10 @@ export class UIController {
       'connection-indicator',
       'connection-text',
       'start-game-btn',
-      'game-id',
-      'game-status',
+      'task-info',
       'start-page',
       'target-page',
-      'current-page',
-      'move-count',
-      'optimal-distance',
-      'optimal-paths-count',
+      'shortest-path-length',
       'moves-container',
       'loading-state',
       'graph-canvas',
@@ -41,10 +38,8 @@ export class UIController {
       'live-mode-btn',
       'step-info',
       'stepping-controls',
-      // Progress bar
-      'progress-bar-container',
-      'progress-bar-fill',
-      'progress-indicator'
+      // Progress bars container
+      'progress-bars-container'
     ];
 
     elementIds.forEach(id => {
@@ -104,35 +99,38 @@ export class UIController {
   }
 
   // =============================================================================
-  // Game State Updates
+  // Task State Updates
   // =============================================================================
 
-  updateGameState(state: GameState, steppingInfo?: {
-    currentMoveIndex: number;
-    viewingMoveIndex: number;
+  updateTask(task: Task, steppingInfo?: {
+    currentPageIndex: number;
+    viewingPageIndex: number;
     renderingMode: RenderingMode;
     canStepForward: boolean;
     canStepBackward: boolean;
   }): void {
-    console.log('🖥️ UI: Updating with new game state');
+    console.log('🖥️ UI: Updating with new task state');
 
-    // Update game info panel
-    this.updateGameInfo(state);
+    // Update task info panel
+    this.updateTaskInfo(task);
 
-    // Update page history with stepping info for proper visual indicators
-    this.updatePageHistory(state, steppingInfo);
+    // Update progress bars for all games (pass stepping info)
+    this.updateProgressBars(task, steppingInfo);
 
-    // Update progress bar
-    this.updateProgressBar(state);
+    // Update game-specific info panel (for selected game)
+    this.updateGameInfoPanel(task);
+
+    // Update page history for selected game with stepping info
+    this.updatePageHistory(task, steppingInfo);
 
     // Update graph visibility
-    this.updateGraphVisibility(state);
+    this.updateGraphVisibility(task);
 
     // Update stepping controls if stepping info provided
     if (steppingInfo) {
       this.updateSteppingControls(
-        steppingInfo.currentMoveIndex,
-        steppingInfo.viewingMoveIndex,
+        steppingInfo.currentPageIndex,
+        steppingInfo.viewingPageIndex,
         steppingInfo.renderingMode,
         steppingInfo.canStepForward,
         steppingInfo.canStepBackward
@@ -140,16 +138,11 @@ export class UIController {
     }
   }
 
-  private updateGameInfo(state: GameState): void {
+  private updateTaskInfo(task: Task): void {
     const updates = [
-      ['game-id', state.gameId || '-'],
-      ['game-status', this.formatGameStatus(state)],
-      ['start-page', state.startPage || '-'],
-      ['target-page', state.targetPage || '-'],
-      ['current-page', state.currentPage || '-'],
-      ['move-count', state.totalMoves.toString()],
-      ['optimal-distance', state.currentDistance?.toString() || '-'],
-      ['optimal-paths-count', state.optimalPaths.length > 0 ? state.optimalPaths.length.toString() : '-']
+      ['start-page', task.startPage || '-'],
+      ['target-page', task.targetPage || '-'],
+      ['shortest-path-length', task.shortestPathLength?.toString() || '-']
     ];
 
     updates.forEach(([elementId, value]) => {
@@ -160,22 +153,244 @@ export class UIController {
     });
   }
 
-  private formatGameStatus(state: GameState): string {
-    switch (state.status) {
+  private updateProgressBars(task: Task, steppingInfo?: {
+    currentPageIndex: number;
+    viewingPageIndex: number;
+    renderingMode: RenderingMode;
+    canStepForward: boolean;
+    canStepBackward: boolean;
+  }): void {
+    const container = this.elements.get('progress-bars-container');
+    if (!container) return;
+
+    // Clear existing progress bars
+    container.innerHTML = '';
+
+    if (task.games.size === 0 || !task.shortestPathLength) {
+      container.style.display = 'none';
+      return;
+    }
+
+    container.style.display = 'flex';
+
+    // Create progress bar for each game
+    const gameColors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6']; // Blue, Red, Green, Orange, Purple
+    let colorIndex = 0;
+
+    task.games.forEach((gameSequence, gameId) => {
+      const progressBar = this.createHorizontalProgressBar(
+        gameSequence, 
+        task.shortestPathLength!, 
+        gameColors[colorIndex % gameColors.length],
+        gameId,
+        steppingInfo
+      );
+      container.appendChild(progressBar);
+      colorIndex++;
+    });
+  }
+
+  // Utility function to find most recent page state with valid distanceToTarget
+  private findMostRecentValidDistance(gameSequence: GameSequence, maxIndex: number): number | undefined {
+    // Iterate backwards from maxIndex to find the most recent valid distance
+    for (let i = maxIndex; i >= 0; i--) {
+      const pageState = gameSequence.pageStates[i];
+      if (pageState && pageState.distanceToTarget !== undefined) {
+        console.log(`📏 Using distance from page ${i}: ${pageState.pageTitle} (distance: ${pageState.distanceToTarget}) for game ${gameSequence.gameId}`);
+        return pageState.distanceToTarget;
+      }
+    }
+    
+    console.log(`⚠️ No valid distance found for game ${gameSequence.gameId} up to index ${maxIndex}`);
+    return undefined;
+  }
+
+  private createHorizontalProgressBar(
+    gameSequence: GameSequence, 
+    initialDistance: number, 
+    color: string, 
+    gameId: string,
+    steppingInfo?: {
+      currentPageIndex: number;
+      viewingPageIndex: number;
+      renderingMode: RenderingMode;
+      canStepForward: boolean;
+      canStepBackward: boolean;
+    }
+  ): HTMLElement {
+    const progressBarContainer = document.createElement('div');
+    progressBarContainer.className = 'horizontal-progress-bar';
+
+    // Determine which page state to use based on stepping mode
+    let targetPageStateIndex: number;
+    let currentDistance: number | undefined;
+
+    if (steppingInfo && steppingInfo.renderingMode === 'stepping') {
+      // In stepping mode, use viewing index but limit to what's available for this game
+      targetPageStateIndex = Math.min(steppingInfo.viewingPageIndex, gameSequence.pageStates.length - 1);
+    } else {
+      // In live mode, use the most recent page state
+      targetPageStateIndex = gameSequence.pageStates.length - 1;
+    }
+
+    // Get distance with fallback logic
+    if (targetPageStateIndex >= 0) {
+      const targetPageState = gameSequence.pageStates[targetPageStateIndex];
+      currentDistance = targetPageState?.distanceToTarget;
+      
+      // If current distance is undefined, find the most recent valid one
+      if (currentDistance === undefined) {
+        currentDistance = this.findMostRecentValidDistance(gameSequence, targetPageStateIndex);
+      }
+    }
+
+    // Fallback to initial distance if still no valid distance found
+    if (currentDistance === undefined) {
+      currentDistance = initialDistance;
+    }
+
+    // Calculate progress with baseline: start at 2%, 100% at target
+    const baselinePercent = 1; // Start with 2% visible progress
+    const progressRatio = (initialDistance - currentDistance) / initialDistance;
+    const progressPercent = baselinePercent + (progressRatio * (100 - baselinePercent));
+
+    // Create progress fill
+    const progressFill = document.createElement('div');
+    progressFill.className = 'horizontal-progress-fill';
+    
+    // Add smooth transitions for all properties that change
+    progressFill.style.transition = 'width 0.8s ease, left 0.8s ease, background 0.5s ease';
+    
+    // Handle negative progress (going backwards/leftward from start)
+    if (progressRatio < 0) {
+      progressFill.classList.add('negative');
+      
+      // Calculate how far left to extend for negative progress
+      const negativePercent = Math.abs(progressRatio) * 100;
+      const negativeLeft = -negativePercent; // Push the bar leftward beyond container
+      
+      progressFill.style.left = `${negativeLeft}%`;
+      progressFill.style.width = `${baselinePercent + negativePercent}%`;
+      
+      // Position robot emoji at the leftward edge (negative position)
+      var indicatorPosition = negativeLeft;
+    } else {
+      // Normal positive progress
+      progressFill.style.left = '0%';
+      progressFill.style.width = `${Math.max(baselinePercent, progressPercent)}%`;
+      
+      // Position indicator at the end of the progress fill
+      var indicatorPosition = Math.max(baselinePercent, progressPercent);
+    }
+    
+    progressFill.style.background = color;
+
+    // Create player indicator (robot emoji at current progress)
+    const playerIndicator = document.createElement('div');
+    playerIndicator.className = 'horizontal-progress-indicator';
+    playerIndicator.textContent = '🤖';
+    
+    // Add smooth transition for robot position
+    playerIndicator.style.transition = 'left 0.8s ease';
+    playerIndicator.style.left = `${indicatorPosition}%`;
+
+    // Create trophy at the end
+    const trophy = document.createElement('div');
+    trophy.className = 'horizontal-progress-target';
+    trophy.textContent = '🏆';
+
+    // // Create status indicator (small dot showing game state)
+    // const statusIndicator = document.createElement('div');
+    // statusIndicator.className = 'horizontal-progress-status';
+    // statusIndicator.style.backgroundColor = gameSequence.status === 'in_progress' ? '#10b981' : 
+    //                                        gameSequence.status === 'finished' ? '#f59e0b' : '#64748b';
+
+    progressBarContainer.appendChild(progressFill);
+    progressBarContainer.appendChild(playerIndicator);
+    progressBarContainer.appendChild(trophy);
+    // progressBarContainer.appendChild(statusIndicator);
+
+    // Make progress bar clickable to select this game
+    progressBarContainer.style.cursor = 'pointer';
+    progressBarContainer.addEventListener('click', () => {
+      this.selectGame(gameId);
+    });
+
+    return progressBarContainer;
+  }
+
+  private selectGame(gameId: string): void {
+    this.selectedGameId = gameId;
+    console.log(`🎮 Selected game: ${gameId}`);
+    // Trigger re-render of game-specific panels
+    // This will be called by the main app when it detects the selection change
+  }
+
+  getSelectedGameId(): string | null {
+    return this.selectedGameId;
+  }
+
+  private updateGameInfoPanel(task: Task): void {
+    // Select the first game if none is selected
+    if (!this.selectedGameId && task.games.size > 0) {
+      this.selectedGameId = Array.from(task.games.keys())[0];
+    }
+
+    const selectedGame = this.selectedGameId ? task.games.get(this.selectedGameId) : null;
+    if (!selectedGame) return;
+
+    const currentPageState = selectedGame.pageStates[selectedGame.pageStates.length - 1];
+
+    // Update info panel with selected game's data
+    const taskInfoElement = this.elements.get('task-info');
+    if (taskInfoElement) {
+      taskInfoElement.innerHTML = `
+        <h3>Game Info (${this.selectedGameId?.slice(-6)})</h3>
+        <div class="info-item">
+          <span class="info-label">Game ID:</span>
+          <span class="info-value">${selectedGame.gameId.slice(-6)}</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Status:</span>
+          <span class="info-value">${this.formatGameStatus(selectedGame)}</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Current Page:</span>
+          <span class="info-value">${currentPageState?.pageTitle || '-'}</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Moves:</span>
+          <span class="info-value">${selectedGame.pageStates.length - 1}</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Distance:</span>
+          <span class="info-value">${currentPageState?.distanceToTarget?.toString() || '-'}</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Optimal Paths:</span>
+          <span class="info-value">${currentPageState?.optimalPaths?.length || 0}</span>
+        </div>
+      `;
+    }
+  }
+
+  private formatGameStatus(gameSequence: GameSequence): string {
+    switch (gameSequence.status) {
       case 'not_started':
         return 'Not Started';
       case 'in_progress':
         return 'In Progress';
       case 'finished':
-        return state.success ? 'Completed!' : 'Failed';
+        const currentPageState = gameSequence.pageStates[gameSequence.pageStates.length - 1];
+        return currentPageState?.isTargetPage ? 'Completed!' : 'Failed';
       default:
         return 'Unknown';
     }
   }
 
-  private updatePageHistory(state: GameState, steppingInfo?: {
-    currentMoveIndex: number;
-    viewingMoveIndex: number;
+  private updatePageHistory(task: Task, steppingInfo?: {
+    currentPageIndex: number;
+    viewingPageIndex: number;
     renderingMode: RenderingMode;
     canStepForward: boolean;
     canStepBackward: boolean;
@@ -186,11 +401,17 @@ export class UIController {
     // Clear existing content
     container.innerHTML = '';
 
-    // Get viewing info for proper visual indicators
-    const viewingMoveIndex = steppingInfo?.viewingMoveIndex ?? -1;
-    const currentMoveIndex = steppingInfo?.currentMoveIndex ?? -1;
+    const selectedGame = this.selectedGameId ? task.games.get(this.selectedGameId) : null;
+    if (!selectedGame) {
+      container.innerHTML = '<div style="color: #64748b; font-style: italic; padding: 1rem; text-align: center;">No game selected</div>';
+      return;
+    }
 
-    // Build page history - ALL pages in the game
+    // Get viewing info for proper visual indicators
+    const viewingPageIndex = steppingInfo?.viewingPageIndex ?? -1;
+    const currentPageIndex = steppingInfo?.currentPageIndex ?? -1;
+
+    // Build page history for selected game
     const pageHistory: Array<{
       title: string, 
       type: 'start' | 'target' | 'visited' | 'current' | 'future', 
@@ -199,54 +420,29 @@ export class UIController {
       isViewing: boolean
     }> = [];
     
-    // Add start page (move 0 in our new indexing)
-    if (state.startPage) {
-      const isCurrentPage = state.currentPage === state.startPage;
-      const isTargetPage = state.startPage === state.targetPage;
-      const isViewing = viewingMoveIndex === 0;
+    selectedGame.pageStates.forEach((pageState, index) => {
+      const isCurrentPage = index === selectedGame.pageStates.length - 1;
+      const isViewing = viewingPageIndex === index;
+      const isFuture = index > currentPageIndex;
       
       let pageType: 'start' | 'target' | 'visited' | 'current' | 'future';
-      if (isTargetPage) {
-        pageType = 'target';
-      } else if (isCurrentPage && isViewing) {
-        pageType = 'current';
-      } else {
-        pageType = 'start';
-      }
-
-      pageHistory.push({
-        title: state.startPage,
-        type: pageType,
-        step: 0,
-        moveIndex: 0,
-        isViewing
-      });
-    }
-
-    // Add ALL pages from moves (not just up to viewing index)
-    state.moves.forEach((move, index) => {
-      const moveIndex = index + 1; // moves[0] = moveIndex 1, moves[1] = moveIndex 2, etc.
-      const isCurrentPage = move.to_page_title === state.currentPage;
-      const isTargetPage = move.to_page_title === state.targetPage;
-      const isViewing = viewingMoveIndex === moveIndex;
-      const isFuture = moveIndex > currentMoveIndex; // This move hasn't happened yet
-      
-      let pageType: 'start' | 'target' | 'visited' | 'current' | 'future';
-      if (isTargetPage) {
+      if (pageState.isTargetPage) {
         pageType = 'target';
       } else if (isCurrentPage && isViewing) {
         pageType = 'current';
       } else if (isFuture) {
         pageType = 'future';
+      } else if (pageState.isStartPage) {
+        pageType = 'start';
       } else {
         pageType = 'visited';
       }
 
       pageHistory.push({
-        title: move.to_page_title,
+        title: pageState.pageTitle,
         type: pageType,
-        step: moveIndex,
-        moveIndex: moveIndex,
+        step: pageState.moveIndex,
+        moveIndex: index, // Use array index for stepping
         isViewing
       });
     });
@@ -260,60 +456,6 @@ export class UIController {
     if (pageHistory.length === 0) {
       container.innerHTML = '<div style="color: #64748b; font-style: italic; padding: 1rem; text-align: center;">No pages visited yet</div>';
     }
-  }
-
-  private updateProgressBar(state: any): void {
-    const progressContainer = this.elements.get('progress-bar-container');
-    const progressFill = this.elements.get('progress-bar-fill');
-    const progressIndicator = this.elements.get('progress-indicator');
-
-    if (!progressContainer || !progressFill || !progressIndicator) return;
-
-    // Show/hide progress bar based on game state
-    if (state.status === 'not_started' || !state.initialOptimalDistance) {
-      progressContainer.style.display = 'none';
-      return;
-    }
-
-    progressContainer.style.display = 'block';
-
-    const initialDistance = state.initialOptimalDistance;
-    const currentDistance = state.currentDistance || initialDistance;
-
-    // Calculate progress with baseline: start at 1%, 100% at target
-    const baselinePercent = 1; // Start with 1% visible progress (just enough to see)
-    const progressRatio = (initialDistance - currentDistance) / initialDistance;
-    const progressPercent = baselinePercent + (progressRatio * (100 - baselinePercent));
-
-    // Remove existing color classes
-    progressFill.classList.remove('negative');
-    
-    // Determine behavior based on progress
-    if (progressRatio < 0) {
-      // Negative progress - extend upward beyond container with red color
-      progressFill.classList.add('negative');
-      
-      // Calculate how much to extend above the container
-      const negativePercent = Math.abs(progressRatio) * 100;
-      const totalHeight = baselinePercent + negativePercent;
-      const negativeTop = -negativePercent; // Push the bar upward
-      
-      progressFill.style.height = `${totalHeight}%`;
-      progressFill.style.top = `${negativeTop}%`;
-      
-      // Position robot emoji at the top of the negative progress (above container)
-      progressIndicator.style.top = `${negativeTop - 2}%`;
-      
-    } else {
-      // Positive or zero progress - normal green behavior from baseline
-      progressFill.style.height = `${Math.max(baselinePercent, progressPercent)}%`;
-      progressFill.style.top = '0%';
-      
-      // Position robot emoji at the current progress level
-      progressIndicator.style.top = `${Math.max(baselinePercent, progressPercent) - 2}%`;
-    }
-
-    console.log(`📊 Vertical Progress: ${currentDistance}/${initialDistance} (${(progressRatio * 100).toFixed(1)}%) - Display: ${progressPercent.toFixed(1)}%`);
   }
 
   private createInteractivePageElement(page: {
@@ -391,18 +533,18 @@ export class UIController {
     }
   }
 
-  private updateGraphVisibility(state: GameState): void {
+  private updateGraphVisibility(task: Task): void {
     const loadingState = this.elements.get('loading-state');
     const graphCanvas = this.elements.get('graph-canvas');
 
     if (!loadingState || !graphCanvas) return;
 
-    if (state.status === 'not_started') {
+    if (task.games.size === 0) {
       // Show loading state
       loadingState.style.display = 'flex';
       loadingState.textContent = 'Click "Start New Game" to begin';
       graphCanvas.style.display = 'none';
-    } else if (state.status === 'in_progress' || state.status === 'finished') {
+    } else {
       // Show graph
       loadingState.style.display = 'none';
       graphCanvas.style.display = 'block';
@@ -523,14 +665,14 @@ export class UIController {
   // Stepping Controls
   // =============================================================================
 
-  updateSteppingControls(currentMoveIndex: number, viewingMoveIndex: number, renderingMode: 'live' | 'stepping', canStepForward: boolean, canStepBackward: boolean): void {
+  updateSteppingControls(currentPageIndex: number, viewingPageIndex: number, renderingMode: 'live' | 'stepping', canStepForward: boolean, canStepBackward: boolean): void {
     // Update step info
     const stepInfo = this.elements.get('step-info');
     if (stepInfo) {
       if (renderingMode === 'live') {
-        stepInfo.textContent = `Live Mode (Page ${currentMoveIndex})`;
+        stepInfo.textContent = `Live Mode (Page ${currentPageIndex})`;
       } else {
-        stepInfo.textContent = `Viewing Page ${viewingMoveIndex} of ${currentMoveIndex}`;
+        stepInfo.textContent = `Viewing Page ${viewingPageIndex} of ${currentPageIndex}`;
       }
     }
 
@@ -555,7 +697,7 @@ export class UIController {
     // Show/hide stepping controls based on game state
     const steppingControls = this.elements.get('stepping-controls');
     if (steppingControls) {
-      steppingControls.style.display = currentMoveIndex >= 0 ? 'flex' : 'none';
+      steppingControls.style.display = currentPageIndex >= 0 ? 'flex' : 'none';
     }
   }
 
@@ -577,19 +719,25 @@ export class UIController {
   // Utility Methods
   // =============================================================================
 
-  resetGameUI(): void {
-    // Reset to initial state
-    this.updateGameState({
-      gameId: null,
-      status: 'not_started',
-      startPage: null,
-      targetPage: null,
-      currentPage: null,
-      moves: [],
-      optimalPaths: [],
-      currentDistance: null,
-      totalMoves: 0,
-      success: null
+  resetTaskUI(): void {
+    this.selectedGameId = null;
+    
+    // Hide progress bars
+    const progressContainer = this.elements.get('progress-bars-container');
+    if (progressContainer) {
+      progressContainer.style.display = 'none';
+      progressContainer.innerHTML = '';
+    }
+
+    // Clear task info
+    this.updateTaskInfo({
+      startPage: '',
+      targetPage: '',
+      shortestPathLength: undefined,
+      games: new Map(),
+      renderingMode: 'live',
+      viewingPageIndex: -1,
+      currentPageIndex: -1
     });
   }
 
