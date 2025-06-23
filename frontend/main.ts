@@ -3,6 +3,7 @@ import { TaskManager } from './task-manager.js';
 import { TaskConnectionManager } from './task-connection-manager.js';
 import { UIController } from './ui-controller.js';
 import { PageGraphRenderer } from './page-graph-renderer.js';
+import { playerColorService } from './player-color-service.js';
 
 // =============================================================================
 // Main Application Class - Orchestrates all components
@@ -17,6 +18,9 @@ class WikiArenaApp {
 
   constructor() {
     console.log('🚀 Wiki Arena Frontend initializing (task-centric architecture)...');
+
+    // Initialize PlayerColorService first (async, but doesn't block initialization)
+    this.initializeColorService();
 
     // Initialize components
     this.taskManager = new TaskManager();
@@ -35,6 +39,15 @@ class WikiArenaApp {
     }, 100);
 
     console.log('✅ Wiki Arena Frontend ready');
+  }
+
+  private async initializeColorService(): Promise<void> {
+    try {
+      await playerColorService.initialize();
+      console.log('🎨 PlayerColorService initialized with provider-based colors');
+    } catch (error) {
+      console.warn('🎨 PlayerColorService initialization failed, using fallback colors:', error);
+    }
   }
 
   // =============================================================================
@@ -447,6 +460,19 @@ function initializeApp(): void {
       debugConnections: () => {
         if (app) {
           (app as any).connectionManager.debugConnections();
+        }
+      },
+      debugColors: () => {
+        playerColorService.debugState();
+      },
+      getPlayerColors: () => {
+        return Array.from(playerColorService.getAllGameColors().entries());
+      },
+      simulateMultiVisit: () => {
+        // Test function to simulate multi-visit nodes
+        if (app) {
+          console.log('🧪 Simulating multi-visit node for testing pie charts...');
+          (app as any).pageGraphRenderer.debugPieCharts();
         }
       }
     };

@@ -12,6 +12,7 @@ import {
   GameFinishedEvent,
   ConnectionEstablishedEvent,
 } from './types.js';
+import { playerColorService } from './player-color-service.js';
 
 // =============================================================================
 // Task Manager - Task-Centric Data Orchestration and Business Logic
@@ -29,7 +30,7 @@ export class TaskManager {
   // Task Lifecycle Management
   // =============================================================================
 
-  private createEmptyTask(): Task {
+  private createEmptyTask(): Task { // TODO(Hunter): why to we do this and not just init from backend response?
     return {
       startPage: '',
       targetPage: '',
@@ -50,6 +51,10 @@ export class TaskManager {
       this.task.startPage = gameConfigs[0].startPage;
       this.task.targetPage = gameConfigs[0].targetPage;
     }
+    
+    // Assign colors to players for this task
+    const gameIds = gameConfigs.map(config => config.gameId);
+    playerColorService.assignColorsForTask(gameIds);
     
     // Initialize game sequences
     gameConfigs.forEach(config => {
@@ -600,6 +605,11 @@ export class TaskManager {
   // =============================================================================
 
   reset(): void {
+    console.log('📋 TaskManager: Resetting state for new task');
+    
+    // Reset player colors for new task
+    playerColorService.reset();
+    
     this.task = this.createEmptyTask();
     this.notifyListeners();
   }

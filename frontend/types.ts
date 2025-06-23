@@ -227,3 +227,13 @@ export interface StartGameRequest {
   start_page?: string;
   target_page?: string;
 }
+
+// Model configuration interface to match models.json structure
+export interface ModelConfig {
+  provider: string;
+  input_cost_per_1m_tokens: number;
+  output_cost_per_1m_tokens: number;
+  default_settings: {
+    max_tokens: number;
+  };
+}

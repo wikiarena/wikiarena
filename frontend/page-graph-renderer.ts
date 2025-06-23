@@ -1,5 +1,6 @@
 import * as d3 from "d3";
 import { PageGraphData, PageNode, NavigationEdge } from './types.js';
+import { playerColorService } from './player-color-service.js';
 
 // =============================================================================
 // Physics Configuration Interface
@@ -758,8 +759,7 @@ export class PageGraphRenderer {
         d3.select(event.sourceEvent.currentTarget)
           .classed('dragging', true)
           .select('circle')
-          .attr('stroke-width', d.type === 'start' || d.type === 'target' ? 5 : 4)
-          .style('filter', 'drop-shadow(0 0 15px rgba(255,255,255,0.8))');
+          .attr('stroke-width', d.type === 'start' || d.type === 'target' ? 5 : 4);
       })
       .on('drag', (event, d) => {
         d.x = event.x;
@@ -787,8 +787,7 @@ export class PageGraphRenderer {
         d3.select(event.sourceEvent.currentTarget)
           .classed('dragging', false)
           .select('circle')
-          .attr('stroke-width', 3)
-          .style('filter', d.type === 'start' || d.type === 'target' ? 'drop-shadow(0 0 10px rgba(255,255,255,0.5))' : 'none');
+          .attr('stroke-width', 3);
       });
       
     return drag;
@@ -822,7 +821,7 @@ export class PageGraphRenderer {
       .attr('transform', (d: PageNode) => `translate(${d.x},${d.y})`)
       .call(this.setupEnhancedDragBehavior());
 
-    // Add circles to new pages
+    // Add circles to new pages (will be replaced with pie charts if multi-visit)
     pageEnter.append('circle');
     
     // Add distance text
@@ -848,13 +847,67 @@ export class PageGraphRenderer {
     // Merge and update all pages
     const pageUpdate = pageEnter.merge(pageSelection);
 
-    // Update circle properties
-    pageUpdate.select('circle')
+    // First, handle circle updates for non-pie chart, non-target, and non-start nodes
+    const circleNodes = pageUpdate.filter((d: PageNode) => 
+      !(d.type === 'visited' && this.needsPieChart(d)) && d.type !== 'target' && d.type !== 'start');
+    circleNodes.select('circle')
       .attr('r', (d: PageNode) => this.getPageRadius(d))
       .attr('fill', (d: PageNode) => this.getPageColor(d))
-      .attr('stroke', (d: PageNode) => this.getPageStroke(d))
-      .attr('stroke-width', 3)
-      .style('filter', (d: PageNode) => d.type === 'start' || d.type === 'target' ? 'drop-shadow(0 0 10px rgba(255,255,255,0.5))' : 'none');
+      // .attr('stroke', (d: PageNode) => this.getPageStroke(d))
+      // .attr('stroke-width', 3)
+
+    // Remove special elements from circle nodes
+    circleNodes.selectAll('.pie-slice').remove();
+    circleNodes.selectAll('.target-ring').remove();
+    circleNodes.selectAll('.start-triangle').remove();
+
+    // Then handle pie chart nodes
+    const pieNodes = pageUpdate.filter((d: PageNode) => d.type === 'visited' && this.needsPieChart(d));
+    pieNodes.each((d: PageNode, i: number, nodes: ArrayLike<SVGGElement>) => {
+      const nodeGroup = d3.select(nodes[i]);
+      const radius = this.getPageRadius(d);
+      
+      // Remove circle and any existing elements
+      nodeGroup.select('circle').remove();
+      nodeGroup.selectAll('.pie-slice').remove();
+      nodeGroup.selectAll('.target-ring').remove();
+      nodeGroup.selectAll('.start-triangle').remove();
+      
+      // Create pie chart
+      this.createPieChart(nodeGroup as any, d, radius);
+    });
+
+    // Finally, handle target node with concentric rings
+    const targetNodes = pageUpdate.filter((d: PageNode) => d.type === 'target');
+    targetNodes.each((d: PageNode, i: number, nodes: ArrayLike<SVGGElement>) => {
+      const nodeGroup = d3.select(nodes[i]);
+      const radius = this.getPageRadius(d);
+      
+      // Remove circle and any existing elements
+      nodeGroup.select('circle').remove();
+      nodeGroup.selectAll('.pie-slice').remove();
+      nodeGroup.selectAll('.target-ring').remove();
+      nodeGroup.selectAll('.start-triangle').remove();
+      
+      // Create target rings
+      this.createTargetRings(nodeGroup as any, d, radius);
+    });
+
+    // Handle start nodes with play button triangle
+    const startNodes = pageUpdate.filter((d: PageNode) => d.type === 'start');
+    startNodes.each((d: PageNode, i: number, nodes: ArrayLike<SVGGElement>) => {
+      const nodeGroup = d3.select(nodes[i]);
+      const radius = this.getPageRadius(d);
+      
+      // Remove circle and any existing elements
+      nodeGroup.select('circle').remove();
+      nodeGroup.selectAll('.pie-slice').remove();
+      nodeGroup.selectAll('.target-ring').remove();
+      nodeGroup.selectAll('.start-triangle').remove();
+      
+      // Create start triangle
+      this.createStartTriangle(nodeGroup as any, d, radius);
+    });
 
     // Update distance text
     pageUpdate.select('.distance-text')
@@ -971,6 +1024,156 @@ export class PageGraphRenderer {
   }
 
   // =============================================================================
+  // Pie Chart Helpers
+  // =============================================================================
+
+  /**
+   * Check if a node has visits from multiple different players
+   */
+  private needsPieChart(pageNode: PageNode): boolean {
+    if (pageNode.visits.length < 2) return false;
+    
+    // Check if all visits are from the same player
+    const firstGameId = pageNode.visits[0].gameId;
+    return pageNode.visits.some(visit => visit.gameId !== firstGameId);
+  }
+
+  /**
+   * Calculate pie chart data for a multi-visit node
+   */
+  private calculatePieData(pageNode: PageNode): Array<{gameId: string, count: number, percentage: number, color: string}> {
+    // Count visits per player
+    const visitCounts = new Map<string, number>();
+    pageNode.visits.forEach(visit => {
+      visitCounts.set(visit.gameId, (visitCounts.get(visit.gameId) || 0) + 1);
+    });
+
+    const totalVisits = pageNode.visits.length;
+    
+    // Convert to pie data with colors
+    return Array.from(visitCounts.entries()).map(([gameId, count]) => ({
+      gameId,
+      count,
+      percentage: (count / totalVisits) * 100,
+      color: playerColorService.getColorForGame(gameId)
+    }));
+  }
+
+  /**
+   * Create a pie chart node for multi-visit nodes
+   */
+  private createPieChart(nodeGroup: d3.Selection<SVGGElement, PageNode, any, any>, pageNode: PageNode, radius: number): void {
+    const pieData = this.calculatePieData(pageNode);
+    
+    // Create pie and arc generators
+    const pie = d3.pie<{gameId: string, count: number, percentage: number, color: string}>()
+      .value(d => d.count)
+      .sort(null); // Keep original order
+    
+    const arc = d3.arc<d3.PieArcDatum<{gameId: string, count: number, percentage: number, color: string}>>()
+      .innerRadius(0)
+      .outerRadius(radius);
+
+    // Create pie slices (no stroke - seamless color transitions)
+    nodeGroup.selectAll('.pie-slice')
+      .data(pie(pieData))
+      .enter()
+      .append('path')
+      .attr('class', 'pie-slice')
+      .attr('d', arc)
+      .attr('fill', d => d.data.color);
+
+    console.log(`🥧 Created pie chart for ${pageNode.pageTitle} with ${pieData.length} slices:`, 
+      pieData.map(d => `${d.gameId}: ${d.count} visits (${d.percentage.toFixed(1)}%)`));
+  }
+
+  /**
+   * Create target rings for target nodes (like a target emoji)
+   * Creates 4 concentric rings: white center, red, white, red (outermost)
+   */
+  private createTargetRings(nodeGroup: d3.Selection<SVGGElement, PageNode, any, any>, pageNode: PageNode, radius: number): void {
+    // Define the ring structure: from outermost to innermost
+    const rings = [
+      { radius: radius, color: '#dc2626' },      // Outermost ring - red
+      { radius: radius * 0.75, color: '#ffffff' }, // Second ring - white
+      { radius: radius * 0.5, color: '#dc2626' },  // Third ring - red
+      { radius: radius * 0.25, color: '#ffffff' }  // Center - white
+    ];
+
+    // Create each ring as a circle
+    rings.forEach((ring, index) => {
+      nodeGroup.append('circle')
+        .attr('class', 'target-ring')
+        .attr('r', ring.radius)
+        .attr('fill', ring.color)
+        .attr('stroke', index === 0 ? '#991b1b' : 'none') // Only stroke the outermost ring
+        .attr('stroke-width', index === 0 ? 2 : 0);
+    });
+
+    console.log(`🎯 Created target rings for ${pageNode.pageTitle} with ${rings.length} concentric circles`);
+  }
+
+  /**
+   * Create start triangle for start nodes (like a play button)
+   * Creates a right-pointing triangle with green fill and darker green stroke
+   */
+  private createStartTriangle(nodeGroup: d3.Selection<SVGGElement, PageNode, any, any>, pageNode: PageNode, radius: number): void {
+    // Create a circular background first for better visibility
+    nodeGroup.append('circle')
+      .attr('class', 'start-triangle')
+      .attr('r', radius)
+      .attr('fill', '#065f46') // Dark green background
+      .attr('stroke', '#059669') // Lighter green stroke
+      .attr('stroke-width', 3);
+
+    // Calculate triangle points for a right-pointing triangle (play button style)
+    // Triangle should be centered and sized to fit nicely within the circle
+    const triangleSize = radius * 0.8; // Make triangle 60% of the circle radius
+    
+    // Right-pointing triangle points (tip pointing right)
+    const points = [
+      [-triangleSize * 0.5, -triangleSize * 0.6], // Top left
+      [-triangleSize * 0.5, triangleSize * 0.6],  // Bottom left  
+      [triangleSize * 0.7, 0]                     // Right tip (slightly offset for better proportions)
+    ];
+
+    // Create the triangle path
+    const trianglePath = `M${points[0][0]},${points[0][1]} L${points[1][0]},${points[1][1]} L${points[2][0]},${points[2][1]} Z`;
+    
+    nodeGroup.append('path')
+      .attr('class', 'start-triangle')
+      .attr('d', trianglePath)
+      .attr('fill', '#10b981') // Bright green triangle
+      .attr('stroke', '#059669') // Medium green stroke
+      .attr('stroke-width', 2);
+
+    // Ensure distance text appears on top by moving it to the end (re-appending)
+    const distanceText = nodeGroup.select('.distance-text');
+    if (!distanceText.empty()) {
+      // Remove and re-add to put it on top
+      const textContent = distanceText.text();
+      const fontSize = distanceText.style('font-size');
+      const display = distanceText.style('display');
+      
+      distanceText.remove();
+      
+      nodeGroup.append('text')
+        .attr('class', 'distance-text')
+        .attr('text-anchor', 'middle')
+        .attr('dy', '0.35em')
+        .style('fill', 'white')
+        .style('font-weight', 'bold')
+        .style('pointer-events', 'none')
+        .style('text-shadow', '1px 1px 2px rgba(0,0,0,0.8)') // Add text shadow for better visibility
+        .text(textContent)
+        .style('font-size', fontSize)
+        .style('display', display);
+    }
+
+    console.log(`▶️ Created start triangle for ${pageNode.pageTitle} with play button style`);
+  }
+
+  // =============================================================================
   // Page Styling
   // =============================================================================
 
@@ -978,7 +1181,7 @@ export class PageGraphRenderer {
     switch (page.type) {
       case 'start':
       case 'target':
-        return 25;
+        return 30;
       case 'visited':
         return 20;
       case 'optimal_path':
@@ -989,36 +1192,8 @@ export class PageGraphRenderer {
   }
 
   private getPageColor(page: PageNode): string {
-    switch (page.type) {
-      case 'start':
-        return 'url(#start-gradient)';
-      case 'target':
-        return 'url(#target-gradient)';
-      case 'visited':
-        // Use first visit for color (in multi-game, first visit takes precedence)
-        const firstVisit = page.visits[0];
-        return this.getVisitedPageColor(firstVisit?.distanceChange);
-      case 'optimal_path':
-        return '#374151';
-      default:
-        return '#64748b';
-    }
-  }
-
-  private getVisitedPageColor(distanceChange?: number): string {
-    if (distanceChange === undefined) {
-      return '#64748b'; // Gray - unknown
-    }
-    
-    if (distanceChange > 0) {
-      return '#10b981'; // Green - got closer to target
-    } else if (distanceChange === 0) {
-      return '#f59e0b'; // Amber - stayed same distance
-    } else if (distanceChange === -1) {
-      return '#ef4444'; // Red - got further from target
-    } else {
-      return '#dc2626'; // Dark red - got much further from target
-    }
+    // Use the PlayerColorService for all node coloring
+    return playerColorService.getNodeColor(page);
   }
 
   private getPageStroke(page: PageNode): string {
@@ -1187,5 +1362,20 @@ export class PageGraphRenderer {
       minY: Math.min(...this.pages.map(n => n.y || 0)),
       maxY: Math.max(...this.pages.map(n => n.y || 0))
     };
+  }
+
+  debugPieCharts(): void {
+    console.log('🥧 Pie Chart Debug Info:');
+    const multiVisitNodes = this.pages.filter(page => this.needsPieChart(page));
+    
+    console.log(`Found ${multiVisitNodes.length} nodes with multiple player visits:`);
+    multiVisitNodes.forEach(node => {
+      const pieData = this.calculatePieData(node);
+      console.log(`- ${node.pageTitle}:`, pieData);
+    });
+    
+    if (multiVisitNodes.length === 0) {
+      console.log('No multi-visit nodes found. To test pie charts, you need nodes visited by multiple players.');
+    }
   }
 } 

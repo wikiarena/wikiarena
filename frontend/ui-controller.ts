@@ -1,4 +1,5 @@
 import { Task, GameSequence, ConnectionStatus, RenderingMode } from './types.js';
+import { playerColorService } from './player-color-service.js';
 
 // =============================================================================
 // UI Controller - Handles all DOM updates and user interactions
@@ -163,9 +164,6 @@ export class UIController {
     const container = this.elements.get('progress-bars-container');
     if (!container) return;
 
-    // Clear existing progress bars
-    container.innerHTML = '';
-
     if (task.games.size === 0 || !task.shortestPathLength) {
       container.style.display = 'none';
       return;
@@ -173,20 +171,46 @@ export class UIController {
 
     container.style.display = 'flex';
 
-    // Create progress bar for each game
-    const gameColors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6']; // Blue, Red, Green, Orange, Purple
-    let colorIndex = 0;
+    // Get existing progress bars
+    const existingBars = new Map<string, HTMLElement>();
+    Array.from(container.children).forEach(bar => {
+      const gameId = bar.getAttribute('data-game-id');
+      if (gameId) {
+        existingBars.set(gameId, bar as HTMLElement);
+      }
+    });
 
+    // Update or create progress bars for each game
     task.games.forEach((gameSequence, gameId) => {
-      const progressBar = this.createHorizontalProgressBar(
-        gameSequence, 
-        task.shortestPathLength!, 
-        gameColors[colorIndex % gameColors.length],
-        gameId,
-        steppingInfo
-      );
-      container.appendChild(progressBar);
-      colorIndex++;
+      const existingBar = existingBars.get(gameId);
+      
+      if (existingBar) {
+        // Update existing progress bar (this enables smooth transitions)
+        this.updateHorizontalProgressBar(
+          existingBar,
+          gameSequence, 
+          task.shortestPathLength!, 
+          gameId,
+          steppingInfo
+        );
+        existingBars.delete(gameId); // Mark as processed
+      } else {
+        // Create new progress bar
+        const playerColor = playerColorService.getColorForGame(gameId);
+        const progressBar = this.createHorizontalProgressBar(
+          gameSequence, 
+          task.shortestPathLength!, 
+          playerColor,
+          gameId,
+          steppingInfo
+        );
+        container.appendChild(progressBar);
+      }
+    });
+
+    // Remove progress bars for games that no longer exist
+    existingBars.forEach(bar => {
+      bar.remove();
     });
   }
 
@@ -220,6 +244,7 @@ export class UIController {
   ): HTMLElement {
     const progressBarContainer = document.createElement('div');
     progressBarContainer.className = 'horizontal-progress-bar';
+    progressBarContainer.setAttribute('data-game-id', gameId);
 
     // Determine which page state to use based on stepping mode
     let targetPageStateIndex: number;
@@ -258,8 +283,7 @@ export class UIController {
     const progressFill = document.createElement('div');
     progressFill.className = 'horizontal-progress-fill';
     
-    // Add smooth transitions for all properties that change
-    progressFill.style.transition = 'width 0.8s ease, left 0.8s ease, background 0.5s ease';
+    // CSS transitions are handled in the stylesheet, no need to set inline
     
     // Handle negative progress (going backwards/leftward from start)
     if (progressRatio < 0) {
@@ -285,12 +309,21 @@ export class UIController {
     
     progressFill.style.background = color;
 
-    // Create player indicator (robot emoji at current progress)
+    // Create player indicator (provider icon at current progress)
     const playerIndicator = document.createElement('div');
     playerIndicator.className = 'horizontal-progress-indicator';
-    playerIndicator.textContent = '🤖';
     
-    // Add smooth transition for robot position
+    // Create and set the provider icon
+    const iconImg = document.createElement('img');
+    iconImg.src = playerColorService.getIconForGame(gameId);
+    iconImg.alt = `${playerColorService.getDisplayName(gameId)} icon`;
+    iconImg.style.width = '20px';
+    iconImg.style.height = '20px';
+    iconImg.style.display = 'block';
+    
+    playerIndicator.appendChild(iconImg);
+    
+    // Add smooth transition for icon position
     playerIndicator.style.transition = 'left 0.8s ease';
     playerIndicator.style.left = `${indicatorPosition}%`;
 
@@ -317,6 +350,85 @@ export class UIController {
     });
 
     return progressBarContainer;
+  }
+
+  private updateHorizontalProgressBar(
+    progressBarContainer: HTMLElement,
+    gameSequence: GameSequence, 
+    initialDistance: number, 
+    gameId: string,
+    steppingInfo?: {
+      currentPageIndex: number;
+      viewingPageIndex: number;
+      renderingMode: RenderingMode;
+      canStepForward: boolean;
+      canStepBackward: boolean;
+    }
+  ): void {
+    // Find existing elements within the progress bar
+    const progressFill = progressBarContainer.querySelector('.horizontal-progress-fill') as HTMLElement;
+    const playerIndicator = progressBarContainer.querySelector('.horizontal-progress-indicator') as HTMLElement;
+    
+    if (!progressFill || !playerIndicator) {
+      console.warn('Could not find progress bar elements to update');
+      return;
+    }
+
+    // Determine which page state to use based on stepping mode (same logic as create)
+    let targetPageStateIndex: number;
+    let currentDistance: number | undefined;
+
+    if (steppingInfo && steppingInfo.renderingMode === 'stepping') {
+      targetPageStateIndex = Math.min(steppingInfo.viewingPageIndex, gameSequence.pageStates.length - 1);
+    } else {
+      targetPageStateIndex = gameSequence.pageStates.length - 1;
+    }
+
+    // Get distance with fallback logic
+    if (targetPageStateIndex >= 0) {
+      const targetPageState = gameSequence.pageStates[targetPageStateIndex];
+      currentDistance = targetPageState?.distanceToTarget;
+      
+      if (currentDistance === undefined) {
+        currentDistance = this.findMostRecentValidDistance(gameSequence, targetPageStateIndex);
+      }
+    }
+
+    if (currentDistance === undefined) {
+      currentDistance = initialDistance;
+    }
+
+    // Calculate progress (same logic as create)
+    const baselinePercent = 1;
+    const progressRatio = (initialDistance - currentDistance) / initialDistance;
+    const progressPercent = baselinePercent + (progressRatio * (100 - baselinePercent));
+
+    // Get player color
+    const color = playerColorService.getColorForGame(gameId);
+
+    // Update progress fill with smooth transition
+    if (progressRatio < 0) {
+      progressFill.classList.add('negative');
+      
+      const negativePercent = Math.abs(progressRatio) * 100;
+      const negativeLeft = -negativePercent;
+      
+      progressFill.style.left = `${negativeLeft}%`;
+      progressFill.style.width = `${baselinePercent + negativePercent}%`;
+      
+      var indicatorPosition = negativeLeft;
+    } else {
+      progressFill.classList.remove('negative');
+      progressFill.style.left = '0%';
+      progressFill.style.width = `${Math.max(baselinePercent, progressPercent)}%`;
+      
+      var indicatorPosition = Math.max(baselinePercent, progressPercent);
+    }
+    
+    progressFill.style.background = color;
+
+    // Update player indicator position with smooth transition
+    playerIndicator.style.left = `${indicatorPosition}%`;
   }
 
   private selectGame(gameId: string): void {
