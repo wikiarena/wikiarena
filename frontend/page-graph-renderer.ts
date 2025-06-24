@@ -9,11 +9,29 @@ import { playerColorService } from './player-color-service.js';
 interface PhysicsConfig {
   chargeStrength: number;
   linkDistance: number; 
-  linkStrength: number;
+  linkStrength: number; // For move edges (general)
+  optimalPathLinkStrength: number; // For optimal path edges
+  neutralMoveLinkStrength: number; // For moves with distanceChange = 0 (strong)
+  progressMoveLinkStrength: number; // For moves with distanceChange != 0 (very weak)
   alphaDecay: number;
   velocityDecay: number;
   collisionRadius: number;
   centerStrength: number;
+  // Solar System Physics
+  orbitalStrength: number;      // 0-1: How strongly nodes stick to orbits
+}
+
+// =============================================================================
+// Solar System Orbit Calculation
+// =============================================================================
+
+interface OrbitCalculation {
+  centerX: number;
+  centerY: number;
+  startX: number;
+  startY: number;
+  startDistance: number;        // distanceToTarget of start node
+  orbitRadius: (distance: number) => number;
 }
 
 // =============================================================================
@@ -43,14 +61,24 @@ export class PageGraphRenderer {
 
   // Enhanced physics configuration with sensible defaults
   private physicsConfig: PhysicsConfig = {
-    chargeStrength: -300, // easter egg: put this to 100 and link distance to 30 for snake mode 🐍
+    chargeStrength: 0, // Much weaker for solar system - just anti-overlap
     linkDistance: 80, // maybe 50
-    linkStrength: 2,
+    linkStrength: 0.2, // Weaker links for moves - visual only (fallback)
+    optimalPathLinkStrength: 0.05, // Even weaker for optimal paths - just visual hints
+    neutralMoveLinkStrength: 0.2, // For moves with distanceChange = 0 (strong structural)
+    progressMoveLinkStrength: 0.05, // For moves with distanceChange != 0 (very weak)
     alphaDecay: 0.01,
-    velocityDecay: 0.5,
-    collisionRadius: 40,
-    centerStrength: 0.0
+    velocityDecay: 0.6, // Higher damping for stable orbits
+    collisionRadius: 25, // Smaller - let nodes get closer in orbits
+    centerStrength: 0.0, // Disabled - using orbital force instead
+    orbitalStrength: 0.8 // Strong orbital constraint
   };
+
+  // Solar system calculation
+  private orbitSystem: OrbitCalculation | null = null;
+  
+  // Game side assignment (left/right screen halves)
+  private gameAssignments: Map<string, 'left' | 'right'> = new Map();
 
   // Physics controls UI elements
   private controlsContainer?: HTMLElement;
@@ -280,7 +308,19 @@ export class PageGraphRenderer {
       
       <div id="physicsControlsContent">
         <div class="control-section" style="margin-bottom: 12px;">
-          <h4 style="margin: 0 0 8px 0; color: #cbd5e1; font-size: 11px; text-transform: uppercase;">Node Forces</h4>
+          <h4 style="margin: 0 0 8px 0; color: #cbd5e1; font-size: 11px; text-transform: uppercase;">Solar System Forces</h4>
+          <div class="control-item" style="margin-bottom: 8px;">
+            <label style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              Orbital Strength: <span id="orbitalValue" style="color: #f59e0b; font-weight: bold;">${this.physicsConfig.orbitalStrength}</span>
+            </label>
+            <input type="range" id="orbitalSlider" min="0" max="1" step="0.1" value="${this.physicsConfig.orbitalStrength}" style="width: 100%;">
+            <div style="font-size: 10px; color: #64748b; margin-top: 2px;">How strongly nodes stick to their orbits</div>
+          </div>
+
+        </div>
+        
+        <div class="control-section" style="margin-bottom: 12px;">
+          <h4 style="margin: 0 0 8px 0; color: #cbd5e1; font-size: 11px; text-transform: uppercase;">Classic Forces</h4>
           <div class="control-item" style="margin-bottom: 8px;">
             <label style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
               Charge Force: <span id="chargeValue" style="color: #f59e0b; font-weight: bold;">${this.physicsConfig.chargeStrength}</span>
@@ -315,10 +355,31 @@ export class PageGraphRenderer {
           </div>
           <div class="control-item" style="margin-bottom: 8px;">
             <label style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-              Link Strength: <span id="linkStrengthValue" style="color: #f59e0b; font-weight: bold;">${this.physicsConfig.linkStrength}</span>
+              Move Link Strength: <span id="linkStrengthValue" style="color: #f59e0b; font-weight: bold;">${this.physicsConfig.linkStrength}</span>
             </label>
-            <input type="range" id="linkStrengthSlider" min="0" max="3" step="0.1" value="${this.physicsConfig.linkStrength}" style="width: 100%;">
-            <div style="font-size: 10px; color: #64748b; margin-top: 2px;">How strongly links pull nodes together</div>
+            <input type="range" id="linkStrengthSlider" min="0" max="1" step="0.05" value="${this.physicsConfig.linkStrength}" style="width: 100%;">
+            <div style="font-size: 10px; color: #64748b; margin-top: 2px;">How strongly move edges pull nodes together</div>
+          </div>
+          <div class="control-item" style="margin-bottom: 8px;">
+            <label style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              Optimal Path Link Strength: <span id="optimalLinkStrengthValue" style="color: #f59e0b; font-weight: bold;">${this.physicsConfig.optimalPathLinkStrength}</span>
+            </label>
+            <input type="range" id="optimalLinkStrengthSlider" min="0" max="1" step="0.05" value="${this.physicsConfig.optimalPathLinkStrength}" style="width: 100%;">
+            <div style="font-size: 10px; color: #64748b; margin-top: 2px;">How strongly optimal path edges pull nodes together</div>
+          </div>
+          <div class="control-item" style="margin-bottom: 8px;">
+            <label style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              Neutral Move Strength: <span id="neutralMoveStrengthValue" style="color: #f59e0b; font-weight: bold;">${this.physicsConfig.neutralMoveLinkStrength}</span>
+            </label>
+            <input type="range" id="neutralMoveStrengthSlider" min="0" max="1" step="0.05" value="${this.physicsConfig.neutralMoveLinkStrength}" style="width: 100%;">
+            <div style="font-size: 10px; color: #64748b; margin-top: 2px;">Strength for moves with distanceChange = 0 (strong structural)</div>
+          </div>
+          <div class="control-item" style="margin-bottom: 8px;">
+            <label style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              Progress Move Strength: <span id="progressMoveStrengthValue" style="color: #f59e0b; font-weight: bold;">${this.physicsConfig.progressMoveLinkStrength}</span>
+            </label>
+            <input type="range" id="progressMoveStrengthSlider" min="0" max="0.1" step="0.01" value="${this.physicsConfig.progressMoveLinkStrength}" style="width: 100%;">
+            <div style="font-size: 10px; color: #64748b; margin-top: 2px;">Strength for moves with distanceChange != 0 (very weak)</div>
           </div>
         </div>
         
@@ -362,7 +423,18 @@ export class PageGraphRenderer {
             border-radius: 4px;
             cursor: pointer;
             font-size: 11px;
+            margin-bottom: 6px;
           ">Reheat Simulation</button>
+          <button id="toggleOrbitRingsBtn" style="
+            width: 100%;
+            padding: 6px;
+            background: #6366f1;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+          ">Toggle Orbit Rings</button>
         </div>
       </div>
     `;
@@ -379,6 +451,18 @@ export class PageGraphRenderer {
     closeBtn?.addEventListener('click', () => {
       this.hidePhysicsControls();
     });
+
+    // Orbital strength control
+    const orbitalSlider = this.controlsContainer.querySelector('#orbitalSlider') as HTMLInputElement;
+    const orbitalValue = this.controlsContainer.querySelector('#orbitalValue') as HTMLSpanElement;
+    orbitalSlider?.addEventListener('input', (e) => {
+      const value = parseFloat((e.target as HTMLInputElement).value);
+      this.physicsConfig.orbitalStrength = value;
+      orbitalValue.textContent = value.toString();
+      this.updateSimulationForces();
+    });
+
+
 
     // Charge force control
     const chargeSlider = this.controlsContainer.querySelector('#chargeSlider') as HTMLInputElement;
@@ -420,13 +504,43 @@ export class PageGraphRenderer {
       this.updateSimulationForces();
     });
 
-    // Link strength control
+    // Link strength control (move edges)
     const linkStrengthSlider = this.controlsContainer.querySelector('#linkStrengthSlider') as HTMLInputElement;
     const linkStrengthValue = this.controlsContainer.querySelector('#linkStrengthValue') as HTMLSpanElement;
     linkStrengthSlider?.addEventListener('input', (e) => {
       const value = parseFloat((e.target as HTMLInputElement).value);
       this.physicsConfig.linkStrength = value;
       linkStrengthValue.textContent = value.toString();
+      this.updateSimulationForces();
+    });
+
+    // Optimal path link strength control
+    const optimalLinkStrengthSlider = this.controlsContainer.querySelector('#optimalLinkStrengthSlider') as HTMLInputElement;
+    const optimalLinkStrengthValue = this.controlsContainer.querySelector('#optimalLinkStrengthValue') as HTMLSpanElement;
+    optimalLinkStrengthSlider?.addEventListener('input', (e) => {
+      const value = parseFloat((e.target as HTMLInputElement).value);
+      this.physicsConfig.optimalPathLinkStrength = value;
+      optimalLinkStrengthValue.textContent = value.toString();
+      this.updateSimulationForces();
+    });
+
+    // Neutral move strength control (distanceChange = 0)
+    const neutralMoveStrengthSlider = this.controlsContainer.querySelector('#neutralMoveStrengthSlider') as HTMLInputElement;
+    const neutralMoveStrengthValue = this.controlsContainer.querySelector('#neutralMoveStrengthValue') as HTMLSpanElement;
+    neutralMoveStrengthSlider?.addEventListener('input', (e) => {
+      const value = parseFloat((e.target as HTMLInputElement).value);
+      this.physicsConfig.neutralMoveLinkStrength = value;
+      neutralMoveStrengthValue.textContent = value.toString();
+      this.updateSimulationForces();
+    });
+
+    // Progress move strength control (distanceChange != 0)
+    const progressMoveStrengthSlider = this.controlsContainer.querySelector('#progressMoveStrengthSlider') as HTMLInputElement;
+    const progressMoveStrengthValue = this.controlsContainer.querySelector('#progressMoveStrengthValue') as HTMLSpanElement;
+    progressMoveStrengthSlider?.addEventListener('input', (e) => {
+      const value = parseFloat((e.target as HTMLInputElement).value);
+      this.physicsConfig.progressMoveLinkStrength = value;
+      progressMoveStrengthValue.textContent = value.toString();
       this.updateSimulationForces();
     });
 
@@ -463,42 +577,77 @@ export class PageGraphRenderer {
         this.simulation.alpha(1).restart();
       }
     });
+
+    // Toggle orbit rings button
+    const toggleOrbitRingsBtn = this.controlsContainer.querySelector('#toggleOrbitRingsBtn') as HTMLButtonElement;
+    toggleOrbitRingsBtn?.addEventListener('click', () => {
+      const rings = this.pathGroup.selectAll('.orbital-ring');
+      if (rings.empty()) {
+        this.drawOrbitalRings();
+      } else {
+        rings.remove();
+      }
+    });
   }
 
   private updateSimulationForces(): void {
-    if (!this.simulation) return;
+    if (!this.simulation || !this.orbitSystem) return;
 
-    // Update all forces with new configuration
+    // Update classic forces
     this.simulation
       .force('charge', d3.forceManyBody().strength(this.physicsConfig.chargeStrength))
       .force('collision', d3.forceCollide()
         .radius(this.physicsConfig.collisionRadius)
         .strength(0.8))
-      .force('center', d3.forceCenter(this.width / 2, this.height / 2)
-        .strength(this.physicsConfig.centerStrength))
       .alphaDecay(this.physicsConfig.alphaDecay)
       .velocityDecay(this.physicsConfig.velocityDecay);
 
-    // Update link force if it exists
+    // Update link force if it exists (with strengths based on distanceChange and type)
     const linkForce = this.simulation.force('link') as d3.ForceLink<any, any>;
     if (linkForce) {
       linkForce
         .distance(this.physicsConfig.linkDistance)
-        .strength(this.physicsConfig.linkStrength);
+        .strength((d: any) => {
+          // Optimal path edges always use their own strength
+          if (d.type === 'optimal_path') {
+            return this.physicsConfig.optimalPathLinkStrength;
+          }
+          
+          // For move edges, use distanceChange to determine strength
+          if (d.distanceChange !== undefined) {
+            if (d.distanceChange === 0) {
+              // Neutral moves (same distance) get strong structural influence
+              return this.physicsConfig.neutralMoveLinkStrength;
+            } else {
+              // Progress/regress moves get very weak influence
+              return this.physicsConfig.progressMoveLinkStrength;
+            }
+          }
+          
+          // Fallback for moves without distanceChange data
+          return this.physicsConfig.linkStrength;
+        });
     }
+
+    // Update solar system forces (these are the most important!)
+    this.simulation
+      .force('orbital', this.createOrbitalForce(this.orbitSystem));
 
     // Restart simulation with new parameters
     this.simulation.alpha(0.3).restart();
   }
 
   private resetLayout(): void {
+    // Recalculate orbit system
+    this.orbitSystem = this.calculateOrbitSystem();
+    
     // Reset all nodes to default positions and clear fixed positions
     this.pages.forEach(page => {
       const newPos = this.getSmartSpawnPosition(page);
       page.x = newPos.x;
       page.y = newPos.y;
       
-      // Only keep fixed positions for start/target
+      // Only keep fixed positions for start/target in solar system
       if (page.type === 'start' || page.type === 'target') {
         page.fx = newPos.x;
         page.fy = newPos.y;
@@ -515,84 +664,325 @@ export class PageGraphRenderer {
   }
 
   // =============================================================================
-  // Smart Node Positioning
+  // Solar System Orbit Calculation
+  // =============================================================================
+
+  private calculateOrbitSystem(): OrbitCalculation {
+    // Find start and target nodes
+    const startNode = this.pages.find(p => p.type === 'start');
+    const targetNode = this.pages.find(p => p.type === 'target');
+    
+    if (!startNode || !targetNode) {
+      // Fallback to center positions if nodes don't exist yet
+      const centerX = this.width / 2;
+      const centerY = this.height * 0.8;
+      const startX = this.width / 2;
+      const startY = this.height * 0.2;
+      
+      return {
+        centerX,
+        centerY,
+        startX,
+        startY,
+        startDistance: 4,
+        orbitRadius: (distance: number) => distance * 60
+      };
+    }
+    
+    // Use actual node positions (they can be dragged around!)
+    const centerX = targetNode.x || this.width / 2;
+    const centerY = targetNode.y || this.height / 2;
+    const startX = startNode.x || this.width / 2;
+    const startY = startNode.y || this.height * 0.1;
+    
+    // Calculate actual distance from start to target nodes
+    const totalPixelDistance = Math.sqrt(
+      Math.pow(startX - centerX, 2) + Math.pow(startY - centerY, 2)
+    );
+    
+    // Get the maximum orbit number from start node (with fallback)
+    const startDistance = startNode.distanceToTarget || 4;
+    
+    // Calculate orbit spacing - divide available space by number of orbits
+    // Ensure minimum spacing to prevent overlapping orbits
+    const orbitSpacing = Math.max(30, totalPixelDistance / startDistance);
+    
+    return {
+      centerX,
+      centerY,
+      startX,
+      startY,
+      startDistance,
+      orbitRadius: (distance: number) => {
+        // Distance 0 = center (target), distance 1 = first orbit out, etc.
+        return distance * orbitSpacing;
+      }
+    };
+  }
+
+  private createOrbitalForce(orbitSystem: OrbitCalculation) {
+    const self = this;
+    return function(alpha: number) {
+      self.pages.forEach((node: PageNode) => {
+        // Skip fixed nodes (start and target)
+        if (node.type === 'target' || node.type === 'start') return;
+        
+        if (node.distanceToTarget !== undefined) {
+          const targetRadius = orbitSystem.orbitRadius(node.distanceToTarget);
+          
+          const currentRadius = Math.sqrt(
+            Math.pow((node.x || 0) - orbitSystem.centerX, 2) + 
+            Math.pow((node.y || 0) - orbitSystem.centerY, 2)
+          );
+          
+          // Calculate radial error (how far off the correct orbit)
+          const radiusError = targetRadius - currentRadius;
+          const forceStrength = alpha * self.physicsConfig.orbitalStrength;
+          
+          if (currentRadius > 0) {
+            // Unit vector pointing from center to node
+            const directionX = ((node.x || 0) - orbitSystem.centerX) / currentRadius;
+            const directionY = ((node.y || 0) - orbitSystem.centerY) / currentRadius;
+            
+            // Apply radial force (positive = outward, negative = inward)
+            // Cast to any to access D3 simulation properties
+            (node as any).vx = ((node as any).vx || 0) + directionX * radiusError * forceStrength;
+            (node as any).vy = ((node as any).vy || 0) + directionY * radiusError * forceStrength;
+          }
+        }
+      });
+    };
+  }
+
+  private createSelectiveCollisionForce() {
+    const self = this;
+    return function(alpha: number) {
+      // Filter to only non-optimal-path nodes for collision detection
+      const collisionNodes = self.pages.filter(node => node.type !== 'optimal_path');
+      
+      // Apply collision detection only between non-optimal-path nodes
+      for (let i = 0; i < collisionNodes.length; i++) {
+        const nodeA = collisionNodes[i];
+        const aX = nodeA.x || 0;
+        const aY = nodeA.y || 0;
+        const aRadius = self.physicsConfig.collisionRadius;
+        
+        for (let j = i + 1; j < collisionNodes.length; j++) {
+          const nodeB = collisionNodes[j];
+          const bX = nodeB.x || 0;
+          const bY = nodeB.y || 0;
+          const bRadius = self.physicsConfig.collisionRadius;
+          
+          // Calculate distance between nodes
+          const dx = bX - aX;
+          const dy = bY - aY;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          const minDistance = aRadius + bRadius;
+          
+          // If nodes are overlapping, push them apart
+          if (distance < minDistance && distance > 0) {
+            const overlap = minDistance - distance;
+            const force = overlap * alpha * 0.8; // 0.8 = collision strength
+            
+            // Unit vector from A to B
+            const unitX = dx / distance;
+            const unitY = dy / distance;
+            
+            // Apply equal and opposite forces
+            const forceX = unitX * force * 0.5;
+            const forceY = unitY * force * 0.5;
+            
+            // Cast to any to access D3 simulation properties
+            (nodeA as any).vx = ((nodeA as any).vx || 0) - forceX;
+            (nodeA as any).vy = ((nodeA as any).vy || 0) - forceY;
+            (nodeB as any).vx = ((nodeB as any).vx || 0) + forceX;
+            (nodeB as any).vy = ((nodeB as any).vy || 0) + forceY;
+          }
+        }
+      }
+    };
+  }
+
+  // =============================================================================
+  // Orbital Ring Visualization
+  // =============================================================================
+
+  private drawOrbitalRings(): void {
+    if (!this.orbitSystem) return;
+
+    // Clear existing orbital rings
+    this.pathGroup.selectAll('.orbital-ring').remove();
+
+    // Find all unique distances that have nodes
+    const distances = new Set<number>();
+    this.pages.forEach(page => {
+      if (page.distanceToTarget !== undefined) {
+        distances.add(page.distanceToTarget);
+      }
+    });
+
+    // Add a few extra orbits beyond the maximum for context
+    const startDistance = Math.max(...Array.from(distances));
+    for (let i = startDistance + 1; i <= startDistance + 3; i++) {
+      distances.add(i);
+    }
+
+    // Draw orbital rings
+    distances.forEach(distance => {
+      if (distance === 0) return; // Skip center (target)
+      
+      const radius = this.orbitSystem!.orbitRadius(distance);
+      
+      this.pathGroup.append('circle')
+        .attr('class', 'orbital-ring')
+        .attr('cx', this.orbitSystem!.centerX)
+        .attr('cy', this.orbitSystem!.centerY)
+        .attr('r', radius)
+        .attr('fill', 'none')
+        .attr('stroke', '#374151')
+        .attr('stroke-width', 1)
+        .attr('stroke-opacity', 0.8)
+        .attr('stroke-dasharray', '3,3');
+    });
+
+    console.log(`🌍 Drew ${distances.size - 1} orbital rings (excluding center)`);
+  }
+
+  // =============================================================================
+  // Game Side Assignment System
+  // =============================================================================
+
+  private assignGameToSide(gameId: string): 'left' | 'right' {
+    if (this.gameAssignments.has(gameId)) {
+      return this.gameAssignments.get(gameId)!;
+    }
+
+    // Assign games to alternate sides
+    const existingGames = Array.from(this.gameAssignments.keys());
+    const leftGames = existingGames.filter(id => this.gameAssignments.get(id) === 'left');
+    const rightGames = existingGames.filter(id => this.gameAssignments.get(id) === 'right');
+
+    // Assign to the side with fewer games, or left if equal
+    const side = leftGames.length <= rightGames.length ? 'left' : 'right';
+    this.gameAssignments.set(gameId, side);
+
+    console.log(`🎮 Assigned game ${gameId} to ${side} side`);
+    return side;
+  }
+
+  private getGameSide(page: PageNode): 'left' | 'right' | 'center' {
+    if (page.type === 'start' || page.type === 'target') {
+      return 'center'; // Start/target stay in center
+    }
+
+    if (page.type === 'optimal_path') {
+      return 'center'; // Optimal path nodes are not constrained to sides
+    }
+
+    // For visited nodes, use the first visit's game ID
+    if (page.visits && page.visits.length > 0) {
+      const primaryGameId = page.visits[0].gameId;
+      return this.assignGameToSide(primaryGameId);
+    }
+
+    // Fallback to center for unknown node types
+    return 'center';
+  }
+
+  private createSideConstraintForce() {
+    const self = this;
+    return function(alpha: number) {
+      self.pages.forEach((node: PageNode) => {
+        if (node.type === 'start' || node.type === 'target') return; // Skip anchors
+        
+        const gameSide = self.getGameSide(node);
+        if (gameSide === 'center') return; // Skip center nodes
+        
+        const centerX = self.width / 2;
+        const currentX = node.x || 0;
+        
+        // Apply horizontal constraint force
+        if (gameSide === 'left' && currentX > centerX) {
+          // Node is on wrong side, push it left
+          (node as any).vx = ((node as any).vx || 0) - (currentX - centerX) * alpha * 0.3;
+        } else if (gameSide === 'right' && currentX < centerX) {
+          // Node is on wrong side, push it right
+          (node as any).vx = ((node as any).vx || 0) + (centerX - currentX) * alpha * 0.3;
+        }
+      });
+    };
+  }
+
+  // =============================================================================
+  // Smart Node Positioning for Solar System
   // =============================================================================
 
   private getSmartSpawnPosition(page: PageNode): { x: number; y: number } {
+    // Ensure we have an orbit system calculated
+    if (!this.orbitSystem) {
+      this.orbitSystem = this.calculateOrbitSystem();
+    }
+    
     switch (page.type) {
-      case 'start':
-        return { x: this.width * 0.1, y: this.height * 0.5 };
-        
       case 'target':
-        return { x: this.width * 0.9, y: this.height * 0.5 };
+        return { 
+          x: this.orbitSystem.centerX, 
+          y: this.orbitSystem.centerY 
+        };
+        
+      case 'start':
+        return { 
+          x: this.orbitSystem.startX, 
+          y: this.orbitSystem.startY 
+        };
         
       case 'visited':
-        return this.getVisitedNodeSpawnPosition(page);
+        if (page.distanceToTarget !== undefined) {
+          const radius = this.orbitSystem.orbitRadius(page.distanceToTarget);
+          const gameSide = this.getGameSide(page);
+          
+          let spawnAngle: number;
+          if (gameSide === 'left') {
+            // Left side: angles from 90° to 270° (left half of circle)
+            spawnAngle = Math.PI/2 + Math.random() * Math.PI;
+          } else if (gameSide === 'right') {
+            // Right side: angles from -90° to 90° (right half of circle)
+            spawnAngle = -Math.PI/2 + Math.random() * Math.PI;
+          } else {
+            // Center: any angle
+            spawnAngle = Math.random() * 2 * Math.PI;
+          }
+          
+          return {
+            x: this.orbitSystem.centerX + radius * Math.cos(spawnAngle),
+            y: this.orbitSystem.centerY + radius * Math.sin(spawnAngle)
+          };
+        }
         
+        // Visited nodes without distance spawn in corners based on game side
+        const gameSide = this.getGameSide(page);
+        if (gameSide === 'left') {
+          return { 
+            x: this.width * 0.1, 
+            y: this.height * 0.9 
+          };
+        } else if (gameSide === 'right') {
+          return { 
+            x: this.width * 0.9, 
+            y: this.height * 0.9 
+          };
+        } else {
+          return { 
+            x: this.orbitSystem.centerX + (Math.random() - 0.5) * 100, 
+            y: this.orbitSystem.centerY + (Math.random() - 0.5) * 100 
+          };
+        }
+
       case 'optimal_path':
-        return this.getOptimalNodeSpawnPosition(page);
-        
+        return { x: this.width / 2, y: this.height / 2 };
       default:
         return { x: this.width / 2, y: this.height / 2 };
     }
-  }
-
-  private getVisitedNodeSpawnPosition(page: PageNode): { x: number; y: number } {
-    const startPos = { x: this.width / 2, y: this.height * 0.15 };
-    const targetPos = { x: this.width / 2, y: this.height * 0.85 };
-    
-    // Create curved path from start to target using distance to target
-    let progress = 0.5; // Default to middle if no distance info
-    
-    if (page.distanceToTarget !== undefined) {
-      // Find max distance among all visited pages for normalization
-      const visitedPages = this.pages.filter(p => p.type === 'visited');
-      const maxDistance = Math.max(...visitedPages.map(p => p.distanceToTarget || 0));
-      
-      if (maxDistance > 0) {
-        progress = 1 - (page.distanceToTarget / maxDistance);
-      }
-    }
-    
-    // Bezier curve with offset to the right
-    const curveOffset = 100;
-    const controlPoint = {
-      x: (startPos.x + targetPos.x) / 2 + curveOffset,
-      y: (startPos.y + targetPos.y) / 2
-    };
-    
-    return this.calculateBezierPoint(startPos, controlPoint, targetPos, progress);
-  }
-
-  private getOptimalNodeSpawnPosition(page: PageNode): { x: number; y: number } {
-    const startPos = { x: this.width / 2, y: this.height * 0.15 };
-    const targetPos = { x: this.width / 2, y: this.height * 0.85 };
-    
-    // Position along straight line, offset to the left
-    let progress = 0.5;
-    
-    if (page.distanceToTarget !== undefined) {
-      // Find max distance among optimal path pages for normalization
-      const optimalPages = this.pages.filter(p => p.type === 'optimal_path');
-      const maxOptimalDistance = Math.max(...optimalPages.map(p => p.distanceToTarget || 0));
-      
-      if (maxOptimalDistance > 0) {
-        progress = 1 - (page.distanceToTarget / maxOptimalDistance);
-      }
-    }
-    
-    const lineOffset = -120; // Offset to the left
-    return {
-      x: startPos.x + (targetPos.x - startPos.x) * progress + lineOffset,
-      y: startPos.y + (targetPos.y - startPos.y) * progress
-    };
-  }
-
-  private calculateBezierPoint(start: {x: number, y: number}, control: {x: number, y: number}, end: {x: number, y: number}, t: number): {x: number, y: number} {
-    const invT = 1 - t;
-    const x = invT * invT * start.x + 2 * invT * t * control.x + t * t * end.x;
-    const y = invT * invT * start.y + 2 * invT * t * control.y + t * t * end.y;
-    return { x, y };
   }
 
   // =============================================================================
@@ -631,6 +1021,9 @@ export class PageGraphRenderer {
 
     // Create or update interactive simulation
     this.createInteractiveSimulation();
+    
+    // Draw orbital rings for visualization
+    this.drawOrbitalRings();
   }
 
   // =============================================================================
@@ -663,7 +1056,7 @@ export class PageGraphRenderer {
           ...newPage,
           x: initialPos.x,
           y: initialPos.y,
-          // Set fixed positions for anchor nodes (start/target)
+          // Set fixed positions for anchor nodes (start/target) in solar system
           fx: newPage.type === 'start' || newPage.type === 'target' ? initialPos.x : undefined,
           fy: newPage.type === 'start' || newPage.type === 'target' ? initialPos.y : undefined
         };
@@ -682,12 +1075,20 @@ export class PageGraphRenderer {
   // =============================================================================
 
      private createInteractiveSimulation(): d3.Simulation<PageNode, undefined> {
-     console.log('🔄 Creating interactive force simulation');
+     console.log('🔄 Creating solar system force simulation');
 
      // Stop existing simulation
      if (this.simulation) {
        this.simulation.stop();
      }
+
+     // Calculate orbit system
+     this.orbitSystem = this.calculateOrbitSystem();
+     console.log('🌌 Orbit system calculated:', {
+       center: `(${this.orbitSystem.centerX}, ${this.orbitSystem.centerY})`,
+       startDistance: this.orbitSystem.startDistance,
+       exampleRadius: `distance 2 = ${this.orbitSystem.orbitRadius(2)}px`
+     });
 
      // Transform edges to D3 link format
      const links = this.edges.map(edge => ({
@@ -697,28 +1098,47 @@ export class PageGraphRenderer {
      }));
 
      this.simulation = d3.forceSimulation(this.pages)
-       // Link force - connects related pages  
+       // Light charge force - just for anti-overlap
+       .force('charge', d3.forceManyBody()
+         .strength(this.physicsConfig.chargeStrength)) // -80
+      
+       // Link force with strength based on distanceChange and edge type
        .force('link', d3.forceLink(links)
          .id((d: any) => d.pageTitle)
          .distance(this.physicsConfig.linkDistance)
-         .strength(this.physicsConfig.linkStrength))
+         .strength((d: any) => {
+           // Optimal path edges always use their own strength
+           if (d.type === 'optimal_path') {
+             return this.physicsConfig.optimalPathLinkStrength;
+           }
+           
+           // For move edges, use distanceChange to determine strength
+           if (d.distanceChange !== undefined) {
+             if (d.distanceChange === 0) {
+               // Neutral moves (same distance) get strong structural influence
+               return this.physicsConfig.neutralMoveLinkStrength;
+             } else {
+               // Progress/regress moves get very weak influence
+               return this.physicsConfig.progressMoveLinkStrength;
+             }
+           }
+           
+           // Fallback for moves without distanceChange data
+           return this.physicsConfig.linkStrength;
+         }))
       
-      // Charge force - nodes repel/attract each other
-      .force('charge', d3.forceManyBody()
-        .strength(this.physicsConfig.chargeStrength))
+              // Light collision detection - completely exclude optimal path nodes
+      .force('collision', this.createSelectiveCollisionForce())
       
-      // Collision detection - prevents overlap
-      .force('collision', d3.forceCollide()
-        .radius(this.physicsConfig.collisionRadius)
-        .strength(0.8))
+       // PRIMARY FORCE: Orbital constraint
+       .force('orbital', this.createOrbitalForce(this.orbitSystem))
+       
+       // TERTIARY FORCE: Side constraint (keep games on their assigned sides)
+       .force('sideConstraint', this.createSideConstraintForce())
       
-      // Center force - gentle pull toward center (exclude anchored nodes)
-      .force('center', d3.forceCenter(this.width / 2, this.height / 2)
-        .strength(this.physicsConfig.centerStrength))
-      
-      // Simulation parameters
-      .alphaDecay(this.physicsConfig.alphaDecay)
-      .velocityDecay(this.physicsConfig.velocityDecay);
+       // Simulation parameters - higher damping for stable orbits
+       .alphaDecay(this.physicsConfig.alphaDecay)
+       .velocityDecay(this.physicsConfig.velocityDecay); // 0.6
 
     // Set up tick handler
     this.simulation.on('tick', () => {
@@ -737,7 +1157,7 @@ export class PageGraphRenderer {
       this.updateEdgePositions();
     });
 
-    // Start simulation
+    // Start simulation with moderate energy
     this.simulation.alpha(0.5).restart();
     
     return this.simulation;
@@ -769,6 +1189,16 @@ export class PageGraphRenderer {
         if (d.type === 'start' || d.type === 'target') {
           d.fx = event.x;
           d.fy = event.y;
+          
+          // Recalculate orbit system when start/target nodes move
+          this.orbitSystem = this.calculateOrbitSystem();
+          this.drawOrbitalRings();
+          
+          // Update the simulation forces with new orbit system
+          if (this.simulation) {
+            this.simulation
+              .force('orbital', this.createOrbitalForce(this.orbitSystem));
+          }
         }
       })
       .on('end', (event, d) => {
@@ -1219,7 +1649,7 @@ export class PageGraphRenderer {
     if (distanceChange > 0) {
       return '#059669';
     } else if (distanceChange === 0) {
-      return '#d97706';
+      return '#eab308';
     } else if (distanceChange === -1) {
       return '#dc2626';
     } else {
@@ -1260,7 +1690,7 @@ export class PageGraphRenderer {
     if (distanceChange > 0) {
       return '#10b981'; // Green - got closer to target
     } else if (distanceChange === 0) {
-      return '#f59e0b'; // Amber - stayed same distance
+      return '#eab308'; // Yellow - stayed same distance
     } else if (distanceChange === -1) {
       return '#ef4444'; // Red - got further from target
     } else {
@@ -1276,8 +1706,6 @@ export class PageGraphRenderer {
     }
   }
 
-
-
   // =============================================================================
   // Public API
   // =============================================================================
@@ -1285,10 +1713,12 @@ export class PageGraphRenderer {
   clear(): void {
     this.nodeGroup.selectAll('*').remove();
     this.edgeGroup.selectAll('*').remove();
-    this.pathGroup.selectAll('*').remove();
+    this.pathGroup.selectAll('*').remove(); // This includes orbital rings
     this.pages = [];
     this.edges = [];
     this.pageMap.clear();
+    this.orbitSystem = null;
+    this.gameAssignments.clear(); // Reset game side assignments
     
     if (this.simulation) {
       this.simulation.stop();
@@ -1378,4 +1808,61 @@ export class PageGraphRenderer {
       console.log('No multi-visit nodes found. To test pie charts, you need nodes visited by multiple players.');
     }
   }
-} 
+
+  debugSolarSystem(): void {
+    console.log('🌌 Solar System Debug Info:');
+    if (!this.orbitSystem) {
+      console.log('No orbit system calculated yet.');
+      return;
+    }
+    
+    console.log('Orbit system:', {
+      center: `(${this.orbitSystem.centerX}, ${this.orbitSystem.centerY})`,
+      start: `(${this.orbitSystem.startX}, ${this.orbitSystem.startY})`,
+      startDistance: this.orbitSystem.startDistance,
+      dynamicDistance: Math.sqrt(
+        Math.pow(this.orbitSystem.startX - this.orbitSystem.centerX, 2) +
+        Math.pow(this.orbitSystem.startY - this.orbitSystem.centerY, 2)
+      ).toFixed(1) + 'px'
+    });
+    
+    // Group nodes by orbit
+    const orbits = new Map<number, PageNode[]>();
+    this.pages.forEach(page => {
+      if (page.distanceToTarget !== undefined) {
+        if (!orbits.has(page.distanceToTarget)) {
+          orbits.set(page.distanceToTarget, []);
+        }
+        orbits.get(page.distanceToTarget)!.push(page);
+      }
+    });
+    
+    console.log('Nodes by orbit:');
+    Array.from(orbits.keys()).sort((a, b) => a - b).forEach(distance => {
+      const nodes = orbits.get(distance)!;
+      const radius = this.orbitSystem!.orbitRadius(distance);
+      console.log(`- Orbit ${distance} (radius ${radius.toFixed(1)}px): ${nodes.length} nodes`);
+      nodes.forEach(node => {
+        const actualRadius = Math.sqrt(
+          Math.pow((node.x || 0) - this.orbitSystem!.centerX, 2) +
+          Math.pow((node.y || 0) - this.orbitSystem!.centerY, 2)
+        );
+        console.log(`  - ${node.pageTitle} (${node.type}): actual radius ${actualRadius.toFixed(1)}px`);
+             });
+     });
+   }
+
+   debugGameAssignments(): void {
+     console.log('🎮 Game Side Assignments:');
+     console.log('Current assignments:', Object.fromEntries(this.gameAssignments));
+     
+     // Show nodes by side
+     const leftNodes = this.pages.filter(p => this.getGameSide(p) === 'left');
+     const rightNodes = this.pages.filter(p => this.getGameSide(p) === 'right');
+     const centerNodes = this.pages.filter(p => this.getGameSide(p) === 'center');
+     
+     console.log(`Left side (${leftNodes.length} nodes):`, leftNodes.map(n => n.pageTitle));
+     console.log(`Right side (${rightNodes.length} nodes):`, rightNodes.map(n => n.pageTitle));
+     console.log(`Center (${centerNodes.length} nodes):`, centerNodes.map(n => n.pageTitle));
+   }
+ }  

@@ -366,7 +366,7 @@ class WikiArenaApp {
         //   model_name: 'random'
         // },
       ],
-      max_steps: 10
+      max_steps: 20
     };
     
     return fetch(apiUrl, {
