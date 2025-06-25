@@ -85,13 +85,16 @@ class WikiTaskSolver:
         
         # Perform BFS using adapted bidirectional search
         actual_computation_start_time = time.time()
-        paths_as_ids = await self._bidirectional_bfs(start_id, target_id)
+        paths_as_ids, bfs_levels = await self._bidirectional_bfs(start_id, target_id)
         
         if not paths_as_ids:
             raise ValueError(f"No path found between '{start_page}' and '{target_page}'.")
 
         # Convert paths of IDs to paths of titles
+        title_conversion_start_time = time.perf_counter()
         all_paths_as_titles: List[List[str]] = []
+        total_page_ids_to_convert = sum(len(id_path) for id_path in paths_as_ids)
+        
         for id_path in paths_as_ids:
             title_path = await self.db.batch_get_page_titles(id_path)
             # Ensure no None titles in path
@@ -99,13 +102,28 @@ class WikiTaskSolver:
                 logger.error(f"Path {id_path} contained an ID with no title: {title_path}")
                 continue 
             all_paths_as_titles.append(title_path)
+        
+        title_conversion_time = time.perf_counter() - title_conversion_start_time
+        logger.info(
+            f"Title conversion: {total_page_ids_to_convert} page IDs converted "
+            f"in {title_conversion_time*1000:.1f}ms"
+        )
 
         if not all_paths_as_titles:
              raise ValueError(f"Path IDs found but title conversion failed for '{start_page}' -> '{target_page}'.")
 
         actual_computation_time_ms = (time.time() - actual_computation_start_time) * 1000
         
-        logger.info(f"Path found for {start_page} -> {target_page}. Path length: {len(all_paths_as_titles[0])-1}. Paths found: {len(all_paths_as_titles)}. Took {actual_computation_time_ms:.2f} ms.")
+        # Log comprehensive solve summary
+        cache_stats = self.db.get_cache_stats()
+        logger.info(
+            f"SOLVE SUMMARY for {start_page} -> {target_page}: "
+            f"Path length: {len(all_paths_as_titles[0])-1}, "
+            f"Paths found: {len(all_paths_as_titles)}, "
+            f"BFS levels: {bfs_levels}, "
+            f"Total time: {actual_computation_time_ms:.1f}ms, "
+            f"DB cache: {cache_stats.hits}/{cache_stats.total_requests} hits ({cache_stats.hit_rate:.1f}%)"
+        )
 
         return SolverResponse(
             paths=all_paths_as_titles,
@@ -180,6 +198,7 @@ class WikiTaskSolver:
             unvisited_backward = {target_id: [None]}
             visited_backward = {}
 
+        bfs_level = 0
         while not final_paths and unvisited_forward and unvisited_backward:
             
             # Choose direction based on link counts
@@ -192,6 +211,13 @@ class WikiTaskSolver:
                 expand_forward = False
             if not unvisited_backward: 
                 expand_forward = True
+            
+            # Log expansion decision with key metrics
+            logger.info(
+                f"BFS Level {bfs_level}: {'FORWARD' if expand_forward else 'BACKWARD'} expansion. "
+                f"Forward frontier: {len(unvisited_forward)} pages ({forward_links_count} total links), "
+                f"Backward frontier: {len(unvisited_backward)} pages ({backward_links_count} total links)"
+            )
 
             if expand_forward:
                 # Forward BFS expansion
@@ -224,8 +250,22 @@ class WikiTaskSolver:
                 
                 if indices_and_src_ids_for_db_fetch:
                     src_ids_to_fetch_from_db = [item[1] for item in indices_and_src_ids_for_db_fetch]
+                    
+                    # Time the database fetch operation
+                    db_start_time = time.perf_counter()
                     db_fetch_tasks = [self.db.get_outgoing_links(s_id) for s_id in src_ids_to_fetch_from_db]
                     fetched_links_results_list = await asyncio.gather(*db_fetch_tasks)
+                    db_fetch_time = time.perf_counter() - db_start_time
+                    
+                    # Calculate cache performance for this expansion
+                    cache_hits = len(source_page_ids_to_expand) - len(indices_and_src_ids_for_db_fetch)
+                    total_links_fetched = sum(len(links) for links in fetched_links_results_list)
+                    
+                    logger.info(
+                        f"  Forward DB fetch: {len(src_ids_to_fetch_from_db)} pages, "
+                        f"{total_links_fetched} links, {db_fetch_time*1000:.1f}ms, "
+                        f"cache: {cache_hits}/{len(source_page_ids_to_expand)} hits"
+                    )
 
                     for i, (original_idx, s_id_fetched) in enumerate(indices_and_src_ids_for_db_fetch):
                         actual_links = fetched_links_results_list[i]
@@ -242,6 +282,9 @@ class WikiTaskSolver:
                                 newly_visited_this_level[next_id].append(src_id)
                 
                 unvisited_forward = newly_visited_this_level
+                
+                # Log expansion results for forward direction
+                logger.info(f"  Forward expansion result: {len(newly_visited_this_level)} new pages discovered")
 
             else:
                 # Backward BFS expansion
@@ -257,8 +300,18 @@ class WikiTaskSolver:
                                 visited_backward[page_id].append(p)
                 unvisited_backward.clear()
 
+                # Time the database fetch operation for backward expansion
+                db_start_time = time.perf_counter()
                 tasks = [self.db.get_incoming_links(target_id_val) for target_id_val in target_page_ids_to_expand]
                 results_for_all_targets = await asyncio.gather(*tasks)
+                db_fetch_time = time.perf_counter() - db_start_time
+                
+                # Calculate metrics for backward expansion
+                total_links_fetched = sum(len(links) for links in results_for_all_targets)
+                logger.info(
+                    f"  Backward DB fetch: {len(target_page_ids_to_expand)} pages, "
+                    f"{total_links_fetched} links, {db_fetch_time*1000:.1f}ms"
+                )
 
                 for i, current_target_id in enumerate(target_page_ids_to_expand):
                     source_ids_linking_to_target = results_for_all_targets[i]
@@ -270,6 +323,9 @@ class WikiTaskSolver:
                                 newly_visited_this_level[prev_id].append(current_target_id)
                 
                 unvisited_backward = newly_visited_this_level
+                
+                # Log expansion results for backward direction
+                logger.info(f"  Backward expansion result: {len(newly_visited_this_level)} new pages discovered")
 
             # Check for path completion (intersection)
             intersection_nodes = []
@@ -321,8 +377,10 @@ class WikiTaskSolver:
                                     final_paths.append(current_full_path)
                 
                 if final_paths:
-                    logger.debug(f"BFS complete. Found {len(final_paths)} paths.")
+                    logger.info(f"BFS complete at level {bfs_level}. Found {len(final_paths)} paths.")
                     break
+            
+            bfs_level += 1
 
         # Cache backward search state if it was computed fresh for this target
         if self.active_target_id == target_id and self.cached_backward_bfs_state is None and (visited_backward or unvisited_backward):
@@ -332,7 +390,7 @@ class WikiTaskSolver:
             }
             logger.info(f"Cached backward BFS state for active target_id: {self.active_target_id}. Visited: {len(visited_backward)}, Unvisited: {len(unvisited_backward)}")
             
-        return final_paths
+        return final_paths, bfs_level
 
 
 # Global instance for easy access

@@ -63,6 +63,10 @@ class OptimalPathHandler:
             logger.warning(f"Missing task data in task_selected event")
             return
         
+        # Reset cache statistics for this new task to get per-task metrics
+        self.solver.db.reset_cache_stats()
+        logger.info(f"Reset cache statistics for new task {task_id}: {task.start_page_title} -> {task.target_page_title}")
+        
         # Solve the task once
         try:
             logger.info(f"Solving task {task_id}: {task.start_page_title} -> {task.target_page_title}")
@@ -143,6 +147,14 @@ class OptimalPathHandler:
             logger.debug(f"Analyzing path: {from_page} -> {to_page} for game {game_id} (initial: {is_initial})")
             
             solver_result = await self.solver.find_shortest_path(from_page, to_page)
+            
+            # Log cache statistics after solver operations
+            cache_stats = self.solver.db.get_cache_stats()
+            logger.info(
+                f"Cache performance after solve - "
+                f"Hits: {cache_stats.hits}, Misses: {cache_stats.misses}, "
+                f"Hit rate: {cache_stats.hit_rate:.1f}%"
+            )
             
             # Cache the results
             self.cache[game_id] = {
