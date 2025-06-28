@@ -6,7 +6,7 @@
 
 **TL;DR:** Start 2 terminals:
 ```bash
-# Terminal 1: MCP Server
+# Terminal 1: Backend and MCP Server
 cd ~/wiki-arena && uv run uvicorn src.backend.main:app --host 0.0.0.0 --port 8000 --reload
 
 # Terminal 2: Frontend UI
