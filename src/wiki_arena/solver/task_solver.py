@@ -33,12 +33,136 @@ class WikiTaskSolver:
         else:
             self.db = db
             
-        # Cache for target-specific optimization
+        # Individual item caches - persistent across all targets (TODO(hunter): we may have to LRU cache this)
+        self.title_to_page_id: Dict[str, Optional[int]] = {}
+        self.page_id_to_title: Dict[int, Optional[str]] = {}
+        self.outgoing_links: Dict[int, List[int]] = {}
+        self.incoming_links: Dict[int, List[int]] = {}
+        self.outgoing_links_count: Dict[int, int] = {}
+        self.incoming_links_count: Dict[int, int] = {}
+        
+        """
+        Instead of counting the incoming and outgoing links before choosing which direction to expand
+        (which btw is on the same order of expensive as just expanding both)
+        we can use a heuristic to choose which direction to expand without any db reads 
+        in theory: the whole graph of wikipedia pages has the same the number of incoming and outgoing links
+        In reality this is actually true: avg incoming links ≈ avg outgoing links (both ~38),
+        So our heuristic is to expand the direction with the smaller frontier size (less pages).
+        This avoids expensive database queries while maintaining optimal direction selection in expectation.
+        """
+        self.use_frontier_size_heuristic = True   # Toggle for A/B testing
+        
+        # BFS state caches - target-specific optimization
         self.active_target_id: Optional[int] = None
         # Cache for backward search state {visited: ..., unvisited: ...} for the active_target_id
         self.cached_backward_bfs_state: Optional[Dict[str, Dict[int, List[Optional[int]]]]] = None
-        # Cache for forward expansion outgoing links: {source_node_id: [link_ids]} for the active_target_id
-        self.cached_forward_expansion_links: Dict[int, List[int]] = {}
+
+    async def _get_page_id(self, title: str) -> Optional[int]:
+        """Get page ID with caching."""
+        if title in self.title_to_page_id:
+            return self.title_to_page_id[title]
+        
+        result = await self.db.get_page_id(title)
+        self.title_to_page_id[title] = result
+        return result
+
+    async def _get_page_title(self, page_id: int) -> Optional[str]:
+        """Get page title with caching."""
+        if page_id in self.page_id_to_title:
+            return self.page_id_to_title[page_id]
+        
+        result = await self.db.get_page_title(page_id)
+        self.page_id_to_title[page_id] = result
+        return result
+
+    async def _batch_get_page_titles(self, page_ids: List[int]) -> Dict[int, Optional[str]]:
+        """Get page titles for multiple IDs with caching."""
+        result_map = {}
+        missing_ids = []
+        
+        # Check cache first
+        for page_id in page_ids:
+            if page_id in self.page_id_to_title:
+                result_map[page_id] = self.page_id_to_title[page_id]
+            else:
+                missing_ids.append(page_id)
+        
+        # Fetch missing IDs from database
+        if missing_ids:
+            titles = await self.db.batch_get_page_titles(missing_ids)
+            for page_id, title in zip(missing_ids, titles):
+                self.page_id_to_title[page_id] = title
+                result_map[page_id] = title
+        
+        return result_map
+
+    async def _get_outgoing_links(self, page_id: int) -> List[int]:
+        """Get outgoing links with caching."""
+        if page_id in self.outgoing_links:
+            return self.outgoing_links[page_id]
+        
+        result = await self.db.get_outgoing_links(page_id)
+        self.outgoing_links[page_id] = result
+        
+        # Also cache the count while we have the data
+        self.outgoing_links_count[page_id] = len(result)
+        
+        return result
+
+    async def _get_incoming_links(self, page_id: int) -> List[int]:
+        """Get incoming links with caching."""
+        if page_id in self.incoming_links:
+            return self.incoming_links[page_id]
+        
+        result = await self.db.get_incoming_links(page_id)
+        self.incoming_links[page_id] = result
+        
+        # Also cache the count while we have the data  
+        self.incoming_links_count[page_id] = len(result)
+        
+        return result
+
+    async def _fetch_outgoing_links_count(self, page_ids: List[int]) -> int:
+        """Get sum of outgoing link counts with caching."""
+        total_count = 0
+        missing_ids = []
+        
+        # Check cache first
+        for page_id in page_ids:
+            if page_id in self.outgoing_links_count:
+                total_count += self.outgoing_links_count[page_id]
+            else:
+                missing_ids.append(page_id)
+        
+        # For missing IDs, fetch only counts from database (not expensive links)
+        if missing_ids:
+            # Use database sum method for missing pages
+            missing_count = await self.db.fetch_outgoing_links_count(missing_ids)
+            total_count += missing_count
+            # Note: We don't cache individual counts from the sum since we can't break it down
+        
+        return total_count
+
+    async def _fetch_incoming_links_count(self, page_ids: List[int]) -> int:
+        """Get sum of incoming link counts with caching."""
+        total_count = 0
+        missing_ids = []
+        
+        # Check cache first
+        for page_id in page_ids:
+            if page_id in self.incoming_links_count:
+                total_count += self.incoming_links_count[page_id]
+            else:
+                missing_ids.append(page_id)
+        
+        # For missing IDs, fetch only counts from database (not expensive links)
+        if missing_ids:
+            # Use database sum method for missing pages
+            missing_count = await self.db.fetch_incoming_links_count(missing_ids)
+            total_count += missing_count
+            # Note: We don't cache individual counts from the sum since we can't break it down
+        
+        return total_count
         
     async def find_shortest_path(self, start_page: str, target_page: str) -> SolverResponse:
         """
@@ -56,9 +180,9 @@ class WikiTaskSolver:
         """
         request_start_time = time.time()
         
-        # Get page IDs
-        start_id = await self.db.get_page_id(start_page)
-        target_id = await self.db.get_page_id(target_page)
+        # Get page IDs using cached method
+        start_id = await self._get_page_id(start_page)
+        target_id = await self._get_page_id(target_page)
         
         if start_id is None:
             raise ValueError(f"Start page '{start_page}' not found in database.")
@@ -67,12 +191,9 @@ class WikiTaskSolver:
         
         # --- Cache Management based on target_id ---
         if self.active_target_id != target_id:
-            logger.info(f"Target ID changed from {self.active_target_id} to {target_id}. Resetting caches.")
+            logger.info(f"Target ID changed from {self.active_target_id} to {target_id}. Resetting BFS caches.")
             self.active_target_id = target_id
             self.cached_backward_bfs_state = None
-            self.cached_forward_expansion_links.clear()
-        else:
-            logger.info(f"Continuing with active target ID: {self.active_target_id}. Caches may be reused.")
 
         if start_id == target_id:
             path_titles = [[start_page]]
@@ -90,22 +211,28 @@ class WikiTaskSolver:
         if not paths_as_ids:
             raise ValueError(f"No path found between '{start_page}' and '{target_page}'.")
 
-        # Convert paths of IDs to paths of titles
+        # Optimized title conversion: collect all unique page IDs across all paths
         title_conversion_start_time = time.perf_counter()
-        all_paths_as_titles: List[List[str]] = []
-        total_page_ids_to_convert = sum(len(id_path) for id_path in paths_as_ids)
-        
+        all_unique_page_ids = set()
+        for path in paths_as_ids:
+            all_unique_page_ids.update(path)
+
+        # Get titles for all unique IDs in one optimized cached call  
+        page_id_to_title_map = await self._batch_get_page_titles(list(all_unique_page_ids))
+
+        # Reconstruct all paths using the mapping
+        all_paths_as_titles = []
         for id_path in paths_as_ids:
-            title_path = await self.db.batch_get_page_titles(id_path)
-            # Ensure no None titles in path
+            title_path = [page_id_to_title_map[page_id] for page_id in id_path]
             if any(t is None for t in title_path):
-                logger.error(f"Path {id_path} contained an ID with no title: {title_path}")
-                continue 
+                logger.error(f"Path {id_path} contained an ID with no title")
+                continue
             all_paths_as_titles.append(title_path)
         
         title_conversion_time = time.perf_counter() - title_conversion_start_time
+        total_page_ids_converted = len(all_unique_page_ids)
         logger.info(
-            f"Title conversion: {total_page_ids_to_convert} page IDs converted "
+            f"Title conversion: {total_page_ids_converted} unique page IDs converted "
             f"in {title_conversion_time*1000:.1f}ms"
         )
 
@@ -115,14 +242,12 @@ class WikiTaskSolver:
         actual_computation_time_ms = (time.time() - actual_computation_start_time) * 1000
         
         # Log comprehensive solve summary
-        cache_stats = self.db.get_cache_stats()
         logger.info(
             f"SOLVE SUMMARY for {start_page} -> {target_page}: "
             f"Path length: {len(all_paths_as_titles[0])-1}, "
             f"Paths found: {len(all_paths_as_titles)}, "
             f"BFS levels: {bfs_levels}, "
-            f"Total time: {actual_computation_time_ms:.1f}ms, "
-            f"DB cache: {cache_stats.hits}/{cache_stats.total_requests} hits ({cache_stats.hit_rate:.1f}%)"
+            f"Total time: {actual_computation_time_ms:.1f}ms"
         )
 
         return SolverResponse(
@@ -201,12 +326,36 @@ class WikiTaskSolver:
         bfs_level = 0
         while not final_paths and unvisited_forward and unvisited_backward:
             
-            # Choose direction based on link counts
-            forward_links_count = await self.db.fetch_outgoing_links_count(list(unvisited_forward.keys()))
-            backward_links_count = await self.db.fetch_incoming_links_count(list(unvisited_backward.keys()))
+            # Choose direction based on frontier sizes vs expensive database queries
+            direction_timing_start = time.perf_counter()
+            
+            if self.use_frontier_size_heuristic:
+                # Fast frontier size comparison (O(1) operation)
+                # Theory: Since avg_incoming ≈ avg_outgoing, frontier_size is proportional to total_links
+                forward_frontier_size = len(unvisited_forward)
+                backward_frontier_size = len(unvisited_backward)
+                expand_forward = forward_frontier_size < backward_frontier_size
+                direction_method = "frontier_size"
+                
+                direction_timing_end = time.perf_counter()
+                logger.info(
+                    f"  Direction choice (frontier size): {(direction_timing_end - direction_timing_start)*1000:.1f}ms "
+                    f"(forward: {forward_frontier_size} pages, backward: {backward_frontier_size} pages) -> {'FORWARD' if expand_forward else 'BACKWARD'}"
+                )
+            else:
+                # Expensive database link count queries
+                forward_links_count = await self._fetch_outgoing_links_count(list(unvisited_forward.keys()))
+                backward_links_count = await self._fetch_incoming_links_count(list(unvisited_backward.keys()))
+                expand_forward = forward_links_count < backward_links_count
+                direction_method = "database"
+                
+                direction_timing_end = time.perf_counter()
+                logger.info(
+                    f"  Direction choice (database): {(direction_timing_end - direction_timing_start)*1000:.1f}ms "
+                    f"(forward: {forward_links_count} links, backward: {backward_links_count} links) -> {'FORWARD' if expand_forward else 'BACKWARD'}"
+                )
 
-            # Determine search direction
-            expand_forward = forward_links_count <= backward_links_count
+            # Handle edge cases where one frontier is empty
             if not unvisited_forward: 
                 expand_forward = False
             if not unvisited_backward: 
@@ -215,8 +364,8 @@ class WikiTaskSolver:
             # Log expansion decision with key metrics
             logger.info(
                 f"BFS Level {bfs_level}: {'FORWARD' if expand_forward else 'BACKWARD'} expansion. "
-                f"Forward frontier: {len(unvisited_forward)} pages ({forward_links_count} total links), "
-                f"Backward frontier: {len(unvisited_backward)} pages ({backward_links_count} total links)"
+                f"Forward frontier: {len(unvisited_forward)} pages, "
+                f"Backward frontier: {len(unvisited_backward)} pages"
             )
 
             if expand_forward:
@@ -234,43 +383,19 @@ class WikiTaskSolver:
                                 visited_forward[page_id].append(p)
                 unvisited_forward.clear()
 
-                # Fetch outgoing links with caching
-                results_for_all_sources = [[] for _ in source_page_ids_to_expand]
-                indices_and_src_ids_for_db_fetch = []
-
-                for original_idx, src_id_to_check in enumerate(source_page_ids_to_expand):
-                    cached_links = self.cached_forward_expansion_links.get(src_id_to_check)
-                    
-                    if cached_links is not None:
-                        results_for_all_sources[original_idx] = cached_links
-                        logger.debug(f"Forward link cache HIT for {src_id_to_check}")
-                    else:
-                        indices_and_src_ids_for_db_fetch.append((original_idx, src_id_to_check))
-                        logger.debug(f"Forward link cache MISS for {src_id_to_check}")
+                # Fetch outgoing links using cached method
+                db_start_time = time.perf_counter()
+                db_fetch_tasks = [self._get_outgoing_links(src_id) for src_id in source_page_ids_to_expand]
+                results_for_all_sources = await asyncio.gather(*db_fetch_tasks)
+                db_fetch_time = time.perf_counter() - db_start_time
                 
-                if indices_and_src_ids_for_db_fetch:
-                    src_ids_to_fetch_from_db = [item[1] for item in indices_and_src_ids_for_db_fetch]
-                    
-                    # Time the database fetch operation
-                    db_start_time = time.perf_counter()
-                    db_fetch_tasks = [self.db.get_outgoing_links(s_id) for s_id in src_ids_to_fetch_from_db]
-                    fetched_links_results_list = await asyncio.gather(*db_fetch_tasks)
-                    db_fetch_time = time.perf_counter() - db_start_time
-                    
-                    # Calculate cache performance for this expansion
-                    cache_hits = len(source_page_ids_to_expand) - len(indices_and_src_ids_for_db_fetch)
-                    total_links_fetched = sum(len(links) for links in fetched_links_results_list)
-                    
-                    logger.info(
-                        f"  Forward DB fetch: {len(src_ids_to_fetch_from_db)} pages, "
-                        f"{total_links_fetched} links, {db_fetch_time*1000:.1f}ms, "
-                        f"cache: {cache_hits}/{len(source_page_ids_to_expand)} hits"
-                    )
-
-                    for i, (original_idx, s_id_fetched) in enumerate(indices_and_src_ids_for_db_fetch):
-                        actual_links = fetched_links_results_list[i]
-                        self.cached_forward_expansion_links[s_id_fetched] = actual_links
-                        results_for_all_sources[original_idx] = actual_links
+                # Calculate metrics for this expansion
+                total_links_fetched = sum(len(links) for links in results_for_all_sources)
+                
+                logger.info(
+                    f"  Forward DB fetch: {len(source_page_ids_to_expand)} pages, "
+                    f"{total_links_fetched} links, {db_fetch_time*1000:.1f}ms"
+                )
                 
                 for i, src_id in enumerate(source_page_ids_to_expand):
                     target_ids_from_src = results_for_all_sources[i]
@@ -302,7 +427,7 @@ class WikiTaskSolver:
 
                 # Time the database fetch operation for backward expansion
                 db_start_time = time.perf_counter()
-                tasks = [self.db.get_incoming_links(target_id_val) for target_id_val in target_page_ids_to_expand]
+                tasks = [self._get_incoming_links(target_id_val) for target_id_val in target_page_ids_to_expand]
                 results_for_all_targets = await asyncio.gather(*tasks)
                 db_fetch_time = time.perf_counter() - db_start_time
                 

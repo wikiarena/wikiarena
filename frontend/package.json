@@ -1,13 +1,14 @@
 {
-  "name": "frontend",
+  "name": "wiki-arena-frontend",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "dev-game": "vite --port 3000 --open game.html",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "d3": "^7.8.5"
@@ -17,5 +18,8 @@
     "@types/node": "^22.8.6",
     "typescript": "~5.8.3",
     "vite": "^6.3.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

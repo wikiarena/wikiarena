@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "wiki-arena"
 version = "0.1.0"
-description = "Add your description here"
+description = "Wiki Arena - a competitive evaluation for language models"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -18,8 +18,6 @@ dependencies = [
     "openai>=1.79.0",
     "psutil>=7.0.0",
     "pydantic>=2.11.4",
-    "pytest>=8.3.5",
-    "pytest-asyncio>=1.0.0",
     "python-multipart>=0.0.20",
     "requests>=2.32.3",
     "tqdm>=4.66.0",
@@ -67,9 +65,7 @@ markers = [
 
 [dependency-groups]
 dev = [
-    "httpx>=0.28.1",
     "pytest>=8.3.5",
     "pytest-asyncio>=1.0.0",
     "pytest-cov>=6.2.1",
-    "websockets>=11.0.3",
 ]

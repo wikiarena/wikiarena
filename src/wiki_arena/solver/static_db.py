@@ -57,70 +57,7 @@ class CacheStats:
             f"over {self.runtime_minutes:.1f} minutes"
         )
 
-class CooperativeCache:
-    """Manages cooperative caching for database operations to prevent duplicate work."""
-    
-    def __init__(self):
-        self.ongoing_operations: Dict[str, asyncio.Task] = {}
-        self.operation_lock = asyncio.Lock()
-        self.stats = CacheStats()
-        
-    async def get_or_execute(self, key: str, operation_func, *args, **kwargs) -> Any:
-        """
-        Get result from ongoing operation or start new one.
-        
-        Args:
-            key: Unique identifier for this operation
-            operation_func: The actual database operation to execute
-            *args, **kwargs: Arguments for operation_func
-            
-        Returns:
-            Result of the operation
-        """
-        self.stats.total_requests += 1
-        
-        # Check if operation is already running
-        async with self.operation_lock:
-            if key in self.ongoing_operations:
-                self.stats.hits += 1
-                logger.debug(f"Cooperative cache HIT for operation: {key}")
-                try:
-                    result = await self.ongoing_operations[key]
-                    return result
-                except Exception as e:
-                    # If the ongoing operation failed, remove it and we'll start a new one
-                    logger.warning(f"Ongoing operation {key} failed: {e}")
-                    self.ongoing_operations.pop(key, None)
-                    # Fall through to start new operation
-            
-            # Start new operation
-            self.stats.misses += 1
-            logger.debug(f"Cooperative cache MISS for operation: {key}")
-            task = asyncio.create_task(operation_func(*args, **kwargs))
-            self.ongoing_operations[key] = task
-        
-        try:
-            result = await task
-            return result
-        except Exception as e:
-            logger.error(f"Operation {key} failed: {e}")
-            raise
-        finally:
-            # Clean up completed operation
-            async with self.operation_lock:
-                self.ongoing_operations.pop(key, None)
-    
-    def get_stats(self) -> CacheStats:
-        """Get current cache statistics."""
-        return self.stats
-    
-    def reset_stats(self):
-        """Reset cache statistics."""
-        self.stats.reset()
-    
-    def log_stats(self, operation_name: str = "all_operations"):
-        """Log current cache statistics."""
-        self.stats.log_stats(operation_name)
+# Removed CooperativeCache - it provided no benefits since task_solver has comprehensive caching
 
 class StaticSolverDB:
     """
@@ -141,13 +78,9 @@ class StaticSolverDB:
             logger.error(f"Database file not found at {self.db_path.resolve()}")
             # Consider raising an error here if the DB is essential for startup
             # For now, proceeding will likely lead to errors in DB operations.
-        self._connection_pool = {}
         
         self.max_variables = 32766 # Safe default for 3.32.0 and later, will be updated from PRAGMA
         self._initialize_variable_limit()
-        
-        # Cooperative caching for preventing duplicate operations
-        self.cooperative_cache = CooperativeCache()
         
     def _initialize_variable_limit(self):
         """Initialize the SQLite variable limit by reading from PRAGMA compile_options."""
@@ -183,11 +116,7 @@ class StaticSolverDB:
         validate_page_title(title)
         sanitized_title = get_sanitized_page_title(title)
         
-        # Create cache key for this operation
-        cache_key = f"page_id_{sanitized_title}_{namespace}"
-        return await self.cooperative_cache.get_or_execute(
-            cache_key, self._get_page_id_impl, title, namespace
-        )
+        return await self._get_page_id_impl(title, namespace)
     
     async def _get_page_id_impl(self, title: str, namespace: int = 0) -> Optional[int]:
         """Internal implementation of get_page_id without caching."""
@@ -243,10 +172,7 @@ class StaticSolverDB:
         """Get the readable title for a given page ID."""
         validate_page_id(page_id)
         
-        cache_key = f"page_title_{page_id}"
-        return await self.cooperative_cache.get_or_execute(
-            cache_key, self._get_page_title_impl, page_id
-        )
+        return await self._get_page_title_impl(page_id)
     
     async def _get_page_title_impl(self, page_id: int) -> Optional[str]:
         """Internal implementation of get_page_title without caching."""
@@ -265,10 +191,7 @@ class StaticSolverDB:
         """
         validate_page_id(page_id)
         
-        cache_key = f"outgoing_{page_id}"
-        return await self.cooperative_cache.get_or_execute(
-            cache_key, self._get_outgoing_links_impl, page_id
-        )
+        return await self._get_outgoing_links_impl(page_id)
     
     async def _get_outgoing_links_impl(self, page_id: int) -> List[int]:
         """Internal implementation of get_outgoing_links without caching."""
@@ -287,10 +210,7 @@ class StaticSolverDB:
         """
         validate_page_id(page_id)
         
-        cache_key = f"incoming_{page_id}"
-        return await self.cooperative_cache.get_or_execute(
-            cache_key, self._get_incoming_links_impl, page_id
-        )
+        return await self._get_incoming_links_impl(page_id)
     
     async def _get_incoming_links_impl(self, page_id: int) -> List[int]:
         """Internal implementation of get_incoming_links without caching."""
@@ -316,19 +236,7 @@ class StaticSolverDB:
         if len(page_ids) > self.max_variables:
             return await self._batch_get_page_titles_chunked(page_ids)
 
-        # Create cache key based on sorted page_ids to handle different orderings
-        cache_key = f"batch_titles_{hash(tuple(sorted(page_ids)))}"
-        cached_result = await self.cooperative_cache.get_or_execute(
-            cache_key, self._batch_get_page_titles_impl, page_ids
-        )
-        
-        # The cached result might be in different order, so we need to reorder
-        if isinstance(cached_result, dict):
-            # If implementation returned dict, convert to ordered list
-            return [cached_result.get(page_id) for page_id in page_ids]
-        else:
-            # If implementation returned ordered list, use as-is
-            return cached_result
+        return await self._batch_get_page_titles_impl(page_ids)
 
     async def _batch_get_page_titles_impl(self, page_ids: List[int]) -> List[str]:
         """Internal implementation of batch_get_page_titles without caching."""
@@ -368,11 +276,7 @@ class StaticSolverDB:
         if not titles:
             return {}
         
-        # Create cache key for batch operation
-        cache_key = f"batch_ids_{hash(tuple(sorted(titles)))}"
-        return await self.cooperative_cache.get_or_execute(
-            cache_key, self._batch_get_page_ids_impl, titles
-        )
+        return await self._batch_get_page_ids_impl(titles)
     
     async def _batch_get_page_ids_impl(self, titles: List[str]) -> Dict[str, Optional[int]]:
         """Internal implementation of batch_get_page_ids without caching."""
@@ -384,10 +288,7 @@ class StaticSolverDB:
 
     async def get_database_stats(self) -> Tuple[int, int]:
         """Get total number of pages and links."""
-        cache_key = "database_stats"
-        return await self.cooperative_cache.get_or_execute(
-            cache_key, self._get_database_stats_impl
-        )
+        return await self._get_database_stats_impl()
     
     async def _get_database_stats_impl(self) -> Tuple[int, int]:
         """Internal implementation of get_database_stats without caching."""
@@ -430,11 +331,7 @@ class StaticSolverDB:
         if len(page_ids) > self.max_variables:
             return await self._fetch_links_count_chunked(page_ids, count_column_name)
 
-        # Create cache key for this operation
-        cache_key = f"{count_column_name}_{hash(tuple(sorted(page_ids)))}"
-        return await self.cooperative_cache.get_or_execute(
-            cache_key, self._fetch_links_count_impl, page_ids, count_column_name
-        )
+        return await self._fetch_links_count_impl(page_ids, count_column_name)
     
     async def _fetch_links_count_impl(self, page_ids: List[int], count_column_name: str) -> int:
         """Internal implementation of fetch links count without caching."""
@@ -461,16 +358,16 @@ class StaticSolverDB:
         return total_count
     
     def get_cache_stats(self) -> CacheStats:
-        """Get current cooperative cache statistics."""
-        return self.cooperative_cache.get_stats()
+        """Return empty cache stats since cooperative cache was removed."""
+        return CacheStats()  # Always returns empty stats
     
     def reset_cache_stats(self):
-        """Reset cooperative cache statistics."""
-        self.cooperative_cache.reset_stats()
+        """No-op since cooperative cache was removed."""
+        pass
     
     def log_cache_stats(self):
-        """Log current cooperative cache statistics."""
-        self.cooperative_cache.log_stats("StaticSolverDB")
+        """No-op since cooperative cache was removed."""
+        pass
 
 
 # Global instance for the static solver database
