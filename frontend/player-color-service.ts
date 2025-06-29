@@ -135,7 +135,7 @@ export class PlayerColorService {
     // Reset provider counters for this task
     this.providerColorCounters.clear();
     
-    gameIds.forEach((gameId, index) => {
+    gameIds.forEach((gameId) => {
       const modelKey = this.extractModelKeyFromGameId(gameId);
       const provider = this.getProviderForModelKey(modelKey);
       const color = this.getNextColorForProvider(provider);

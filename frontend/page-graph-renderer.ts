@@ -116,7 +116,7 @@ export class PageGraphRenderer {
       .append('svg')
       .attr('width', this.width)
       .attr('height', this.height)
-      .style('background-color', '#020617')
+      .style('background-color', '#0d1117')
       .style('cursor', 'grab');
 
     // Create main group for zoom/pan
@@ -212,7 +212,7 @@ export class PageGraphRenderer {
       right: 20px;
       width: 40px;
       height: 40px;
-      background: rgba(15, 23, 42, 0.9);
+      background: rgba(13, 17, 23, 0.9);
       border: 1px solid #374151;
       border-radius: 50%;
       color: #94a3b8;
@@ -229,13 +229,13 @@ export class PageGraphRenderer {
 
     // Hover effects
     this.debugButton.addEventListener('mouseenter', () => {
-      this.debugButton!.style.background = 'rgba(15, 23, 42, 1)';
+              this.debugButton!.style.background = 'rgba(13, 17, 23, 1)';
       this.debugButton!.style.color = '#f59e0b';
       this.debugButton!.style.transform = 'scale(1.1)';
     });
 
     this.debugButton.addEventListener('mouseleave', () => {
-      this.debugButton!.style.background = 'rgba(15, 23, 42, 0.9)';
+              this.debugButton!.style.background = 'rgba(13, 17, 23, 0.9)';
       this.debugButton!.style.color = '#94a3b8';
       this.debugButton!.style.transform = 'scale(1)';
     });
@@ -282,7 +282,7 @@ export class PageGraphRenderer {
       position: absolute;
       top: 20px;
       left: 20px;
-      background: rgba(15, 23, 42, 0.95);
+      background: rgba(13, 17, 23, 0.95);
       border: 1px solid #374151;
       border-radius: 8px;
       padding: 16px;
@@ -1305,6 +1305,9 @@ export class PageGraphRenderer {
       
       // Create pie chart
       this.createPieChart(nodeGroup as any, d, radius);
+      
+      // Ensure distance text appears on top by moving it to the end
+      this.moveDistanceTextToTop(nodeGroup);
     });
 
     // Finally, handle target node with concentric rings
@@ -1321,6 +1324,9 @@ export class PageGraphRenderer {
       
       // Create target rings
       this.createTargetRings(nodeGroup as any, d, radius);
+      
+      // Ensure distance text (trophy) appears on top by moving it to the end
+      this.moveDistanceTextToTop(nodeGroup);
     });
 
     // Handle start nodes with play button triangle
@@ -1451,6 +1457,34 @@ export class PageGraphRenderer {
     const edgeY = fromY + unitY * radius;
     
     return { x: edgeX, y: edgeY };
+  }
+
+  /**
+   * Helper function to ensure distance text appears on top of visual elements
+   */
+  private moveDistanceTextToTop(nodeGroup: d3.Selection<SVGGElement, any, any, any>): void {
+    const distanceText = nodeGroup.select('.distance-text');
+    if (!distanceText.empty()) {
+      // Store current text properties
+      const textContent = distanceText.text();
+      const fontSize = distanceText.style('font-size');
+      const display = distanceText.style('display');
+      
+      // Remove and re-add to put it on top (SVG renders in document order)
+      distanceText.remove();
+      
+      nodeGroup.append('text')
+        .attr('class', 'distance-text')
+        .attr('text-anchor', 'middle')
+        .attr('dy', '0.35em')
+        .style('fill', 'white')
+        .style('font-weight', 'bold')
+        .style('pointer-events', 'none')
+        .style('text-shadow', '1px 1px 2px rgba(0,0,0,0.8)') // Add shadow for better visibility
+        .text(textContent)
+        .style('font-size', fontSize)
+        .style('display', display);
+    }
   }
 
   // =============================================================================
@@ -1626,20 +1660,20 @@ export class PageGraphRenderer {
     return playerColorService.getNodeColor(page);
   }
 
-  private getPageStroke(page: PageNode): string {
-    switch (page.type) {
-      case 'start':
-        return '#059669';
-      case 'target':
-        return '#d97706';
-      case 'visited':
-        // Use first visit for stroke (in multi-game, first visit takes precedence)
-        const firstVisit = page.visits[0];
-        return this.getVisitedPageStroke(firstVisit?.distanceChange);
-      default:
-        return '#475569';
-    }
-  }
+  // private getPageStroke(page: PageNode): string {
+  //   switch (page.type) {
+  //     case 'start':
+  //       return '#059669';
+  //     case 'target':
+  //       return '#d97706';
+  //     case 'visited':
+  //       // Use first visit for stroke (in multi-game, first visit takes precedence)
+  //       const firstVisit = page.visits[0];
+  //       return this.getVisitedPageStroke(firstVisit?.distanceChange);
+  //     default:
+  //       return '#475569';
+  //   }
+  // }
 
   private getVisitedPageStroke(distanceChange?: number): string {
     if (distanceChange === undefined) {
@@ -1662,6 +1696,9 @@ export class PageGraphRenderer {
   }
 
   private getDistanceText(page: PageNode): string {
+    if (page.type === 'target') {
+      return '🏆'; // Trophy for target node
+    }
     if (page.distanceToTarget === undefined) {
       return '?';
     }

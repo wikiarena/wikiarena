@@ -1,0 +1,123 @@
+@import "tailwindcss";
+@import "tailwindcss/theme" layer(theme);
+
+@layer base {
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply bg-blue-600 text-white border-none px-4 py-2 rounded-md cursor-pointer text-sm transition-all;
+  }
+
+  .btn:hover {
+    @apply bg-blue-700;
+  }
+
+  .btn:disabled {
+    @apply bg-slate-500 cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply bg-slate-500;
+  }
+
+  .btn-secondary:hover:not(:disabled) {
+    @apply bg-slate-600;
+  }
+
+  .btn-accent {
+    @apply bg-red-600;
+  }
+
+  .btn-accent:hover:not(:disabled) {
+    @apply bg-red-700;
+  }
+}
+
+/* Custom styles that don't have Tailwind equivalents */
+@layer utilities {
+  .horizontal-progress-fill {
+    height: 100%;
+    position: absolute;
+    left: 0;
+    border-radius: 5px;
+    transition: width 0.8s ease, left 0.8s ease, background 0.5s ease;
+    background: #10b981;
+    width: 2%;
+  }
+
+  .horizontal-progress-fill.negative {
+    background: #ef4444;
+  }
+
+  .horizontal-progress-indicator {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 20px;
+    height: 20px;
+    font-size: 14px;
+    line-height: 20px;
+    text-align: center;
+    z-index: 6;
+    transition: left 0.8s ease;
+    pointer-events: none;
+    text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .horizontal-progress-indicator img {
+    filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.8));
+  }
+
+  .horizontal-progress-target {
+    position: absolute;
+    right: -10px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 20px;
+    height: 20px;
+    font-size: 16px;
+    line-height: 20px;
+    text-align: center;
+    z-index: 6;
+    pointer-events: none;
+    text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
+    animation: pulse 2s infinite;
+  }
+
+  .horizontal-progress-label {
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 10px;
+    font-weight: 600;
+    color: white;
+    text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
+    z-index: 7;
+    pointer-events: none;
+  }
+
+  .horizontal-progress-status {
+    position: absolute;
+    left: -8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    z-index: 6;
+  }
+} 

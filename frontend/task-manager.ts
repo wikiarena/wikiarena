@@ -360,7 +360,7 @@ export class TaskManager {
       });
       
       // Add optimal path pages from most recent optimal paths (use current viewing index for live mode)
-      this.addOptimalPathsToGraph(allPages, allEdges, gameSequence, this.task.currentPageIndex);
+      // this.addOptimalPathsToGraph(allPages, allEdges, gameSequence, this.task.currentPageIndex);
     });
     
     return { pages: Array.from(allPages.values()), edges: allEdges };
@@ -382,7 +382,7 @@ export class TaskManager {
       });
       
       // Add optimal path pages from most recent optimal paths up to viewing index
-      this.addOptimalPathsToGraph(allPages, allEdges, gameSequence, globalPageIndex);
+      // this.addOptimalPathsToGraph(allPages, allEdges, gameSequence, globalPageIndex);
     });
     
     return { pages: Array.from(allPages.values()), edges: allEdges };
@@ -453,59 +453,59 @@ export class TaskManager {
     }
   }
 
-  private addOptimalPathsFromEachPage(allPages: Map<string, PageNode>, allEdges: NavigationEdge[], gameSequence: GameSequence, viewingIndex?: number): void {
-    // Use the provided viewing index, or default to the last page state
-    const maxIndex = viewingIndex !== undefined ? viewingIndex : gameSequence.pageStates.length - 1;
+  // private addOptimalPathsFromEachPage(allPages: Map<string, PageNode>, allEdges: NavigationEdge[], gameSequence: GameSequence, viewingIndex?: number): void {
+  //   // Use the provided viewing index, or default to the last page state
+  //   const maxIndex = viewingIndex !== undefined ? viewingIndex : gameSequence.pageStates.length - 1;
     
-    // Iterate through each page state up to the viewing index
-    for (let i = 0; i <= maxIndex; i++) {
-      const pageState = gameSequence.pageStates[i];
-      if (pageState && pageState.optimalPaths.length > 0) {
-        // Take only the first optimal path from this page
-        const optimalPath = pageState.optimalPaths[0];
+  //   // Iterate through each page state up to the viewing index
+  //   for (let i = 0; i <= maxIndex; i++) {
+  //     const pageState = gameSequence.pageStates[i];
+  //     if (pageState && pageState.optimalPaths.length > 0) {
+  //       // Take only the first optimal path from this page
+  //       const optimalPath = pageState.optimalPaths[0];
         
-        console.log(`🎯 Adding optimal path from page ${i}: ${pageState.pageTitle} for game ${gameSequence.gameId}`);
+  //       console.log(`🎯 Adding optimal path from page ${i}: ${pageState.pageTitle} for game ${gameSequence.gameId}`);
         
-        // Add optimal path pages
-        optimalPath.forEach((pageTitle: string, index: number) => {
-          const existingPage = allPages.get(pageTitle);
-          const distanceToTarget = optimalPath.length - 1 - index;
+  //       // Add optimal path pages
+  //       optimalPath.forEach((pageTitle: string, index: number) => {
+  //         const existingPage = allPages.get(pageTitle);
+  //         const distanceToTarget = optimalPath.length - 1 - index;
           
-          if (existingPage) {
-            // Update distance but don't add to visits (only visited pages go in visits)
-            if (existingPage.distanceToTarget === undefined) {
-              existingPage.distanceToTarget = distanceToTarget;
-            }
+  //         if (existingPage) {
+  //           // Update distance but don't add to visits (only visited pages go in visits)
+  //           if (existingPage.distanceToTarget === undefined) {
+  //             existingPage.distanceToTarget = distanceToTarget;
+  //           }
             
-            // If page hasn't been visited, mark as optimal_path type
-            if (existingPage.visits.length === 0 && existingPage.type !== 'start' && existingPage.type !== 'target') {
-              existingPage.type = 'optimal_path';
-            }
-          } else {
-            // Create new optimal path page (only if not start/target - they're already initialized)
-            if (pageTitle !== this.task.startPage && pageTitle !== this.task.targetPage) {
-              allPages.set(pageTitle, {
-                pageTitle,
-                type: 'optimal_path',
-                distanceToTarget,
-                visits: []
-              });
-            }
-          }
-        });
+  //           // If page hasn't been visited, mark as optimal_path type
+  //           if (existingPage.visits.length === 0 && existingPage.type !== 'start' && existingPage.type !== 'target') {
+  //             existingPage.type = 'optimal_path';
+  //           }
+  //         } else {
+  //           // Create new optimal path page (only if not start/target - they're already initialized)
+  //           if (pageTitle !== this.task.startPage && pageTitle !== this.task.targetPage) {
+  //             allPages.set(pageTitle, {
+  //               pageTitle,
+  //               type: 'optimal_path',
+  //               distanceToTarget,
+  //               visits: []
+  //             });
+  //           }
+  //         }
+  //       });
         
-        // Add optimal path edges
-        for (let j = 0; j < optimalPath.length - 1; j++) {
-          allEdges.push({
-            id: `${gameSequence.gameId}-optimal-page${i}-${j}`,
-            sourcePageTitle: optimalPath[j],
-            targetPageTitle: optimalPath[j + 1],
-            type: 'optimal_path'
-          });
-        }
-      }
-    }
-  }
+  //       // Add optimal path edges
+  //       for (let j = 0; j < optimalPath.length - 1; j++) {
+  //         allEdges.push({
+  //           id: `${gameSequence.gameId}-optimal-page${i}-${j}`,
+  //           sourcePageTitle: optimalPath[j],
+  //           targetPageTitle: optimalPath[j + 1],
+  //           type: 'optimal_path'
+  //         });
+  //       }
+  //     }
+  //   }
+  // }
 
   private addOptimalPathsToGraph(allPages: Map<string, PageNode>, allEdges: NavigationEdge[], gameSequence: GameSequence, viewingIndex?: number): void {
     // Find most recent optimal paths by iterating backwards from viewing index

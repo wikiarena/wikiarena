@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Wiki Arena</title>
+    <link rel="stylesheet" href="./style.css">
     <style>
         * {
             margin: 0;
@@ -12,221 +13,700 @@
         }
 
         body {
+            background-color: #0d1117;
+            color: #f0f6fc;
             font-family: system-ui, -apple-system, sans-serif;
-            background-color: #0f172a;
-            color: #e2e8f0;
             overflow: hidden;
+            height: 100vh;
         }
 
-        .app-container {
+        /* Sidebar Styles - ChatGPT inspired */
+        .sidebar {
+            position: fixed;
+            left: 0;
+            top: 0;
             height: 100vh;
+            width: 60px;
+            background-color: #161b22;
+            border-right: 1px solid #21262d;
+            transition: width 0.3s ease;
+            z-index: 100;
             display: flex;
             flex-direction: column;
         }
 
-        .header {
-            background-color: #1e293b;
-            padding: 1rem;
-            border-bottom: 1px solid #334155;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+        .sidebar.expanded {
+            width: 260px;
         }
 
-        .header h1 {
+        /* Sidebar Header */
+        .sidebar-header {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            padding: 0.5rem 1rem;
+            min-height: 60px;
+            box-sizing: border-box;
+            position: relative;
+        }
+
+        .sidebar.expanded .sidebar-header {
+            justify-content: space-between;
+        }
+
+        /* Logo/Toggle Button */
+        .sidebar-logo {
+            position: relative;
+            width: 28px;
+            height: 28px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 0.375rem;
+            transition: background-color 0.15s ease;
+        }
+
+        .sidebar-logo:hover {
+            background-color: #21262d;
+        }
+
+        .logo-icon {
+            font-size: 1.25rem;
+            transition: opacity 0.15s ease;
+        }
+
+        .hamburger-icon {
+            position: absolute;
+            font-size: 1rem;
+            color: #8b949e;
+            opacity: 0;
+            transition: opacity 0.15s ease;
+        }
+
+        /* Show hamburger on hover when collapsed */
+        .sidebar:not(.expanded) .sidebar-logo:hover .logo-icon {
+            opacity: 0;
+        }
+
+        .sidebar:not(.expanded) .sidebar-logo:hover .hamburger-icon {
+            opacity: 1;
+        }
+
+        /* Close Button */
+        .sidebar-close {
+            width: 28px;
+            height: 28px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 0.375rem;
+            transition: background-color 0.15s ease, opacity 0.15s ease;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .sidebar.expanded .sidebar-close {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .sidebar-close:hover {
+            background-color: #21262d;
+        }
+
+        .close-icon {
+            font-size: 0.875rem;
+            color: #8b949e;
+        }
+
+        /* Sidebar Buttons Container */
+        .sidebar-buttons {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 0;
+        }
+
+        .sidebar-button {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            width: 100%;
+            min-height: 28px;
+            padding: 0.5rem 1rem;
+            border: none;
+            background: transparent;
+            color: #f0f6fc;
+            cursor: pointer;
+            transition: background-color 0.15s ease;
+            position: relative;
+            border-radius: 0.375rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .sidebar-button:hover {
+            background-color: #21262d;
+        }
+
+        /* Collapsed sidebar - only show icon area highlight */
+        .sidebar:not(.expanded) .sidebar-button {
+            padding: 0.5rem 1rem;
+        }
+
+        .sidebar:not(.expanded) .sidebar-button:hover {
+            background-color: transparent;
+        }
+
+        .sidebar:not(.expanded) .sidebar-button:hover::before {
+            content: '';
+            position: absolute;
+            left: 1rem;
+            top: 0.5rem;
+            width: 28px;
+            height: 28px;
+            background-color: #21262d;
+            border-radius: 0.375rem;
+            z-index: -1;
+        }
+
+        .sidebar-button-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            font-size: 1rem;
+            flex-shrink: 0;
+        }
+
+        .sidebar-button-text {
+            margin-left: 0.75rem;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            white-space: nowrap;
+            font-size: 0.875rem;
+            color: #f0f6fc;
+        }
+
+        .sidebar.expanded .sidebar-button-text {
+            opacity: 1;
+        }
+
+        /* Tooltip for collapsed sidebar */
+        .sidebar-button .tooltip {
+            position: absolute;
+            left: 60px;
+            top: 50%;
+            transform: translateY(-50%);
+            background-color: #21262d;
+            color: #f0f6fc;
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.375rem;
+            font-size: 0.75rem;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+            z-index: 1000;
+            border: 1px solid #30363d;
+        }
+
+        .sidebar:not(.expanded) .sidebar-button:hover .tooltip {
+            opacity: 1;
+        }
+
+        .sidebar.expanded .tooltip {
+            display: none;
+        }
+
+        /* Main content area */
+        .main-content {
+            margin-left: 60px;
+            transition: margin-left 0.3s ease;
+            height: 100vh;
+            position: relative;
+        }
+
+        .sidebar.expanded + .main-content {
+            margin-left: 260px;
+        }
+
+        /* Landing Page Modal */
+        .landing-modal {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #0d1117;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+        }
+
+        .landing-modal.hidden {
+            display: none;
+        }
+
+        .landing-content {
+            max-width: 600px;
+            width: 90%;
+            text-align: center;
+            padding: 2rem;
+        }
+
+        .logo-section {
+            margin-bottom: 3rem;
+        }
+
+        .branding {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+        }
+
+        .site-name {
             font-size: 1.5rem;
             font-weight: 600;
+            color: #f0f6fc;
         }
 
-        .controls {
+        .title {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #f0f6fc;
+            margin-bottom: 3rem;
+        }
+
+        .button-row {
             display: flex;
             gap: 1rem;
-            align-items: center;
+            justify-content: center;
+            margin-bottom: 3rem;
+            flex-wrap: wrap;
         }
 
-        .btn {
-            background-color: #3b82f6;
-            color: white;
-            border: none;
-            padding: 0.5rem 1rem;
+        .action-button {
+            padding: 0.375rem 0.75rem;
+            border: 1px solid #21262d;
+            background-color: #0d1117;
+            color: #f0f6fc;
             border-radius: 0.375rem;
             cursor: pointer;
+            transition: all 0.15s ease;
             font-size: 0.875rem;
-            transition: background-color 0.2s;
+            text-decoration: none;
+            display: inline-block;
         }
 
-        .btn:hover {
-            background-color: #2563eb;
+        .action-button:hover {
+            background-color: #161b22;
+            color: #8b949e;
+            border-color: #30363d;
         }
 
-        .btn:disabled {
-            background-color: #64748b;
-            cursor: not-allowed;
+        .action-button.primary {
+            background-color: #238636;
+            border-color: #238636;
+            color: #ffffff;
         }
 
-        .btn-secondary {
-            background-color: #64748b;
+        .action-button.primary:hover {
+            background-color: #2ea043;
+            border-color: #2ea043;
+            color: #ffffff;
         }
 
-        .btn-secondary:hover:not(:disabled) {
-            background-color: #475569;
+        /* Page Selectors */
+        .page-selectors {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-bottom: 2rem;
         }
 
-        .btn-accent {
-            background-color: #dc2626;
+        .page-selector {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
         }
 
-        .btn-accent:hover:not(:disabled) {
-            background-color: #b91c1c;
+        .page-selector label {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: #f0f6fc;
         }
 
-        .stepping-controls {
+        .page-input {
+            padding: 0.75rem;
+            border: 1px solid #21262d;
+            background-color: #0d1117;
+            color: #f0f6fc;
+            border-radius: 0.375rem;
+            font-size: 1rem;
+            width: 100%;
+            min-height: 48px;
+            transition: border-color 0.2s ease;
+        }
+
+        .page-input:focus {
+            outline: none;
+            border-color: #58a6ff;
+            box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.1);
+        }
+
+        .page-input::placeholder {
+            color: #7d8590;
+        }
+
+        /* Validation states */
+        .page-input.valid {
+            border-color: #238636;
+        }
+
+        .page-input.invalid {
+            border-color: #da3633;
+        }
+
+        /* Wikipedia Autocomplete Styles */
+        .wikipedia-autocomplete-container {
+            position: relative;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .wikipedia-autocomplete-container .page-input {
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .wikipedia-autocomplete-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            max-height: 300px;
+            overflow-y: auto;
+            background-color: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 0.375rem;
+            border-top: none;
+            border-top-left-radius: 0;
+            border-top-right-radius: 0;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+            margin-top: -1px;
+        }
+
+        .wikipedia-autocomplete-item {
+            padding: 0.5rem 0.75rem;
+            cursor: pointer;
+            border-bottom: 1px solid #21262d;
+            transition: background-color 0.15s ease;
+            text-align: left;
+        }
+
+        .wikipedia-autocomplete-item:last-child {
+            border-bottom: none;
+        }
+
+        .wikipedia-autocomplete-item:hover,
+        .wikipedia-autocomplete-item.selected {
+            background-color: #21262d;
+        }
+
+        .wikipedia-autocomplete-item .item-title {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: #f0f6fc;
+            margin-bottom: 0.25rem;
+        }
+
+        .wikipedia-autocomplete-item .item-description {
+            font-size: 0.75rem;
+            color: #8b949e;
+            line-height: 1.4;
+        }
+
+        .wikipedia-autocomplete-item mark {
+            background-color: transparent;
+            color: inherit;
+            text-decoration: underline;
+            text-decoration-color: #58a6ff;
+            padding: 0;
+        }
+
+        /* Loading state */
+        .wikipedia-autocomplete-loading {
+            padding: 1rem;
             display: flex;
             align-items: center;
             gap: 0.75rem;
-            padding: 0.5rem;
-            background-color: rgba(51, 65, 85, 0.5);
-            border-radius: 0.5rem;
-            border: 1px solid #475569;
-        }
-
-        .step-info {
+            color: #8b949e;
             font-size: 0.875rem;
-            color: #e2e8f0;
-            font-weight: 500;
-            min-width: 120px;
+        }
+
+        .loading-spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid #21262d;
+            border-top: 2px solid #58a6ff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* No results state */
+        .wikipedia-autocomplete-no-results {
+            padding: 1rem;
             text-align: center;
+            color: #8b949e;
+            font-size: 0.875rem;
+            font-style: italic;
         }
 
-        /* Horizontal Progress Bars Container (floating at top) */
-        .horizontal-progress-container {
-            position: absolute;
-            top: 20px;
-            left: 20%;
-            right: 20%;
-            display: none; /* Will be shown when games are active */
+        /* Error state */
+        .wikipedia-autocomplete-error {
+            padding: 1rem;
+            text-align: center;
+            color: #f85149;
+            font-size: 0.875rem;
+        }
+
+        /* Custom scrollbar for dropdown */
+        .wikipedia-autocomplete-dropdown::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .wikipedia-autocomplete-dropdown::-webkit-scrollbar-track {
+            background: #161b22;
+        }
+
+        .wikipedia-autocomplete-dropdown::-webkit-scrollbar-thumb {
+            background: #30363d;
+            border-radius: 3px;
+        }
+
+        .wikipedia-autocomplete-dropdown::-webkit-scrollbar-thumb:hover {
+            background: #484f58;
+        }
+
+        /* Model Selectors */
+        .model-selectors {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .model-selector {
+            display: flex;
             flex-direction: column;
-            gap: 8px;
-            z-index: 5;
-            backdrop-filter: blur(4px);
+            gap: 0.5rem;
         }
 
-        .horizontal-progress-bar {
+        .model-selector label {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: #f0f6fc;
+        }
+
+        .model-input {
+            padding: 0.75rem;
+            border: 1px solid #21262d;
+            background-color: #0d1117;
+            color: #f0f6fc;
+            border-radius: 0.375rem;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: border-color 0.2s ease;
+            min-height: 48px;
+            display: flex;
+            align-items: center;
+        }
+
+        .model-input:focus {
+            outline: none;
+            border-color: #58a6ff;
+            box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.1);
+        }
+
+        .model-input::placeholder {
+            color: #7d8590;
+        }
+
+        .model-input.valid {
+            border-color: #238636;
+        }
+
+        .model-input.invalid {
+            border-color: #da3633;
+        }
+
+        /* Model Selector Container */
+        .model-selector-container {
             position: relative;
             width: 100%;
-            height: 12px;
-            background-color: rgba(30, 41, 59, 0.8);
-            border-radius: 6px;
-            border: 1px solid rgba(71, 85, 105, 0.6);
-            overflow: visible;
+            display: flex;
+            flex-direction: column;
         }
 
-        .horizontal-progress-fill {
-            height: 100%;
+        .model-selector-container .model-input {
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .model-selector-dropdown {
             position: absolute;
+            top: 100%;
             left: 0;
-            border-radius: 5px;
-            transition: width 0.8s ease, left 0.8s ease, background 0.5s ease;
-            background: #10b981;
-            width: 2%;
+            right: 0;
+            z-index: 1000;
+            max-height: 300px;
+            overflow-y: auto;
+            background-color: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 0.375rem;
+            border-top: none;
+            border-top-left-radius: 0;
+            border-top-right-radius: 0;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+            margin-top: -1px;
         }
 
-        .horizontal-progress-fill.negative {
-            background: #ef4444;
+        .model-selector-item {
+            padding: 0.75rem;
+            cursor: pointer;
+            border-bottom: 1px solid #21262d;
+            transition: background-color 0.15s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
         }
 
-        .horizontal-progress-indicator {
-            position: absolute;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 20px;
-            height: 20px;
-            font-size: 14px;
-            line-height: 20px;
-            text-align: center;
-            z-index: 6;
-            transition: left 0.8s ease;
-            pointer-events: none;
-            text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
+        .model-selector-item:last-child {
+            border-bottom: none;
+        }
+
+        .model-selector-item:hover,
+        .model-selector-item.selected {
+            background-color: #21262d;
+        }
+
+        .model-selector-item-icon {
+            width: 24px;
+            height: 24px;
+            flex-shrink: 0;
             display: flex;
             align-items: center;
             justify-content: center;
         }
 
-        .horizontal-progress-indicator img {
-            filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.8));
-        }
-
-        .horizontal-progress-target {
-            position: absolute;
-            right: -10px;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 20px;
-            height: 20px;
-            font-size: 16px;
-            line-height: 20px;
-            text-align: center;
-            z-index: 6;
-            pointer-events: none;
-            text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
-            animation: pulse 2s infinite;
-        }
-
-        .horizontal-progress-label {
-            position: absolute;
-            left: 8px;
-            top: 50%;
-            transform: translateY(-50%);
-            font-size: 10px;
-            font-weight: 600;
-            color: white;
-            text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
-            z-index: 7;
-            pointer-events: none;
-        }
-
-        .horizontal-progress-status {
-            position: absolute;
-            left: -8px;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            z-index: 6;
-        }
-
-        .connection-status {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            font-size: 0.875rem;
-        }
-
-        .status-indicator {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background-color: #ef4444;
-        }
-
-        .status-indicator.connected {
-            background-color: #10b981;
-        }
-
-        .main-content {
-            flex: 1;
-            display: flex;
-            overflow: hidden;
-        }
-
-        .graph-container {
-            flex: 1;
-            position: relative;
-            background-color: #020617;
+        .model-selector-item-icon img {
             width: 100%;
             height: 100%;
+            object-fit: contain;
+        }
+
+        .model-selector-item-content {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .model-selector-item-name {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: #f0f6fc;
+            margin-bottom: 0.25rem;
+        }
+
+        .model-selector-item-details {
+            margin-top: 0.125rem;
+        }
+
+        .model-selector-cost {
+            font-size: 0.6875rem;
+            color: #656d76;
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+        }
+
+        /* No results state */
+        .model-selector-no-results {
+            padding: 1rem;
+            text-align: center;
+            color: #8b949e;
+            font-size: 0.875rem;
+            font-style: italic;
+        }
+
+        /* Custom scrollbar for model dropdown */
+        .model-selector-dropdown::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .model-selector-dropdown::-webkit-scrollbar-track {
+            background: #161b22;
+        }
+
+        .model-selector-dropdown::-webkit-scrollbar-thumb {
+            background: #30363d;
+            border-radius: 3px;
+        }
+
+        .model-selector-dropdown::-webkit-scrollbar-thumb:hover {
+            background: #484f58;
+        }
+
+        /* Start Race Button */
+        .start-race-button {
+            padding: 0.75rem 1.5rem;
+            background-color: #238636;
+            border: 1px solid #238636;
+            color: #ffffff;
+            border-radius: 0.375rem;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            margin-top: 1rem;
+        }
+
+        .start-race-button:hover {
+            background-color: #2ea043;
+            border-color: #2ea043;
+        }
+
+        .start-race-button:disabled {
+            background-color: #21262d;
+            border-color: #21262d;
+            color: #656d76;
+            cursor: not-allowed;
+        }
+
+        /* Race View */
+        .race-view {
+            width: 100%;
+            height: 100vh;
+            position: relative;
+            background-color: #0d1117;
         }
 
         #graph-canvas {
@@ -239,345 +719,176 @@
             cursor: grabbing;
         }
 
-        .info-panel {
+        /* Progress bars and other game elements will be added here */
+        .horizontal-progress-container {
             position: absolute;
-            top: 1rem;
-            right: 1rem;
-            width: 280px;
-            max-height: calc(100vh - 120px);
-            background-color: rgba(30, 41, 59, 0.95);
-            backdrop-filter: blur(8px);
-            border: 1px solid #334155;
-            border-radius: 0.5rem;
-            padding: 1.5rem;
-            overflow-y: auto;
-            overflow-x: auto;
-            z-index: 10;
-            transition: transform 0.3s ease;
+            top: 20px;
+            left: 20%;
+            right: 20%;
+            display: none;
+            flex-direction: column;
+            gap: 8px;
+            z-index: 5;
+            backdrop-filter: blur(4px);
         }
 
-        .info-panel.collapsed {
-            transform: translateX(calc(100% + 1rem));
-        }
-
-        .info-toggle {
-            position: absolute;
-            top: 1rem;
-            right: 1rem;
-            background-color: rgba(30, 41, 59, 0.95);
-            backdrop-filter: blur(8px);
-            border: 1px solid #334155;
-            border-radius: 0.375rem;
-            padding: 0.5rem;
-            cursor: pointer;
-            z-index: 11;
-            color: #e2e8f0;
-            font-size: 1.25rem;
-            transition: background-color 0.2s;
-        }
-
-        .info-toggle:hover {
-            background-color: rgba(51, 65, 85, 0.95);
-        }
-
-        .task-info {
-            margin-bottom: 2rem;
-        }
-
-        .task-info h3 {
-            font-size: 1.125rem;
-            font-weight: 600;
-            margin-bottom: 1rem;
-            color: #f8fafc;
-        }
-
-        .info-item {
-            display: flex;
-            justify-content: space-between;
-            padding: 0.5rem 0;
-            border-bottom: 1px solid #334155;
-            gap: 0.5rem;
-            min-width: 0;
-        }
-
-        .info-item:last-child {
-            border-bottom: none;
-        }
-
-        .info-label {
-            font-weight: 500;
-            color: #94a3b8;
-            flex-shrink: 0;
-        }
-
-        .info-value {
-            color: #e2e8f0;
-            font-weight: 600;
-            text-align: right;
-            min-width: 0;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .moves-list {
-            margin-top: 2rem;
-        }
-
-        .page-item {
-            padding: 0.75rem;
-            margin-bottom: 0.5rem;
-            background-color: #334155;
-            border-radius: 0.375rem;
-            border-left: 4px solid #64748b;
-            cursor: pointer;
-            transition: background-color 0.2s ease;
-        }
-
-        .page-item:hover {
-            background-color: #475569;
-        }
-
-        .page-item.start {
-            border-left-color: #10b981;
-        }
-
-        .page-item.target {
-            border-left-color: #f59e0b;
-        }
-
-        .page-item.visited {
-            border-left-color: #3b82f6;
-        }
-
-        .page-item.current {
-            border-left-color: #8b5cf6;
-            background-color: #3f1d7a;
-        }
-
-        .page-item.current:hover {
-            background-color: #4a2284;
-        }
-
-        .page-item.future {
-            border-left-color: #6b7280;
-            background-color: #374151;
-            opacity: 0.6;
-        }
-
-        .page-item.future:hover {
-            background-color: #4b5563;
-            opacity: 0.8;
-        }
-
-        .page-item.viewing {
-            border-left-color: #06b6d4;
-            background-color: #164e63;
-            box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3);
-        }
-
-        .page-item.viewing:hover {
-            background-color: #155e75;
-        }
-
-        .page-item.clickable {
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-
-        .page-item.clickable:hover {
-            transform: translateX(2px);
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-        }
-
-        .page-number {
-            font-size: 0.75rem;
-            color: #94a3b8;
-            margin-bottom: 0.25rem;
-        }
-
-        .page-title {
-            font-size: 0.875rem;
-            color: #e2e8f0;
-            text-decoration: none;
-        }
-
-        .page-item:hover .page-title {
-            color: #60a5fa;
-            text-decoration: underline;
-        }
-
-        .page-link {
-            color: inherit;
-            text-decoration: none;
-            display: block;
-        }
-
-        .loading {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            height: 100%;
-            font-size: 1.125rem;
-            color: #94a3b8;
-        }
-
-        .error {
-            background-color: #7f1d1d;
-            color: #fecaca;
-            padding: 1rem;
-            text-align: center;
-        }
-
-        /* Physics Controls Styling */
-        .physics-controls {
-            font-family: system-ui, -apple-system, sans-serif !important;
-        }
-
-        .physics-controls input[type="range"] {
-            appearance: none;
-            background: transparent;
-            cursor: pointer;
-        }
-
-        .physics-controls input[type="range"]::-webkit-slider-track {
-            background: #475569;
-            height: 4px;
-            border-radius: 2px;
-        }
-
-        .physics-controls input[type="range"]::-webkit-slider-thumb {
-            appearance: none;
-            background: #f59e0b;
-            height: 16px;
-            width: 16px;
-            border-radius: 50%;
-            cursor: pointer;
-        }
-
-        .physics-controls input[type="range"]::-webkit-slider-thumb:hover {
-            background: #fbbf24;
-            transform: scale(1.1);
-            transition: all 0.2s ease;
-        }
-
-        .physics-controls input[type="range"]::-moz-range-track {
-            background: #475569;
-            height: 4px;
-            border-radius: 2px;
-        }
-
-        .physics-controls input[type="range"]::-moz-range-thumb {
-            background: #f59e0b;
-            height: 16px;
-            width: 16px;
-            border-radius: 50%;
-            cursor: pointer;
-            border: none;
-        }
-
-        .physics-controls input[type="range"]::-moz-range-thumb:hover {
-            background: #fbbf24;
-        }
-
-        .physics-controls button {
-            transition: all 0.2s ease;
-        }
-
-        .physics-controls button:hover {
-            background: #047857 !important;
-            transform: translateY(-1px);
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-        }
-
-        .physics-controls button:active {
-            transform: translateY(0);
-        }
-
-
-        .node {
-            transition: filter 0.2s ease;
+        /* Responsive design */
+        @media (max-width: 768px) {
+            .page-selectors,
+            .model-selectors {
+                grid-template-columns: 1fr;
+            }
+            
+            .button-row {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .title {
+                font-size: 2rem;
+            }
+            
+            .landing-content {
+                padding: 1rem;
+            }
+            
+            /* Model selector mobile adjustments */
+            .model-selector-item {
+                padding: 0.5rem 0.75rem;
+            }
+            
+            .model-selector-cost {
+                font-size: 0.625rem;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="app-container">
-        <!-- Header with controls -->
-        <header class="header">
-            <h1>Wiki Arena</h1>
-            <div class="controls">
-                <!-- Stepping Controls -->
-                <div class="stepping-controls" id="stepping-controls" style="display: none;">
-                    <button class="btn btn-accent" id="live-mode-btn" title="Return to live mode">🔴 Live</button>
-                    <span class="step-info" id="step-info">Live Mode</span>
-                    <button class="btn btn-secondary" id="step-backward-btn" title="Step backward">⬅️</button>
-                    <button class="btn btn-secondary" id="step-forward-btn" title="Step forward">➡️</button>
-                </div>
-
-                <div class="connection-status">
-                    <div class="status-indicator" id="connection-indicator"></div>
-                    <span id="connection-text">Ready to start</span>
-                </div>
-                <button class="btn" id="start-game-btn">Start New Game</button>
-            </div>
-        </header>
-
-        <!-- Main content area -->
-        <main class="main-content">
-            <!-- Graph visualization -->
-            <div class="graph-container">
-                <div class="loading" id="loading-state">
-                    Waiting for game to start...
-                </div>
-                <div id="graph-canvas"></div>
-                
-                <!-- Horizontal Progress Bars (floating at top center) -->
-                <div class="horizontal-progress-container" id="progress-bars-container">
-                    <!-- Progress bars will be dynamically created here -->
-                </div>
-                
-                <!-- Info panel toggle -->
-                <button class="info-toggle" id="info-toggle" title="Toggle info panel">
-                    📊
-                </button>
-                
-                <!-- Floating info panel -->
-                <aside class="info-panel collapsed" id="info-panel">
-                <div class="task-info">
-                    <h3>Task Info</h3>
-                    <div class="info-item">
-                        <span class="info-label">Start Page:</span>
-                        <span class="info-value" id="start-page">-</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">Target Page:</span>
-                        <span class="info-value" id="target-page">-</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">Shortest Path:</span>
-                        <span class="info-value" id="shortest-path-length">-</span>
-                    </div>
-                </div>
-
-                <div class="task-info" id="task-info">
-                    <!-- Selected game info will be populated here by UIController -->
-                </div>
-
-                <div class="moves-list">
-                    <h3>Page History</h3>
-                    <div id="moves-container">
-                        <!-- Page history will be populated here -->
-                    </div>
-                </div>
-            </aside>
-            </div>
-        </main>
-
-        <!-- Error display -->
-        <div class="error" id="error-display" style="display: none;">
-            <span id="error-message"></span>
+    <!-- Sidebar -->
+    <nav class="sidebar" id="sidebar">
+        <!-- Sidebar Header -->
+        <div class="sidebar-header">
+            <!-- Logo/Toggle Button (acts as toggle when collapsed) -->
+            <button class="sidebar-logo" id="sidebar-logo-btn">
+                <span class="logo-icon">🏟️</span>
+                <span class="hamburger-icon">☰</span>
+            </button>
+            
+            <!-- Close Button (only visible when expanded) -->
+            <button class="sidebar-close" id="sidebar-close-btn">
+                <span class="close-icon">✕</span>
+            </button>
         </div>
-    </div>
+        
+        <!-- Sidebar Buttons -->
+        <div class="sidebar-buttons">
+            <!-- Configure New Race -->
+            <button class="sidebar-button" id="configure-race-btn">
+                <span class="sidebar-button-icon">🌐</span>
+                <span class="sidebar-button-text">Configure New Race</span>
+                <span class="tooltip">Configure New Race</span>
+            </button>
+            
+            <!-- Quickstart -->
+            <button class="sidebar-button" id="quickstart-btn">
+                <span class="sidebar-button-icon">▶️</span>
+                <span class="sidebar-button-text">Quickstart</span>
+                <span class="tooltip">Quickstart</span>
+            </button>
+            
+            <!-- Leaderboard -->
+            <button class="sidebar-button" id="leaderboard-btn">
+                <span class="sidebar-button-icon">🏆</span>
+                <span class="sidebar-button-text">Leaderboard</span>
+                <span class="tooltip">Leaderboard</span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Landing Page Modal -->
+        <div class="landing-modal" id="landing-modal">
+            <div class="landing-content">
+                <!-- Logo and Title -->
+                <div class="logo-section">
+                    <div class="branding">
+                        <span class="logo">🏟️</span>
+                        <span class="site-name">Wiki Arena</span>
+                    </div>
+                    <h1 class="title">Choose the start and target Wikipedia pages for a race</h1>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="button-row">
+                    <button class="action-button" id="leaderboard-modal-btn">Leaderboard</button>
+                    <button class="action-button" id="about-modal-btn">About</button>
+                    <button class="action-button primary" id="quickstart-modal-btn">Quickstart</button>
+                </div>
+
+                <!-- Page Selectors -->
+                <div class="page-selectors">
+                    <div class="page-selector">
+                        <label for="start-page-input">Start Page</label>
+                        <input 
+                            type="text" 
+                            id="start-page-input" 
+                            class="page-input" 
+                            placeholder="Search Wikipedia..."
+                        >
+                    </div>
+                    <div class="page-selector">
+                        <label for="target-page-input">Target Page</label>
+                        <input 
+                            type="text" 
+                            id="target-page-input" 
+                            class="page-input" 
+                            placeholder="Search Wikipedia..."
+                        >
+                    </div>
+                </div>
+
+                <!-- Model Selectors -->
+                <div class="model-selectors">
+                    <div class="model-selector">
+                        <label for="player1-model">Player 1</label>
+                        <input 
+                            type="text" 
+                            id="player1-model" 
+                            class="model-input" 
+                            placeholder="Select a model..."
+                            readonly
+                        >
+                    </div>
+                    <div class="model-selector">
+                        <label for="player2-model">Player 2</label>
+                        <input 
+                            type="text" 
+                            id="player2-model" 
+                            class="model-input" 
+                            placeholder="Select a model..."
+                            readonly
+                        >
+                    </div>
+                </div>
+
+                <!-- Start Race Button -->
+                <button class="start-race-button" id="start-race-btn" disabled>
+                    Start Race
+                </button>
+            </div>
+        </div>
+
+        <!-- Race View -->
+        <div class="race-view" id="race-view">
+            <div id="graph-canvas"></div>
+            
+            <!-- Progress bars container -->
+            <div class="horizontal-progress-container" id="progress-bars-container">
+                <!-- Progress bars will be dynamically created here -->
+            </div>
+        </div>
+    </main>
 
     <!-- Load our TypeScript modules -->
     <script type="module" src="./main.ts"></script>

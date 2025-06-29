@@ -1,9 +1,9 @@
 import { defineConfig } from 'vite'
+import tailwindcss from '@tailwindcss/vite'
 
 // https://vite.dev/config/
 export default defineConfig({
-  // Remove React plugin since we're using vanilla TypeScript
-  plugins: [],
+  plugins: [tailwindcss()],
   
   // Ensure proper handling of TypeScript modules
   esbuild: {
