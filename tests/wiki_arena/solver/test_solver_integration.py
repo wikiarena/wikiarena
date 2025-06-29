@@ -600,7 +600,7 @@ class TestWikiTaskSolverArchitecturalCompliance:
     def test_no_game_logic_dependencies(self):
         """Test that WikiTaskSolver has no dependencies on game logic."""
         # Check imports in the module
-        import wiki_arena.solver.task_solver as path_solver_module
+        import wiki_arena.solver.solver as path_solver_module
         import inspect
         
         source = inspect.getsource(path_solver_module)

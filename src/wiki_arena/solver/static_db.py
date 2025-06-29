@@ -57,8 +57,6 @@ class CacheStats:
             f"over {self.runtime_minutes:.1f} minutes"
         )
 
-# Removed CooperativeCache - it provided no benefits since task_solver has comprehensive caching
-
 class StaticSolverDB:
     """
     The sole gateway to the hyper-optimized wiki_graph.sqlite database.
