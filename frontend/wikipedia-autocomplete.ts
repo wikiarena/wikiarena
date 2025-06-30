@@ -96,14 +96,29 @@ class WikipediaAutocomplete {
             this.stopRandomCycling();
         }
 
+        // Trigger validation immediately for empty input (which is now valid)
+        if (query.trim() === '') {
+            this.options.onValidationChange(true);
+            this.input.classList.remove('invalid');
+            this.input.classList.add('valid');
+        }
+
         // Clear previous debounce
         if (this.debounceTimer) {
             clearTimeout(this.debounceTimer);
         }
 
-        // Debounce the search
+        // Debounce both search AND validation
         this.debounceTimer = window.setTimeout(() => {
-            this.performSearch(query);
+            // Do search if query is long enough
+            if (query.length >= this.options.minQueryLength) {
+                this.performSearch(query);
+            }
+            
+            // Always validate if there's content (even if too short for search)
+            if (query.trim() !== '') {
+                this.validateCurrentSelection();
+            }
         }, this.options.debounceMs);
 
         // Reset selection
@@ -154,6 +169,9 @@ class WikipediaAutocomplete {
     }
 
     private handleBlur(): void {
+        // Trigger validation for the current input value
+        this.validateCurrentSelection();
+        
         // Delay closing to allow clicks on dropdown items
         setTimeout(() => {
             this.closeDropdown();
@@ -266,8 +284,10 @@ class WikipediaAutocomplete {
         this.currentQuery = result.title;
         this.closeDropdown();
         
-        // Trigger validation
-        this.validateCurrentSelection();
+        // Mark as valid immediately since dropdown results are always valid
+        this.options.onValidationChange(true);
+        this.input.classList.remove('invalid');
+        this.input.classList.add('valid');
         
         // Call onSelect callback
         this.options.onSelect(result);
@@ -275,21 +295,28 @@ class WikipediaAutocomplete {
 
     private async validateCurrentSelection(): Promise<void> {
         const title = this.input.value.trim();
+        
         if (!title) {
-            this.options.onValidationChange(false);
+            // Empty input is now valid since pages are optional
+            this.options.onValidationChange(true);
+            // Remove any previous validation styling
+            this.input.classList.remove('valid', 'invalid');
+            this.input.classList.add('valid');
             return;
         }
 
         try {
             const isValid = await this.searchService.validatePage(title);
+            
             this.options.onValidationChange(isValid);
             
             // Add visual feedback
             this.input.classList.toggle('valid', isValid);
             this.input.classList.toggle('invalid', !isValid);
         } catch (error) {
-            console.error('Validation error:', error);
             this.options.onValidationChange(false);
+            this.input.classList.remove('valid');
+            this.input.classList.add('invalid');
         }
     }
 

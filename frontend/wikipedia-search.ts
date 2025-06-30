@@ -188,10 +188,14 @@ class WikipediaSearchService {
             const data = await response.json();
             const pages = data.query?.pages;
             
-            if (!pages) return false;
+            if (!pages) {
+                return false;
+            }
             
             // Check if any page exists (not missing)
-            return Object.values(pages).some((page: any) => !page.missing);
+            const pageExists = Object.values(pages).some((page: any) => !('missing' in page));
+            
+            return pageExists;
         } catch (error) {
             console.error('Page validation error:', error);
             return false;
