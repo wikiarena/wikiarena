@@ -113,7 +113,6 @@ class WikipediaTaskSelector:
         self.logger.error("Failed to select valid task after all attempts")
         return None
 
-# Convenience functions
 async def get_random_task_async(
         language: str = "en",
         max_retries: int = 3,
@@ -127,7 +126,6 @@ async def get_random_task_async(
         excluded_prefixes=excluded_prefixes
     )
     return await selector.select_task_async()
-
 
 def get_random_task(
         language: str = "en",

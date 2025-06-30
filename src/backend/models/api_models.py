@@ -22,15 +22,24 @@ class RandomTaskStrategy(BaseModel):
 class CustomTaskStrategy(BaseModel):
     """Strategy for user-specified tasks."""
     type: TaskStrategyType = TaskStrategyType.CUSTOM
-    start_page: str = Field(..., description="Starting Wikipedia page title")
-    target_page: str = Field(..., description="Target Wikipedia page title")
+    start_page: Optional[str] = Field(None, description="Starting Wikipedia page title (optional - will be randomly selected if not provided)")
+    target_page: Optional[str] = Field(None, description="Target Wikipedia page title (optional - will be randomly selected if not provided)")
+    language: str = Field("en", description="Wikipedia language edition")
+    max_retries: int = Field(3, description="Maximum retries for finding valid pages")
     
     @field_validator("target_page")
     @classmethod
-    def pages_must_be_different(cls, v: str, info):
-        if hasattr(info, 'data') and 'start_page' in info.data and v == info.data['start_page']:
+    def pages_must_be_different(cls, v: Optional[str], info):
+        if v and hasattr(info, 'data') and info.data.get('start_page') and v == info.data['start_page']:
             raise ValueError("Start and target pages must be different")
         return v
+    
+    @field_validator("start_page", "target_page")
+    @classmethod
+    def pages_must_be_non_empty_if_provided(cls, v: Optional[str]):
+        if v is not None and not v.strip():
+            raise ValueError("Page titles must be non-empty if provided")
+        return v.strip() if v else None
 
 # class RankedTaskStrategy(BaseModel):
 #     """Strategy for skill-based task selection (future implementation)."""

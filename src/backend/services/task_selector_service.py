@@ -11,6 +11,8 @@ from abc import ABC, abstractmethod
 
 from wiki_arena.models import Task
 from wiki_arena.wikipedia.task_selector import get_random_task_async
+from wiki_arena.wikipedia.live_service import LiveWikiService
+from wiki_arena.wikipedia.task_selector import WikipediaTaskSelector
 from backend.models.api_models import (
     TaskStrategy,
     TaskStrategyType,
@@ -73,27 +75,140 @@ class CustomTaskSelector(TaskSelector):
     
     def __init__(self, strategy: CustomTaskStrategy):
         self.strategy = strategy
+        self.wiki = LiveWikiService(language=strategy.language)
+    
+    async def _validate_page_exists(self, page_title: str) -> bool:
+        """Validate that a page exists on Wikipedia."""
+        try:
+            await self.wiki.get_page(page_title)
+            return True
+        except ValueError:
+            # Page doesn't exist
+            return False
+        except Exception as e:
+            logger.error(f"Error validating page '{page_title}': {e}")
+            return False
+    
+    async def _find_random_start_page(self, exclude_page: Optional[str] = None) -> Optional[str]:
+        """Find a random page that can serve as a valid start page (has outgoing links)."""
+        selector = WikipediaTaskSelector(
+            live_wiki_service=self.wiki,
+            max_retries=self.strategy.max_retries
+        )
+        
+        for attempt in range(self.strategy.max_retries):
+            try:
+                # Get random pages and find a valid start page
+                random_pages = await self.wiki.get_random_pages(count=20)
+                valid_pages = [
+                    page for page in random_pages 
+                    if selector._is_valid_page_title(page) and page != exclude_page
+                ]
+                
+                start_page = await selector._find_valid_start_page(valid_pages)
+                if start_page:
+                    return start_page
+                    
+            except Exception as e:
+                logger.warning(f"Error in attempt {attempt + 1} to find random start page: {e}")
+        
+        return None
+    
+    async def _find_random_target_page(self, exclude_page: Optional[str] = None) -> Optional[str]:
+        """Find a random page that can serve as a valid target page (has incoming links)."""
+        selector = WikipediaTaskSelector(
+            live_wiki_service=self.wiki,
+            max_retries=self.strategy.max_retries
+        )
+        
+        for attempt in range(self.strategy.max_retries):
+            try:
+                # Get random pages and find a valid target page
+                random_pages = await self.wiki.get_random_pages(count=20)
+                valid_pages = [
+                    page for page in random_pages 
+                    if selector._is_valid_page_title(page) and page != exclude_page
+                ]
+                
+                target_page = await selector._find_valid_target_page(valid_pages, exclude_page=exclude_page or "")
+                if target_page:
+                    return target_page
+                    
+            except Exception as e:
+                logger.warning(f"Error in attempt {attempt + 1} to find random target page: {e}")
+        
+        return None
     
     async def select_task(self) -> Optional[Task]:
-        """Create a task from user-specified pages."""
+        """Create a task from user-specified pages, with validation and random fallback."""
         logger.info(f"Creating custom task: {self.strategy.start_page} → {self.strategy.target_page}")
         
-        # TODO: Add validation that pages exist and are reachable
-        # For now, create the task directly
-        task = Task(
-            start_page_title=self.strategy.start_page,
-            target_page_title=self.strategy.target_page
-        )
+        # Handle start page - validate if provided, otherwise find random
+        if self.strategy.start_page:
+            if not await self._validate_page_exists(self.strategy.start_page):
+                logger.error(f"Start page '{self.strategy.start_page}' does not exist")
+                return None
+            
+            if not await self.wiki.has_outgoing_links(self.strategy.start_page):
+                logger.error(f"Start page '{self.strategy.start_page}' has no outgoing links - cannot be used for game")
+                return None
+            
+            start_page = self.strategy.start_page
+        else:
+            start_page = await self._find_random_start_page()
+            if not start_page:
+                logger.error("Failed to find suitable random start page")
+                return None
+        
+        # Handle target page - validate if provided, otherwise find random
+        if self.strategy.target_page:
+            if not await self._validate_page_exists(self.strategy.target_page):
+                logger.error(f"Target page '{self.strategy.target_page}' does not exist")
+                return None
+            
+            if not await self.wiki.has_incoming_links(self.strategy.target_page):
+                logger.error(f"Target page '{self.strategy.target_page}' has no incoming links - cannot be used for game")
+                return None
+            
+            target_page = self.strategy.target_page
+        else:
+            target_page = await self._find_random_target_page(exclude_page=start_page)
+            if not target_page:
+                logger.error("Failed to find suitable random target page")
+                return None
+        
+        # Ensure pages are different (shouldn't happen due to exclusion logic, but safety check)
+        if start_page == target_page:
+            logger.error(f"Start and target pages are the same: '{start_page}'")
+            return None
+        
+        task = Task(start_page_title=start_page, target_page_title=target_page)
+        
+        # Log the result type for clarity
+        start_type = "custom" if self.strategy.start_page else "random"
+        target_type = "custom" if self.strategy.target_page else "random"
+        logger.info(f"Created task: {start_page} ({start_type}) → {target_page} ({target_type})")
         
         return task
     
     def get_strategy_info(self) -> Dict[str, str]:
-        return {
+        info = {
             "strategy": "custom",
-            "start_page": self.strategy.start_page,
-            "target_page": self.strategy.target_page,
-            "description": "User-specified start and target pages"
+            "language": self.strategy.language,
+            "description": "User-specified task with validation and random fallback"
         }
+        
+        if self.strategy.start_page:
+            info["start_page"] = self.strategy.start_page
+        else:
+            info["start_page"] = "random"
+            
+        if self.strategy.target_page:
+            info["target_page"] = self.strategy.target_page
+        else:
+            info["target_page"] = "random"
+            
+        return info
 
 class TaskSelectorService:
     """Main service for task selection."""
