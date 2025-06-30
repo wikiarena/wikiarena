@@ -9,7 +9,6 @@ interface ModelInfo {
 
 interface ModelOption {
     id: string;
-    displayName: string;
     provider: string;
     inputCost: number;
     outputCost: number;
@@ -101,7 +100,6 @@ class ModelSelector {
             
             this.models = Object.entries(modelsData).map(([id, info]) => ({
                 id,
-                displayName: this.formatModelName(id),
                 provider: info.provider,
                 inputCost: info.input_cost_per_1m_tokens,
                 outputCost: info.output_cost_per_1m_tokens,
@@ -115,19 +113,7 @@ class ModelSelector {
         }
     }
 
-    private formatModelName(id: string): string {
-        // Convert model IDs to more readable names
-        const nameMap: Record<string, string> = {
-            'claude-3-5-haiku-20241022': 'Claude 3.5 Haiku',
-            'claude-3-5-sonnet-20241022': 'Claude 3.5 Sonnet',
-            'claude-3-haiku-20240307': 'Claude 3 Haiku',
-            'gpt-4o-2024-05-13': 'GPT-4o',
-            'gpt-4o-mini-2024-07-18': 'GPT-4o Mini',
-            'random': 'Random Selection'
-        };
 
-        return nameMap[id] || id;
-    }
 
     private getProviderIcon(provider: string): string {
         const iconMap: Record<string, string> = {
@@ -209,9 +195,8 @@ class ModelSelector {
     private filterModels(query: string): void {
         const lowercaseQuery = query.toLowerCase();
         this.filteredModels = this.models.filter(model => 
-            model.displayName.toLowerCase().includes(lowercaseQuery) ||
-            model.provider.toLowerCase().includes(lowercaseQuery) ||
-            model.id.toLowerCase().includes(lowercaseQuery)
+            model.id.toLowerCase().includes(lowercaseQuery) ||
+            model.provider.toLowerCase().includes(lowercaseQuery)
         );
         this.selectedIndex = -1;
     }
@@ -235,7 +220,7 @@ class ModelSelector {
                     <img src="${model.iconPath}" alt="${model.provider}" />
                 </div>
                 <div class="model-selector-item-content">
-                    <div class="model-selector-item-name">${this.escapeHtml(model.displayName)}</div>
+                    <div class="model-selector-item-name">${this.escapeHtml(model.id)}</div>
                     <div class="model-selector-item-details">
                         <span class="model-selector-cost">$${model.inputCost.toFixed(2)}/${model.outputCost.toFixed(2)} per 1M tokens</span>
                     </div>
@@ -271,7 +256,7 @@ class ModelSelector {
 
     private selectModel(model: ModelOption): void {
         this.selectedModel = model;
-        this.input.value = model.displayName;
+        this.input.value = model.id;
         this.closeDropdown();
         
         // Add visual feedback
