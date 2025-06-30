@@ -115,13 +115,12 @@ export interface ConnectionEstablishedEvent extends BaseGameEvent {
         to_page_title: string;
       }>;
     };
-    solver?: {
+    solver_results?: Array<{
       optimal_paths: string[][];
       optimal_path_length: number;
       from_page_title: string;
       to_page_title: string;
-      timestamp: string;
-    };
+    }>;
     timestamp: string;
   };
 }

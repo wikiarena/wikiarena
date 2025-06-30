@@ -221,8 +221,8 @@ class WikiArenaApp {
     }
   }
 
-  public async handleStartCustomGame(startPage: string, targetPage: string): Promise<void> {
-    console.log(`🎲 User requested custom task: ${startPage} -> ${targetPage}`);
+  public async handleStartCustomGame(startPage: string | null, targetPage: string | null): Promise<void> {
+    console.log(`🎲 User requested custom task: ${startPage || '(empty)'} -> ${targetPage || '(empty)'}`);
 
     // Show loading state
     this.uiController.showGameStarting();
@@ -311,12 +311,12 @@ class WikiArenaApp {
   // API Calls
   // =============================================================================
 
-  private async createCustomTask(startPage: string, targetPage: string): Promise<Response> {
+  private async createCustomTask(startPage: string | null, targetPage: string | null): Promise<Response> {
     const apiUrl = 'http://localhost:8000/api/tasks';
     
     const taskRequest = {
       task_strategy: {
-        type: 'custom',
+        type: 'custom' as const,
         start_page: startPage,
         target_page: targetPage
       },
@@ -639,7 +639,7 @@ class UIManager {
         this.player1Selector = new ModelSelector(this.player1Input, {
             placeholder: 'Select Player 1 model...',
             onSelect: (model) => {
-                console.log('Player 1 model selected:', model.displayName);
+                console.log('Player 1 model selected:', model.id);
                 this.updateStartRaceButton();
             },
             onValidationChange: (isValid) => {
@@ -652,7 +652,7 @@ class UIManager {
         this.player2Selector = new ModelSelector(this.player2Input, {
             placeholder: 'Select Player 2 model...',
             onSelect: (model) => {
-                console.log('Player 2 model selected:', model.displayName);
+                console.log('Player 2 model selected:', model.id);
                 this.updateStartRaceButton();
             },
             onValidationChange: (isValid) => {
@@ -671,14 +671,33 @@ class UIManager {
             });
         });
 
+        // Trigger initial validation for empty pages (they should be valid)
+        this.triggerInitialPageValidation();
+
         // Initialize the form state
         this.updateStartRaceButton();
     }
 
+    private triggerInitialPageValidation() {
+        // Trigger validation for both autocomplete inputs
+        // This will set them as valid since empty pages are now allowed
+        if (this.startPageAutocomplete) {
+            setTimeout(() => {
+                (this.startPageAutocomplete as any).validateCurrentSelection();
+            }, 100);
+        }
+        
+        if (this.targetPageAutocomplete) {
+            setTimeout(() => {
+                (this.targetPageAutocomplete as any).validateCurrentSelection();
+            }, 100);
+        }
+    }
+
     private updateStartRaceButton() {
-        // Check page validation from autocomplete
-        const hasValidStartPage = this.pageValidationState.start && this.startPageInput.value.trim() !== '';
-        const hasValidTargetPage = this.pageValidationState.target && this.targetPageInput.value.trim() !== '';
+        // Check page validation from autocomplete (now includes empty pages as valid)
+        const hasValidStartPage = this.pageValidationState.start;
+        const hasValidTargetPage = this.pageValidationState.target;
         
         // Check model selection
         const hasPlayer1 = this.modelValidationState.player1;
@@ -687,17 +706,17 @@ class UIManager {
         const player2ModelId = this.player2Selector?.getValue() || '';
         const differentModels = player1ModelId !== player2ModelId || player1ModelId === '';
         
-        // Ensure start and target pages are different
-        const differentPages = this.startPageInput.value.trim() !== this.targetPageInput.value.trim() || 
-                              this.startPageInput.value.trim() === '';
+        // Ensure start and target pages are different IF both are provided
+        const startPageValue = this.startPageInput.value.trim();
+        const targetPageValue = this.targetPageInput.value.trim();
+        const differentPages = startPageValue !== targetPageValue || 
+                              startPageValue === '' || targetPageValue === '';
 
         const isValid = hasValidStartPage && hasValidTargetPage && hasPlayer1 && hasPlayer2 && 
                        differentModels && differentPages;
         
         this.startRaceBtn.disabled = !isValid;
     }
-
-
 
     private showLandingModal() {
         this.landingModal.classList.remove('hidden');
@@ -730,8 +749,13 @@ class UIManager {
     }
 
     private async startCustomRace() {
-        const startPage = this.startPageInput.value.trim();
-        const targetPage = this.targetPageInput.value.trim();
+        const startPageValue = this.startPageInput.value.trim();
+        const targetPageValue = this.targetPageInput.value.trim();
+        
+        // Convert empty strings to null for the API
+        const startPage = startPageValue || null;
+        const targetPage = targetPageValue || null;
+        
         const player1Model = this.player1Selector?.getValue() || '';
         const player2Model = this.player2Selector?.getValue() || '';
 

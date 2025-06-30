@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime
 
 from wiki_arena import GameEvent, EventBus
@@ -19,16 +19,19 @@ class OptimalPathHandler:
     def __init__(self, event_bus: EventBus, solver: WikiTaskSolver): 
         self.event_bus = event_bus
         self.solver = solver
-        # Cache for latest solver results per game # TODO(hunter): this should be per task
-        # why is this only caching the initial solve? (it's for the connection_initialized event)
-        # shouldn't we be caching all start pages for the same task (target page)? 
-        # Dict[target, Dict[start, solver_result]]
-        self.cache: Dict[str, Dict[str, Any]] = {}
+        # Cache for solver results per game and page
+        # Structure: Dict[game_id, Dict[from_page_title, solver_result]]
+        self.cache: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        # TODO(hunter): clear the cache when the game is over, need an handle_game_ended()
     
-    # TODO(hunter): do we still need this once we fix game init?
-    def get_cached_results(self, game_id: str) -> Optional[Dict[str, Any]]:
-        """Get cached solver results for a game."""
-        return self.cache.get(game_id)
+    def get_cached_results(self, game_id: str) -> List[Dict[str, Any]]:
+        """Get all cached solver results for a game."""
+        game_cache = self.cache.get(game_id, {})
+        return list(game_cache.values())
+    
+    def get_cached_result_for_page(self, game_id: str, from_page: str) -> Optional[Dict[str, Any]]:
+        """Get cached solver result for a specific page in a game."""
+        return self.cache.get(game_id, {}).get(from_page)
 
     async def handle_move_completed(self, event: GameEvent):
         """Handle move_completed events by triggering parallel task solver."""
@@ -82,14 +85,14 @@ class OptimalPathHandler:
                 "optimal_path_length": solver_result.path_length,
                 "from_page_title": task.start_page_title,
                 "to_page_title": task.target_page_title,
-                "computation_time_ms": solver_result.computation_time_ms,
                 "is_initial": True,
-                "timestamp": datetime.now().isoformat()
             }
             
             # Cache for all games in this task
             for game_id in game_ids:
-                self.cache[game_id] = cache_data.copy()
+                if game_id not in self.cache:
+                    self.cache[game_id] = {}
+                self.cache[game_id][task.start_page_title] = cache_data.copy()
             
             # Emit task_solved event
             await self.event_bus.publish(GameEvent(
@@ -102,7 +105,6 @@ class OptimalPathHandler:
                     "optimal_path_length": solver_result.path_length,
                     "from_page_title": task.start_page_title,
                     "to_page_title": task.target_page_title,
-                    "computation_time_ms": solver_result.computation_time_ms
                 }
             ))
             
@@ -157,14 +159,14 @@ class OptimalPathHandler:
             )
             
             # Cache the results
-            self.cache[game_id] = {
+            if game_id not in self.cache:
+                self.cache[game_id] = {}
+            self.cache[game_id][from_page] = {
                 "optimal_paths": solver_result.paths,
                 "optimal_path_length": solver_result.path_length,
                 "from_page_title": from_page,
                 "to_page_title": to_page,
-                "computation_time_ms": solver_result.computation_time_ms,
                 "is_initial": is_initial,
-                "timestamp": datetime.now().isoformat()
             }
             # TODO(hunter): why do we do this twice? 
             # Prepare event data
@@ -174,14 +176,13 @@ class OptimalPathHandler:
                 "to_page_title": to_page,
                 "optimal_paths": solver_result.paths,
                 "optimal_path_length": solver_result.path_length,
-                "computation_time_ms": solver_result.computation_time_ms,
                 "is_initial": is_initial
             }
             
             # Emit different events based on whether this is initial or subsequent analysis
             if is_initial:
                 await self.event_bus.publish(GameEvent(
-                    type="initial_paths_ready",
+                    type="initial_paths_ready", # TODO(hunter): nobody subscribes to this event
                     game_id=game_id,
                     data=event_data
                 ))

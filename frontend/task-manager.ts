@@ -131,18 +131,24 @@ export class TaskManager {
     }
     
     // Handle solver data if present
-    if (completeState?.solver) {
-      this.updateOptimalPathsForPage(
-        gameId,
-        completeState.solver.from_page_title,
-        completeState.solver.optimal_paths || [],
-        completeState.solver.optimal_path_length
-      );
+    if (completeState?.solver_results && completeState.solver_results.length > 0) {
+      console.log(`📋 Processing ${completeState.solver_results.length} solver results for game ${gameId}`);
       
-      // Set task-level shortest path length
-      if (completeState.solver.optimal_path_length && !this.task.shortestPathLength) {
-        this.task.shortestPathLength = completeState.solver.optimal_path_length;
-      }
+      completeState.solver_results.forEach(solverResult => {
+        this.updateOptimalPathsForPage(
+          gameId,
+          solverResult.from_page_title,
+          solverResult.optimal_paths || [],
+          solverResult.optimal_path_length
+        );
+        
+        // Set task-level shortest path length from start page
+        if (solverResult.optimal_path_length && 
+            solverResult.from_page_title === this.task.startPage &&
+            !this.task.shortestPathLength) {
+          this.task.shortestPathLength = solverResult.optimal_path_length;
+        }
+      });
     }
     
     this.updateTaskProgress();
@@ -292,9 +298,9 @@ export class TaskManager {
       pageState.optimalPaths = paths;
       pageState.distanceToTarget = pathLength;
       
-      console.log(`✅ Updated optimal paths for game ${gameId}, page: ${pageTitle}`);
+      console.log(`✅ Updated optimal paths for game ${gameId}, page: ${pageTitle} (${paths.length} paths, distance: ${pathLength})`);
     } else {
-      console.warn(`⚠️ Could not find page state for game ${gameId}, page: ${pageTitle}`);
+      console.warn(`⚠️ Could not find page state for game ${gameId}, page: ${pageTitle}. Available pages: ${gameSequence.pageStates.map(s => s.pageTitle).join(', ')}`);
     }
   }
 

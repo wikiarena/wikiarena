@@ -35,17 +35,17 @@ class StateCollector:
         # Get core game state
         game_state = await self.game_coordinator.get_game_state(game_id)
         
-        # Get cached solver results
-        solver_cache = self.optimal_path_handler.get_cached_results(game_id)
+        # Get all cached solver results for this game
+        solver_results = self.optimal_path_handler.get_cached_results(game_id)
         
         complete_state = {
             "game": game_state.model_dump() if game_state else None,
-            "solver": solver_cache,
+            "solver_results": solver_results,
             "timestamp": datetime.now().isoformat()
         }
         
         logger.debug(f"Complete state collected for game {game_id}: "
                     f"game={'present' if complete_state['game'] else 'missing'}, "
-                    f"solver={'present' if complete_state['solver'] else 'missing'}")
+                    f"solver_results={len(complete_state['solver_results'])} results")
         
         return complete_state 
