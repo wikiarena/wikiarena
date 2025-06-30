@@ -85,7 +85,6 @@ class OptimalPathHandler:
                 "optimal_path_length": solver_result.path_length,
                 "from_page_title": task.start_page_title,
                 "to_page_title": task.target_page_title,
-                "is_initial": True,
             }
             
             # Cache for all games in this task
@@ -136,7 +135,6 @@ class OptimalPathHandler:
         game_id: str, 
         from_page: str, 
         to_page: str, 
-        is_initial: bool = False
     ):
         """
         Perform task solver asynchronously and emit results.
@@ -146,7 +144,7 @@ class OptimalPathHandler:
         For subsequent moves, emits 'optimal_paths_found' event.
         """
         try:
-            logger.debug(f"Analyzing path: {from_page} -> {to_page} for game {game_id} (initial: {is_initial})")
+            logger.debug(f"Analyzing path: {from_page} -> {to_page} for game {game_id}")
             
             solver_result = await self.solver.find_shortest_path(from_page, to_page)
             
@@ -166,44 +164,25 @@ class OptimalPathHandler:
                 "optimal_path_length": solver_result.path_length,
                 "from_page_title": from_page,
                 "to_page_title": to_page,
-                "is_initial": is_initial,
-            }
-            # TODO(hunter): why do we do this twice? 
-            # Prepare event data
-            event_data = {
-                "game_id": game_id,
-                "from_page_title": from_page,
-                "to_page_title": to_page,
-                "optimal_paths": solver_result.paths,
-                "optimal_path_length": solver_result.path_length,
-                "is_initial": is_initial
             }
             
-            # Emit different events based on whether this is initial or subsequent analysis
-            if is_initial:
-                await self.event_bus.publish(GameEvent(
-                    type="initial_paths_ready", # TODO(hunter): nobody subscribes to this event
-                    game_id=game_id,
-                    data=event_data
-                ))
-                logger.info(
-                    f"Initial paths ready for game {game_id}: "
-                    f"{from_page} -> {to_page} "
-                    f"(length: {solver_result.path_length}, "
-                    f"time: {solver_result.computation_time_ms:.1f}ms)"
-                )
-            else:
-                await self.event_bus.publish(GameEvent(
-                    type="optimal_paths_found",
-                    game_id=game_id,
-                    data=event_data
-                ))
-                logger.info(
-                    f"Optimal paths updated for game {game_id}: "
-                    f"{from_page} -> {to_page} "
-                    f"(length: {solver_result.path_length}, "
-                    f"time: {solver_result.computation_time_ms:.1f}ms)"
-                )
+            await self.event_bus.publish(GameEvent(
+                type="optimal_paths_found",
+                game_id=game_id,
+                data={
+                    "game_id": game_id,
+                    "from_page_title": from_page,
+                    "to_page_title": to_page,
+                    "optimal_paths": solver_result.paths,
+                    "optimal_path_length": solver_result.path_length,
+                }
+            ))
+            logger.info(
+                f"Optimal paths updated for game {game_id}: "
+                f"{from_page} -> {to_page} "
+                f"(length: {solver_result.path_length}, "
+                f"time: {solver_result.computation_time_ms:.1f}ms)"
+            )
             
         except Exception as e:
             logger.error(f"task solver failed for game {game_id}: {e}", exc_info=True)
@@ -216,6 +195,5 @@ class OptimalPathHandler:
                     "error": str(e),
                     "from_page_title": from_page,
                     "to_page_title": to_page,
-                    "is_initial": is_initial
                 }
             )) 
