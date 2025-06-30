@@ -2,7 +2,7 @@
 WikiTaskSolver - Service for finding shortest paths between Wikipedia pages.
 
 This service uses bidirectional BFS with intelligent caching to efficiently find
-optimal paths between Wikipedia pages using the static wiki graph database.
+the shortest paths between Wikipedia pages using the static wiki graph database.
 """
 
 import asyncio
@@ -231,7 +231,7 @@ class WikiTaskSolver:
         
         title_conversion_time = time.perf_counter() - title_conversion_start_time
         total_page_ids_converted = len(all_unique_page_ids)
-        logger.info(
+        logger.debug(
             f"Title conversion: {total_page_ids_converted} unique page IDs converted "
             f"in {title_conversion_time*1000:.1f}ms"
         )
@@ -335,10 +335,9 @@ class WikiTaskSolver:
                 forward_frontier_size = len(unvisited_forward)
                 backward_frontier_size = len(unvisited_backward)
                 expand_forward = forward_frontier_size < backward_frontier_size
-                direction_method = "frontier_size"
                 
                 direction_timing_end = time.perf_counter()
-                logger.info(
+                logger.debug(
                     f"  Direction choice (frontier size): {(direction_timing_end - direction_timing_start)*1000:.1f}ms "
                     f"(forward: {forward_frontier_size} pages, backward: {backward_frontier_size} pages) -> {'FORWARD' if expand_forward else 'BACKWARD'}"
                 )
@@ -347,10 +346,9 @@ class WikiTaskSolver:
                 forward_links_count = await self._fetch_outgoing_links_count(list(unvisited_forward.keys()))
                 backward_links_count = await self._fetch_incoming_links_count(list(unvisited_backward.keys()))
                 expand_forward = forward_links_count < backward_links_count
-                direction_method = "database"
                 
                 direction_timing_end = time.perf_counter()
-                logger.info(
+                logger.debug(
                     f"  Direction choice (database): {(direction_timing_end - direction_timing_start)*1000:.1f}ms "
                     f"(forward: {forward_links_count} links, backward: {backward_links_count} links) -> {'FORWARD' if expand_forward else 'BACKWARD'}"
                 )
@@ -362,7 +360,7 @@ class WikiTaskSolver:
                 expand_forward = True
             
             # Log expansion decision with key metrics
-            logger.info(
+            logger.debug(
                 f"BFS Level {bfs_level}: {'FORWARD' if expand_forward else 'BACKWARD'} expansion. "
                 f"Forward frontier: {len(unvisited_forward)} pages, "
                 f"Backward frontier: {len(unvisited_backward)} pages"
@@ -392,7 +390,7 @@ class WikiTaskSolver:
                 # Calculate metrics for this expansion
                 total_links_fetched = sum(len(links) for links in results_for_all_sources)
                 
-                logger.info(
+                logger.debug(
                     f"  Forward DB fetch: {len(source_page_ids_to_expand)} pages, "
                     f"{total_links_fetched} links, {db_fetch_time*1000:.1f}ms"
                 )
@@ -409,7 +407,7 @@ class WikiTaskSolver:
                 unvisited_forward = newly_visited_this_level
                 
                 # Log expansion results for forward direction
-                logger.info(f"  Forward expansion result: {len(newly_visited_this_level)} new pages discovered")
+                logger.debug(f"  Forward expansion result: {len(newly_visited_this_level)} new pages discovered")
 
             else:
                 # Backward BFS expansion
@@ -433,7 +431,7 @@ class WikiTaskSolver:
                 
                 # Calculate metrics for backward expansion
                 total_links_fetched = sum(len(links) for links in results_for_all_targets)
-                logger.info(
+                logger.debug(
                     f"  Backward DB fetch: {len(target_page_ids_to_expand)} pages, "
                     f"{total_links_fetched} links, {db_fetch_time*1000:.1f}ms"
                 )
@@ -450,7 +448,7 @@ class WikiTaskSolver:
                 unvisited_backward = newly_visited_this_level
                 
                 # Log expansion results for backward direction
-                logger.info(f"  Backward expansion result: {len(newly_visited_this_level)} new pages discovered")
+                logger.debug(f"  Backward expansion result: {len(newly_visited_this_level)} new pages discovered")
 
             # Check for path completion (intersection)
             intersection_nodes = []
@@ -502,7 +500,7 @@ class WikiTaskSolver:
                                     final_paths.append(current_full_path)
                 
                 if final_paths:
-                    logger.info(f"BFS complete at level {bfs_level}. Found {len(final_paths)} paths.")
+                    logger.debug(f"BFS complete at level {bfs_level}. Found {len(final_paths)} paths.")
                     break
             
             bfs_level += 1

@@ -45,7 +45,7 @@ class GameManager:
         
         return f"{model_key}_{date_str}_{uuid_short}"
 
-    async def initialize_game(self, config: GameConfig) -> GameState: # TODO(hunter): this is more like initialize_game
+    async def initialize_game(self, config: GameConfig) -> GameState:
         """Start a new game with the given configuration."""
         self.state = GameState(
             game_id=self._generate_game_id(config.model),

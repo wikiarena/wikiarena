@@ -67,7 +67,7 @@ class StaticSolverDB:
     
     Key methods:
     - get_shortest_path_length(from_title: str, to_title: str) -> int: 
-      Returns the number of steps in the optimal path between two pages.
+      Returns the number of steps in the shortest path between two pages.
     """
     
     def __init__(self, db_path: str = "database/wiki_graph.sqlite"):
