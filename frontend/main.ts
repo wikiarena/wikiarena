@@ -523,6 +523,8 @@ class UIManager {
     private targetPageInput: HTMLInputElement;
     private startPageAutocomplete: WikipediaAutocomplete | null = null;
     private targetPageAutocomplete: WikipediaAutocomplete | null = null;
+    private startPageSlotBtn: HTMLButtonElement;
+    private targetPageSlotBtn: HTMLButtonElement;
     private pageValidationState = { start: false, target: false };
     private modelValidationState = { player1: false, player2: false };
     private app: WikiArenaApp | null = null;
@@ -536,10 +538,13 @@ class UIManager {
         this.player2Input = document.getElementById('player2-model') as HTMLInputElement;
         this.startPageInput = document.getElementById('start-page-input') as HTMLInputElement;
         this.targetPageInput = document.getElementById('target-page-input') as HTMLInputElement;
+        this.startPageSlotBtn = document.getElementById('start-page-slot-btn') as HTMLButtonElement;
+        this.targetPageSlotBtn = document.getElementById('target-page-slot-btn') as HTMLButtonElement;
 
         this.initializeSidebar();
         this.initializeLandingModal();
         this.initializeAutocomplete();
+        this.initializeSlotMachineButtons();
         this.initializeModelSelectors();
         this.initializeFormValidation();
     }
@@ -616,6 +621,14 @@ class UIManager {
             },
             onValidationChange: (isValid) => {
                 this.pageValidationState.start = isValid;
+                // Defer the uniqueness check until after the autocomplete component updates its own classes
+                setTimeout(() => this.updateStartRaceButton(), 0);
+            },
+            onSlotMachineStart: () => {
+                this.startPageSlotBtn.disabled = true;
+            },
+            onSlotMachineEnd: () => {
+                this.startPageSlotBtn.disabled = false;
                 this.updateStartRaceButton();
             }
         });
@@ -629,7 +642,45 @@ class UIManager {
             },
             onValidationChange: (isValid) => {
                 this.pageValidationState.target = isValid;
+                // Defer the uniqueness check until after the autocomplete component updates its own classes
+                setTimeout(() => this.updateStartRaceButton(), 0);
+            },
+            onSlotMachineStart: () => {
+                this.targetPageSlotBtn.disabled = true;
+            },
+            onSlotMachineEnd: () => {
+                this.targetPageSlotBtn.disabled = false;
                 this.updateStartRaceButton();
+            }
+        });
+    }
+
+    private initializeSlotMachineButtons() {
+        // Start page slot machine button
+        this.startPageSlotBtn.addEventListener('click', async () => {
+            if (this.startPageAutocomplete) {
+                try {
+                    // Clear previous value before starting
+                    this.startPageAutocomplete.setValue('');
+                    await this.startPageAutocomplete.startSlotMachine();
+                } catch (error) {
+                    console.error('Error starting slot machine for start page:', error);
+                    this.startPageSlotBtn.disabled = false;
+                }
+            }
+        });
+
+        // Target page slot machine button
+        this.targetPageSlotBtn.addEventListener('click', async () => {
+            if (this.targetPageAutocomplete) {
+                try {
+                    // Clear previous value before starting
+                    this.targetPageAutocomplete.setValue('');
+                    await this.targetPageAutocomplete.startSlotMachine();
+                } catch (error) {
+                    console.error('Error starting slot machine for target page:', error);
+                    this.targetPageSlotBtn.disabled = false;
+                }
             }
         });
     }
@@ -663,13 +714,8 @@ class UIManager {
     }
 
     private initializeFormValidation() {
-        // Listen for changes to update start race button state
-        // Note: Model selectors handle their own change events through callbacks
-        [this.startPageInput, this.targetPageInput].forEach(element => {
-            element.addEventListener('input', () => {
-                this.updateStartRaceButton();
-            });
-        });
+        // Validation is now handled by the onValidationChange callbacks in the autocomplete components,
+        // which provides debouncing and a more reliable state.
 
         // Trigger initial validation for empty pages (they should be valid)
         this.triggerInitialPageValidation();
@@ -695,7 +741,7 @@ class UIManager {
     }
 
     private updateStartRaceButton() {
-        // Check page validation from autocomplete (now includes empty pages as valid)
+        // Check page validation from autocomplete (for page existence)
         const hasValidStartPage = this.pageValidationState.start;
         const hasValidTargetPage = this.pageValidationState.target;
         
@@ -706,12 +752,32 @@ class UIManager {
         const player2ModelId = this.player2Selector?.getValue() || '';
         const differentModels = player1ModelId !== player2ModelId || player1ModelId === '';
         
-        // Ensure start and target pages are different IF both are provided
+        // Uniqueness validation for pages
         const startPageValue = this.startPageInput.value.trim();
         const targetPageValue = this.targetPageInput.value.trim();
-        const differentPages = startPageValue !== targetPageValue || 
-                              startPageValue === '' || targetPageValue === '';
+        const areSameAndNotEmpty = startPageValue !== '' && startPageValue === targetPageValue;
 
+        if (areSameAndNotEmpty) {
+            // Override autocomplete's validation style if pages are the same
+            this.startPageInput.classList.remove('valid');
+            this.startPageInput.classList.add('invalid');
+            this.targetPageInput.classList.remove('valid');
+            this.targetPageInput.classList.add('invalid');
+        } else {
+            // If they are different, let the autocomplete component's own validation rule.
+            // We need to remove our 'invalid' override if the component itself thinks the input is valid.
+            if (hasValidStartPage) {
+                this.startPageInput.classList.add('valid');
+                this.startPageInput.classList.remove('invalid');
+            }
+            if (hasValidTargetPage) {
+                this.targetPageInput.classList.add('valid');
+                this.targetPageInput.classList.remove('invalid');
+            }
+        }
+        
+        // Final validation check for the start button
+        const differentPages = !areSameAndNotEmpty;
         const isValid = hasValidStartPage && hasValidTargetPage && hasPlayer1 && hasPlayer2 && 
                        differentModels && differentPages;
         

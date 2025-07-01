@@ -7,6 +7,8 @@ interface AutocompleteOptions {
     placeholder?: string;
     onSelect?: (result: WikipediaSearchResult) => void;
     onValidationChange?: (isValid: boolean) => void;
+    onSlotMachineStart?: () => void;
+    onSlotMachineEnd?: () => void;
 }
 
 class WikipediaAutocomplete {
@@ -35,6 +37,8 @@ class WikipediaAutocomplete {
             placeholder: 'Search Wikipedia...',
             onSelect: () => {},
             onValidationChange: () => {},
+            onSlotMachineStart: () => {},
+            onSlotMachineEnd: () => {},
             ...options
         };
 
@@ -377,7 +381,7 @@ class WikipediaAutocomplete {
                 }
             };
         }
-        this.randomService.startCycling(this.randomCallback, 200);
+        this.randomService.startCycling(this.randomCallback, 500);
     }
 
     private stopRandomCycling(): void {
@@ -388,12 +392,62 @@ class WikipediaAutocomplete {
         this.input.placeholder = this.options.placeholder;
     }
 
+    public async startSlotMachine(): Promise<void> {
+        // Stop any existing random cycling
+        this.stopRandomCycling();
+        
+        // Close dropdown during slot machine
+        this.closeDropdown();
+        
+        // Notify start callback
+        this.options.onSlotMachineStart();
+        
+        try {
+            const finalTitle = await this.randomService.startSlotMachine((title: string, isSpinning: boolean) => {
+                if (isSpinning) {
+                    // Show the cycling title as placeholder
+                    this.input.placeholder = title;
+                } else {
+                    // Spinning is done, set as actual value
+                    this.input.value = title;
+                    this.currentQuery = title;
+                    
+                    // Reset placeholder
+                    this.input.placeholder = this.options.placeholder;
+                    
+                    // Validate the selected page
+                    this.validateCurrentSelection();
+                    
+                    // Call onSelect for consistency with other selection methods
+                    const searchResult: WikipediaSearchResult = {
+                        title: title,
+                        description: '(Selected via random)',
+                        url: `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}`
+                    };
+                    this.options.onSelect(searchResult);
+                    
+                    // Notify end callback
+                    this.options.onSlotMachineEnd();
+                }
+            });
+            
+            // Ensure we have the final value set
+            this.input.value = finalTitle;
+            this.currentQuery = finalTitle;
+            
+        } catch (error) {
+            console.error('Slot machine error:', error);
+            this.options.onSlotMachineEnd();
+        }
+    }
+
     public destroy(): void {
         // Cancel any ongoing searches
         this.searchService.cancelCurrentSearch();
         
-        // Stop random cycling
+        // Stop random cycling and slot machine
         this.stopRandomCycling();
+        this.randomService.stopSlotMachine();
         
         // Clear timers
         if (this.debounceTimer) {
