@@ -41,8 +41,15 @@ interface OrbitCalculation {
 export class PageGraphRenderer {
   private container: HTMLElement;
   private svg!: d3.Selection<SVGSVGElement, unknown, null, undefined>;
-  private width: number = 800;
-  private height: number = 600;
+  
+  // VIEWPORT dimensions (what user sees)
+  private viewportWidth: number = 800;
+  private viewportHeight: number = 600;
+  
+  // PHYSICS dimensions (4x larger for simulation space)
+  private width: number = 3200;  // 4x viewport width
+  private height: number = 2400; // 4x viewport height
+  
   private simulation: d3.Simulation<PageNode, undefined> | null = null;
   
   // D3 selections for different graph elements
@@ -94,6 +101,7 @@ export class PageGraphRenderer {
     this.container = container;
     this.initializeSVG();
     this.setupZoom();
+    this.setInitialZoomToCenter(); // Move here after zoom is set up
     this.createDebugButton();
     console.log('✅ Enhanced Page Graph Renderer initialized with interactive physics');
   }
@@ -108,14 +116,19 @@ export class PageGraphRenderer {
 
     // Get container dimensions - ensure we have full viewport dimensions
     const rect = this.container.getBoundingClientRect();
-    this.width = rect.width || window.innerWidth;
-    this.height = rect.height || window.innerHeight;
+    this.viewportWidth = rect.width || window.innerWidth;
+    this.viewportHeight = rect.height || window.innerHeight;
 
-    // Create main SVG
+    // Calculate physics dimensions (4x viewport for expanded simulation space)
+    this.width = this.viewportWidth * 2;  // 2x wider
+    this.height = this.viewportHeight * 2; // 2x taller
+    // Total area = 4x (2x * 2x)
+
+    // Create main SVG (sized to viewport)
     this.svg = d3.select(this.container)
       .append('svg')
-      .attr('width', this.width)
-      .attr('height', this.height)
+      .attr('width', this.viewportWidth)
+      .attr('height', this.viewportHeight)
       .style('background-color', '#0d1117')
       .style('cursor', 'grab');
 
@@ -126,6 +139,9 @@ export class PageGraphRenderer {
     this.pathGroup = this.g.append('g').attr('class', 'optimal-paths');
     this.edgeGroup = this.g.append('g').attr('class', 'edges');
     this.nodeGroup = this.g.append('g').attr('class', 'nodes');
+    
+    // Add physics boundary visualization
+    this.drawPhysicsBoundary();
 
     // Add pattern definitions for different node types
     this.setupNodePatterns();
@@ -144,6 +160,42 @@ export class PageGraphRenderer {
     this.svg.on('contextmenu', (event) => {
       event.preventDefault();
     });
+  }
+
+  // Set initial zoom to show center 1/4 of the expanded physics space
+  private setInitialZoomToCenter(): void {
+    // We want to show the center 1/4 of the physics space
+    // Physics space: this.width x this.height (2x viewport in each dimension)
+    // Viewport: this.viewportWidth x this.viewportHeight
+    
+    // The center 1/4 means we want to view from:
+    // X: this.width/4 to 3*this.width/4 (center half of width)
+    // Y: this.height/4 to 3*this.height/4 (center half of height)
+    
+    // Scale to fit the center region into the viewport
+    const scale = 1; // 1:1 scale since we sized physics to be exactly 2x viewport
+    
+    // Translate to center the physics center in the viewport
+    const translateX = this.viewportWidth / 2 - (this.width / 2) * scale;
+    const translateY = this.viewportHeight / 2 - (this.height / 2) * scale;
+    
+    const initialTransform = d3.zoomIdentity
+      .translate(translateX, translateY)
+      .scale(scale);
+    
+    // Apply the transform
+    this.svg.call(this.zoom.transform, initialTransform);
+    
+    // Calculate and log visible area bounds
+    const visibleLeft = this.width / 4;
+    const visibleTop = this.height / 4;
+    const visibleRight = (3 * this.width) / 4;
+    const visibleBottom = (3 * this.height) / 4;
+    
+    console.log(`🔍 Set initial zoom: scale=${scale}, translate=(${translateX}, ${translateY})`);
+    console.log(`📐 Physics space: ${this.width}x${this.height}, Viewport: ${this.viewportWidth}x${this.viewportHeight}`);
+    console.log(`👁️ Visible area: (${visibleLeft}, ${visibleTop}) to (${visibleRight}, ${visibleBottom})`);
+    console.log(`📏 Visible dimensions: ${visibleRight - visibleLeft}x${visibleBottom - visibleTop}`);
   }
 
   private setupNodePatterns(): void {
@@ -434,7 +486,46 @@ export class PageGraphRenderer {
             border-radius: 4px;
             cursor: pointer;
             font-size: 11px;
+            margin-bottom: 6px;
           ">Toggle Orbit Rings</button>
+          <button id="togglePhysicsBoundaryBtn" style="
+            width: 100%;
+            padding: 6px;
+            background: #8b5cf6;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+          ">Toggle Physics Boundary</button>
+          <button id="debugPositioningBtn" style="
+            width: 100%;
+            padding: 6px;
+            background: #f59e0b;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            margin-top: 6px;
+          ">Debug Visible Area Positioning</button>
+          <button id="debugLinearSpawningBtn" style="
+            width: 100%;
+            padding: 6px;
+            background: #10b981;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            margin-top: 6px;
+          ">Debug Linear Spawning</button>
+          <div style="margin-top: 8px; padding: 8px; background: rgba(20, 30, 45, 0.7); border-radius: 4px; font-size: 10px; color: #cbd5e1;">
+            <strong>Expanded Physics:</strong><br/>
+            Physics space: ${this.width}×${this.height}px<br/>
+            Viewport: ${this.viewportWidth}×${this.viewportHeight}px<br/>
+            Expansion: ${(this.width/this.viewportWidth).toFixed(1)}× area
+          </div>
         </div>
       </div>
     `;
@@ -588,6 +679,29 @@ export class PageGraphRenderer {
         rings.remove();
       }
     });
+
+    // Toggle physics boundary button
+    const togglePhysicsBoundaryBtn = this.controlsContainer.querySelector('#togglePhysicsBoundaryBtn') as HTMLButtonElement;
+    togglePhysicsBoundaryBtn?.addEventListener('click', () => {
+      const boundary = this.g.selectAll('.physics-boundary');
+      if (boundary.empty()) {
+        this.drawPhysicsBoundary();
+      } else {
+        boundary.remove();
+      }
+    });
+
+    // Debug positioning button
+    const debugPositioningBtn = this.controlsContainer.querySelector('#debugPositioningBtn') as HTMLButtonElement;
+    debugPositioningBtn?.addEventListener('click', () => {
+      this.debugVisibleAreaPositioning();
+    });
+
+    // Debug linear spawning button
+    const debugLinearSpawningBtn = this.controlsContainer.querySelector('#debugLinearSpawningBtn') as HTMLButtonElement;
+    debugLinearSpawningBtn?.addEventListener('click', () => {
+      this.debugLinearSpawning();
+    });
   }
 
   private updateSimulationForces(): void {
@@ -674,10 +788,21 @@ export class PageGraphRenderer {
     
     if (!startNode || !targetNode) {
       // Fallback to center positions if nodes don't exist yet
-      const centerX = this.width / 2;
-      const centerY = this.height * 0.8;
-      const startX = this.width / 2;
-      const startY = this.height * 0.2;
+      // Position relative to the VISIBLE portion of physics space (center 1/4)
+      
+      // Visible area bounds (center 1/4 of physics space):
+      // X: from width/4 to 3*width/4
+      // Y: from height/4 to 3*height/4
+      const visibleLeft = this.width / 4;
+      const visibleTop = this.height / 4;
+      const visibleWidth = this.width / 2;   // Center half width
+      const visibleHeight = this.height / 2; // Center half height
+      
+      // Position start and target within visible area
+      const centerX = visibleLeft + visibleWidth / 2;  // Center of visible area
+      const centerY = visibleTop + visibleHeight * 0.8; // 80% down visible area (target)
+      const startX = visibleLeft + visibleWidth / 2;   // Center of visible area  
+      const startY = visibleTop + visibleHeight * 0.2; // 20% down visible area (start)
       
       return {
         centerX,
@@ -690,6 +815,7 @@ export class PageGraphRenderer {
     }
     
     // Use actual node positions (they can be dragged around!)
+    // These positions are already in physics space
     const centerX = targetNode.x || this.width / 2;
     const centerY = targetNode.y || this.height / 2;
     const startX = startNode.x || this.width / 2;
@@ -804,6 +930,37 @@ export class PageGraphRenderer {
   }
 
   // =============================================================================
+  // Physics Boundary Visualization
+  // =============================================================================
+
+  private drawPhysicsBoundary(): void {
+    // Clear existing physics boundary
+    this.g.selectAll('.physics-boundary').remove();
+    
+    // The physics boundaries use the EXPANDED physics space, not viewport
+    // With proportionally larger margin (4x the area means ~2x the margin)
+    const margin = 60; // Increased from 30px for the larger space
+    const boundaryWidth = this.width - (2 * margin);
+    const boundaryHeight = this.height - (2 * margin);
+    
+    // Draw the physics boundary rectangle
+    this.g.append('rect')
+      .attr('class', 'physics-boundary')
+      .attr('x', margin)
+      .attr('y', margin)
+      .attr('width', boundaryWidth)
+      .attr('height', boundaryHeight)
+      .attr('fill', 'none')
+      .attr('stroke', '#ffffff')
+      .attr('stroke-width', 1)
+      .attr('stroke-opacity', 0.5)
+      .style('pointer-events', 'none'); // Don't interfere with interactions
+      
+    console.log(`📐 Drew EXPANDED physics boundary: ${boundaryWidth}x${boundaryHeight} with ${margin}px margin`);
+    console.log(`📐 Physics space is ${this.width}x${this.height} (${this.width/this.viewportWidth}x viewport)`);
+  }
+
+  // =============================================================================
   // Orbital Ring Visualization
   // =============================================================================
 
@@ -814,18 +971,9 @@ export class PageGraphRenderer {
     this.pathGroup.selectAll('.orbital-ring').remove();
 
     // Find all unique distances that have nodes
-    const distances = new Set<number>();
-    this.pages.forEach(page => {
-      if (page.distanceToTarget !== undefined) {
-        distances.add(page.distanceToTarget);
-      }
-    });
-
+    const maxDistance = Math.max(...this.pages.map(page => page.distanceToTarget || 0));
     // Add a few extra orbits beyond the maximum for context
-    const startDistance = Math.max(...Array.from(distances));
-    for (let i = startDistance + 1; i <= startDistance + 3; i++) {
-      distances.add(i);
-    }
+    const distances = Array.from({ length: maxDistance + 2 }, (_, i) => i + 1);
 
     // Draw orbital rings
     distances.forEach(distance => {
@@ -839,13 +987,11 @@ export class PageGraphRenderer {
         .attr('cy', this.orbitSystem!.centerY)
         .attr('r', radius)
         .attr('fill', 'none')
-        .attr('stroke', '#374151')
+        .attr('stroke', '#ffffff') // TODO make black for light mode
         .attr('stroke-width', 1)
-        .attr('stroke-opacity', 0.8)
+        .attr('stroke-opacity', 0.3)
         .attr('stroke-dasharray', '3,3');
     });
-
-    console.log(`🌍 Drew ${distances.size - 1} orbital rings (excluding center)`);
   }
 
   // =============================================================================
@@ -898,16 +1044,19 @@ export class PageGraphRenderer {
         const gameSide = self.getGameSide(node);
         if (gameSide === 'center') return; // Skip center nodes
         
-        const centerX = self.width / 2;
+        // Use center of visible area (center 1/4 of physics space)
+        const visibleLeft = self.width / 4;
+        const visibleWidth = self.width / 2;
+        const visibleCenterX = visibleLeft + visibleWidth / 2;
         const currentX = node.x || 0;
         
         // Apply horizontal constraint force
-        if (gameSide === 'left' && currentX > centerX) {
+        if (gameSide === 'left' && currentX > visibleCenterX) {
           // Node is on wrong side, push it left
-          (node as any).vx = ((node as any).vx || 0) - (currentX - centerX) * alpha * 0.3;
-        } else if (gameSide === 'right' && currentX < centerX) {
+          (node as any).vx = ((node as any).vx || 0) - (currentX - visibleCenterX) * alpha * 0.3;
+        } else if (gameSide === 'right' && currentX < visibleCenterX) {
           // Node is on wrong side, push it right
-          (node as any).vx = ((node as any).vx || 0) + (centerX - currentX) * alpha * 0.3;
+          (node as any).vx = ((node as any).vx || 0) + (visibleCenterX - currentX) * alpha * 0.3;
         }
       });
     };
@@ -917,11 +1066,47 @@ export class PageGraphRenderer {
   // Smart Node Positioning for Solar System
   // =============================================================================
 
+  /**
+   * Find the parent node (previous move) for a visited page
+   * Uses the moveIndex to trace back the sequence within the same game
+   */
+  private findParentNode(page: PageNode): PageNode | null {
+    if (page.type !== 'visited' || page.visits.length === 0) {
+      return null;
+    }
+    
+    // Use the first visit to determine the game and move sequence
+    const firstVisit = page.visits[0];
+    const gameId = firstVisit.gameId;
+    const currentMoveIndex = firstVisit.moveIndex;
+    
+    // If this is the first move (moveIndex 1), parent is the start node
+    if (currentMoveIndex <= 1) {
+      return this.pages.find(p => p.type === 'start') || null;
+    }
+    
+    // Find the node that was visited at moveIndex - 1 in the same game
+    const parentMoveIndex = currentMoveIndex - 1;
+    const parentNode = this.pages.find(p => 
+      p.visits.some(visit => 
+        visit.gameId === gameId && visit.moveIndex === parentMoveIndex
+      )
+    );
+    
+    return parentNode || null;
+  }
+
   private getSmartSpawnPosition(page: PageNode): { x: number; y: number } {
     // Ensure we have an orbit system calculated
     if (!this.orbitSystem) {
       this.orbitSystem = this.calculateOrbitSystem();
     }
+    
+    // Calculate visible area bounds (center 1/4 of physics space)
+    const visibleLeft = this.width / 4;
+    const visibleTop = this.height / 4;
+    const visibleWidth = this.width / 2;
+    const visibleHeight = this.height / 2;
     
     switch (page.type) {
       case 'target':
@@ -937,51 +1122,59 @@ export class PageGraphRenderer {
         };
         
       case 'visited':
-        if (page.distanceToTarget !== undefined) {
-          const radius = this.orbitSystem.orbitRadius(page.distanceToTarget);
+        // Position below parent node with side-based x-spacing
+        const parentNode = this.findParentNode(page);
+        if (parentNode && parentNode.x !== undefined && parentNode.y !== undefined) {
+          // Use orbit radius for spacing instead of hardcoded value
+          const spacing = this.orbitSystem.orbitRadius(1); // Use radius for distance 1
+          
+          // Get the game side for this node to determine x-direction
           const gameSide = this.getGameSide(page);
           
-          let spawnAngle: number;
+          let xOffset = 0;
           if (gameSide === 'left') {
-            // Left side: angles from 90° to 270° (left half of circle)
-            spawnAngle = Math.PI/2 + Math.random() * Math.PI;
+            xOffset = -spacing; // Move left for left side nodes
           } else if (gameSide === 'right') {
-            // Right side: angles from -90° to 90° (right half of circle)
-            spawnAngle = -Math.PI/2 + Math.random() * Math.PI;
-          } else {
-            // Center: any angle
-            spawnAngle = Math.random() * 2 * Math.PI;
+            xOffset = spacing;  // Move right for right side nodes
           }
+          // Center nodes get xOffset = 0 (same x as parent)
           
-          return {
-            x: this.orbitSystem.centerX + radius * Math.cos(spawnAngle),
-            y: this.orbitSystem.centerY + radius * Math.sin(spawnAngle)
+          const newPosition = {
+            x: parentNode.x + xOffset,          // Parent x + side-based spacing
+            y: parentNode.y + spacing           // Orbit radius spacing below parent
           };
-        }
-        
-        // Visited nodes without distance spawn in corners based on game side
+          return newPosition;
+        } 
+
+        // FALLBACK: Position bottom corner of side
         const gameSide = this.getGameSide(page);
         if (gameSide === 'left') {
           return { 
-            x: this.width * 0.1, 
-            y: this.height * 0.9 
+            x: 0, 
+            y: this.height
           };
         } else if (gameSide === 'right') {
           return { 
-            x: this.width * 0.9, 
-            y: this.height * 0.9 
+            x: this.width, 
+            y: this.height
           };
         } else {
           return { 
-            x: this.orbitSystem.centerX + (Math.random() - 0.5) * 100, 
-            y: this.orbitSystem.centerY + (Math.random() - 0.5) * 100 
+            x: this.width / 2, 
+            y: this.height / 2
           };
         }
 
       case 'optimal_path':
-        return { x: this.width / 2, y: this.height / 2 };
+        return { 
+          x: visibleLeft + visibleWidth / 2,   // Center of visible area
+          y: visibleTop + visibleHeight / 2    // Center of visible area
+        };
       default:
-        return { x: this.width / 2, y: this.height / 2 };
+        return { 
+          x: visibleLeft + visibleWidth / 2,   // Center of visible area
+          y: visibleTop + visibleHeight / 2    // Center of visible area
+        };
     }
   }
 
@@ -1142,11 +1335,12 @@ export class PageGraphRenderer {
 
     // Set up tick handler
     this.simulation.on('tick', () => {
-      // Enforce canvas boundaries
+      // Enforce EXPANDED physics boundaries (not viewport boundaries)
+      const physicsMargin = 60; // Match the margin used in drawPhysicsBoundary
       this.pages.forEach(page => {
         if (page.x !== undefined && page.y !== undefined) {
-          page.x = Math.max(30, Math.min(this.width - 30, page.x));
-          page.y = Math.max(30, Math.min(this.height - 30, page.y));
+          page.x = Math.max(physicsMargin, Math.min(this.width - physicsMargin, page.x));
+          page.y = Math.max(physicsMargin, Math.min(this.height - physicsMargin, page.y));
         }
       });
       
@@ -1781,13 +1975,23 @@ export class PageGraphRenderer {
     const newWidth = rect.width || window.innerWidth;
     const newHeight = rect.height || window.innerHeight;
     
-    if (newWidth !== this.width || newHeight !== this.height) {
-      this.width = newWidth;
-      this.height = newHeight;
+    if (newWidth !== this.viewportWidth || newHeight !== this.viewportHeight) {
+      this.viewportWidth = newWidth;
+      this.viewportHeight = newHeight;
+
+      // Recalculate physics dimensions (4x viewport)
+      this.width = this.viewportWidth * 2;
+      this.height = this.viewportHeight * 2;
 
       this.svg
-        .attr('width', this.width)
-        .attr('height', this.height);
+        .attr('width', this.viewportWidth)
+        .attr('height', this.viewportHeight);
+
+      // Update physics boundary visualization
+      this.drawPhysicsBoundary();
+
+      // Reset zoom to show center of expanded physics space
+      this.setInitialZoomToCenter();
 
       // Update center forces and restart simulation
       if (this.simulation) {
@@ -1808,13 +2012,15 @@ export class PageGraphRenderer {
     const centerX = bounds.minX + fullWidth / 2;
     const centerY = bounds.minY + fullHeight / 2;
 
+    // Calculate scale to fit content in viewport (not physics space)
     const scale = Math.min(
-      this.width / (fullWidth + 100),
-      this.height / (fullHeight + 100)
+      this.viewportWidth / (fullWidth + 100),
+      this.viewportHeight / (fullHeight + 100)
     );
 
+    // Center the content in the viewport
     const transform = d3.zoomIdentity
-      .translate(this.width / 2 - centerX * scale, this.height / 2 - centerY * scale)
+      .translate(this.viewportWidth / 2 - centerX * scale, this.viewportHeight / 2 - centerY * scale)
       .scale(scale);
 
     this.svg.transition()
@@ -1901,5 +2107,102 @@ export class PageGraphRenderer {
      console.log(`Left side (${leftNodes.length} nodes):`, leftNodes.map(n => n.pageTitle));
      console.log(`Right side (${rightNodes.length} nodes):`, rightNodes.map(n => n.pageTitle));
      console.log(`Center (${centerNodes.length} nodes):`, centerNodes.map(n => n.pageTitle));
+   }
+
+   debugVisibleAreaPositioning(): void {
+     console.log('👁️ Visible Area Positioning Debug:');
+     
+     // Calculate visible area bounds
+     const visibleLeft = this.width / 4;
+     const visibleTop = this.height / 4;
+     const visibleRight = (3 * this.width) / 4;
+     const visibleBottom = (3 * this.height) / 4;
+     const visibleWidth = this.width / 2;
+     const visibleHeight = this.height / 2;
+     
+     console.log(`Physics space: ${this.width}×${this.height}`);
+     console.log(`Visible bounds: (${visibleLeft}, ${visibleTop}) to (${visibleRight}, ${visibleBottom})`);
+     console.log(`Visible size: ${visibleWidth}×${visibleHeight}`);
+     
+     // Check positioning of start and target nodes
+     const startNode = this.pages.find(p => p.type === 'start');
+     const targetNode = this.pages.find(p => p.type === 'target');
+     
+     if (startNode) {
+       const inVisible = startNode.x! >= visibleLeft && startNode.x! <= visibleRight && 
+                        startNode.y! >= visibleTop && startNode.y! <= visibleBottom;
+       console.log(`Start node: (${startNode.x?.toFixed(0)}, ${startNode.y?.toFixed(0)}) - ${inVisible ? '✅ In visible area' : '❌ Outside visible area'}`);
+     }
+     
+     if (targetNode) {
+       const inVisible = targetNode.x! >= visibleLeft && targetNode.x! <= visibleRight && 
+                        targetNode.y! >= visibleTop && targetNode.y! <= visibleBottom;
+       console.log(`Target node: (${targetNode.x?.toFixed(0)}, ${targetNode.y?.toFixed(0)}) - ${inVisible ? '✅ In visible area' : '❌ Outside visible area'}`);
+     }
+     
+     // Show all node positions relative to visible area
+     console.log('All node positions:');
+     this.pages.forEach(page => {
+       if (page.x !== undefined && page.y !== undefined) {
+         const inVisible = page.x >= visibleLeft && page.x <= visibleRight && 
+                          page.y >= visibleTop && page.y <= visibleBottom;
+         const relativeX = ((page.x - visibleLeft) / visibleWidth * 100).toFixed(1);
+         const relativeY = ((page.y - visibleTop) / visibleHeight * 100).toFixed(1);
+         console.log(`  ${page.pageTitle} (${page.type}): (${page.x.toFixed(0)}, ${page.y.toFixed(0)}) = ${relativeX}%, ${relativeY}% in visible area ${inVisible ? '✅' : '❌'}`);
+       }
+     });
+   }
+
+   debugLinearSpawning(): void {
+     console.log('🔗 Linear Spawning Debug:');
+     
+     // Group visited nodes by game
+     const gameNodes = new Map<string, PageNode[]>();
+     this.pages.filter(p => p.type === 'visited').forEach(page => {
+       page.visits.forEach(visit => {
+         if (!gameNodes.has(visit.gameId)) {
+           gameNodes.set(visit.gameId, []);
+         }
+         gameNodes.get(visit.gameId)!.push(page);
+       });
+     });
+     
+     // Show parent-child relationships for each game
+     gameNodes.forEach((nodes, gameId) => {
+       console.log(`\n🎮 Game ${gameId}:`);
+       
+       // Sort by move index
+       const sortedNodes = nodes.sort((a, b) => {
+         const aMove = a.visits.find(v => v.gameId === gameId)?.moveIndex || 0;
+         const bMove = b.visits.find(v => v.gameId === gameId)?.moveIndex || 0;
+         return aMove - bMove;
+       });
+       
+       sortedNodes.forEach(node => {
+         const visit = node.visits.find(v => v.gameId === gameId);
+         const moveIndex = visit?.moveIndex || 0;
+         const parentNode = this.findParentNode(node);
+         
+         if (parentNode) {
+           const verticalDistance = node.y! - parentNode.y!;
+           const horizontalDistance = Math.abs(node.x! - parentNode.x!);
+           const expectedSpacing = this.orbitSystem?.orbitRadius(1) || 100; // Fallback to 100 if orbitSystem not ready
+           
+           console.log(`  Move ${moveIndex}: ${node.pageTitle}`);
+           console.log(`    Parent: ${parentNode.pageTitle} at (${parentNode.x?.toFixed(0)}, ${parentNode.y?.toFixed(0)})`);
+           console.log(`    Child:  ${node.pageTitle} at (${node.x?.toFixed(0)}, ${node.y?.toFixed(0)})`);
+           console.log(`    Distance: ${verticalDistance.toFixed(0)}px vertical, ${horizontalDistance.toFixed(0)}px horizontal`);
+           console.log(`    Expected: ${expectedSpacing.toFixed(0)}px (orbit radius)`);
+           
+           if (Math.abs(verticalDistance - expectedSpacing) < 10 && horizontalDistance < 10) {
+             console.log(`    ✅ Linear spawning working correctly!`);
+           } else {
+             console.log(`    ⚠️ Linear spawning may not be working (expected ~${expectedSpacing.toFixed(0)}px down, same x)`);
+           }
+         } else {
+           console.log(`  Move ${moveIndex}: ${node.pageTitle} (no parent found)`);
+         }
+       });
+     });
    }
  }  
