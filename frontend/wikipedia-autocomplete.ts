@@ -125,8 +125,10 @@ class WikipediaAutocomplete {
             }
         }, this.options.debounceMs);
 
-        // Reset selection
-        this.selectedIndex = -1;
+        // Only reset selection if there's no query, otherwise keep auto-selection from renderResults
+        if (query.trim() === '') {
+            this.selectedIndex = -1;
+        }
     }
 
     private handleKeydown(event: KeyboardEvent): void {
@@ -149,6 +151,7 @@ class WikipediaAutocomplete {
 
             case 'Enter':
                 event.preventDefault();
+                // Now this will always work since we auto-select index 0
                 if (this.selectedIndex >= 0) {
                     this.selectResult(this.results[this.selectedIndex]);
                 }
@@ -259,12 +262,25 @@ class WikipediaAutocomplete {
 
         this.dropdown.innerHTML = html;
 
-        // Add click listeners to items
+        // Auto-select first result if there are any results
+        this.selectedIndex = this.results.length > 0 ? 0 : -1;
+
+        // Add click and hover listeners to items
         this.dropdown.querySelectorAll('.wikipedia-autocomplete-item').forEach((item, index) => {
+            // Click to select
             item.addEventListener('click', () => {
                 this.selectResult(this.results[index]);
             });
+            
+            // Hover to highlight (so Enter will select hovered item)
+            item.addEventListener('mouseenter', () => {
+                this.selectedIndex = index;
+                this.updateSelection();
+            });
         });
+
+        // Update visual selection after setting selectedIndex
+        this.updateSelection();
     }
 
     private updateSelection(): void {

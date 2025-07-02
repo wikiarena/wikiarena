@@ -20,6 +20,7 @@ interface ModelSelectorOptions {
     placeholder?: string;
     onSelect?: (model: ModelOption) => void;
     onValidationChange?: (isValid: boolean) => void;
+    getExcludedModels?: () => string[];
 }
 
 class ModelSelector {
@@ -33,6 +34,7 @@ class ModelSelector {
     private options: Required<ModelSelectorOptions>;
     private currentQuery: string = '';
     private selectedModel: ModelOption | null = null;
+    private otherSelectors: ModelSelector[] = [];
 
     constructor(input: HTMLInputElement, options: ModelSelectorOptions = {}) {
         this.input = input;
@@ -42,6 +44,7 @@ class ModelSelector {
             placeholder: 'Search for a model...',
             onSelect: () => {},
             onValidationChange: () => {},
+            getExcludedModels: () => [],
             ...options
         };
 
@@ -79,11 +82,11 @@ class ModelSelector {
         this.input.setAttribute('role', 'combobox');
         this.input.setAttribute('aria-expanded', 'false');
         this.input.setAttribute('aria-autocomplete', 'list');
-        this.input.readOnly = true; // Make it click-to-open only
     }
 
     private setupEventListeners(): void {
         // Input events
+        this.input.addEventListener('input', this.handleInput.bind(this));
         this.input.addEventListener('click', this.handleInputClick.bind(this));
         this.input.addEventListener('keydown', this.handleKeydown.bind(this));
         this.input.addEventListener('focus', this.handleFocus.bind(this));
@@ -113,8 +116,6 @@ class ModelSelector {
         }
     }
 
-
-
     private getProviderIcon(provider: string): string {
         const iconMap: Record<string, string> = {
             'anthropic': './assets/icons/claude-color.svg',
@@ -127,10 +128,68 @@ class ModelSelector {
         return iconMap[provider] || './assets/icons/question-mark.svg';
     }
 
-    private handleInputClick(): void {
-        if (this.isOpen) {
-            this.closeDropdown();
+    private handleInput(): void {
+        const query = this.input.value;
+        this.currentQuery = query;
+
+        // Filter models based on current input
+        this.filterModels(query);
+        
+        // Don't reset selectedIndex here since filterModels() handles it
+        
+        // Open dropdown if there are results or if typing
+        if (this.filteredModels.length > 0 || query.length > 0) {
+            this.renderModels();
+            this.openDropdown();
         } else {
+            this.closeDropdown();
+        }
+
+        // Update validation - check if current input exactly matches a model
+        const exactMatch = this.models.find(model => 
+            model.id.toLowerCase() === query.toLowerCase()
+        );
+        
+        if (exactMatch) {
+            this.selectedModel = exactMatch;
+            this.input.classList.add('valid');
+            this.input.classList.remove('invalid');
+            this.options.onValidationChange(true);
+        } else if (query.trim() === '') {
+            // Empty input is also valid (no selection)
+            this.selectedModel = null;
+            this.input.classList.remove('valid', 'invalid');
+            this.options.onValidationChange(false);
+        } else {
+            // Partial input - not yet valid
+            this.selectedModel = null;
+            this.input.classList.remove('valid');
+            this.input.classList.add('invalid');
+            this.options.onValidationChange(false);
+        }
+    }
+
+    private handleInputClick(): void {
+        // When user clicks on a selected model, clear the search to show all options
+        if (this.selectedModel && this.currentQuery === '') {
+            // Clear the input value so they can start fresh
+            this.input.value = '';
+            this.currentQuery = '';
+            this.selectedModel = null;
+            
+            // Reset validation state
+            this.input.classList.remove('valid', 'invalid');
+            this.options.onValidationChange(false);
+            
+            // Reset filtered models to show all available (minus excluded)
+            this.filterModels('');
+            
+            // Refresh other selectors since this selection was cleared
+            this.refreshOtherSelectors();
+        }
+        
+        // Just open dropdown if not already open, don't close it
+        if (!this.isOpen) {
             this.openDropdown();
         }
     }
@@ -159,6 +218,7 @@ class ModelSelector {
 
             case 'Enter':
                 event.preventDefault();
+                // Now this will always work since we auto-select index 0
                 if (this.selectedIndex >= 0) {
                     this.selectModel(this.filteredModels[this.selectedIndex]);
                 }
@@ -176,10 +236,25 @@ class ModelSelector {
     }
 
     private handleFocus(): void {
-        // Focus doesn't automatically open dropdown - only click does
+        // Open dropdown when user tabs into the input (or clicks focus)
+        if (!this.isOpen) {
+            this.openDropdown();
+        }
     }
 
     private handleBlur(): void {
+        // Validate current input on blur
+        const query = this.input.value.trim();
+        if (query) {
+            const exactMatch = this.models.find(model => 
+                model.id.toLowerCase() === query.toLowerCase()
+            );
+            
+            if (exactMatch) {
+                this.selectModel(exactMatch);
+            }
+        }
+        
         // Delay closing to allow clicks on dropdown items
         setTimeout(() => {
             this.closeDropdown();
@@ -194,11 +269,21 @@ class ModelSelector {
 
     private filterModels(query: string): void {
         const lowercaseQuery = query.toLowerCase();
-        this.filteredModels = this.models.filter(model => 
-            model.id.toLowerCase().includes(lowercaseQuery) ||
-            model.provider.toLowerCase().includes(lowercaseQuery)
-        );
-        this.selectedIndex = -1;
+        const excludedModels = this.options.getExcludedModels();
+        
+        this.filteredModels = this.models.filter(model => {
+            // Check if model matches search query
+            const matchesQuery = model.id.toLowerCase().includes(lowercaseQuery) ||
+                                model.provider.toLowerCase().includes(lowercaseQuery);
+            
+            // Check if model is not excluded by other selectors
+            const notExcluded = !excludedModels.includes(model.id);
+            
+            return matchesQuery && notExcluded;
+        });
+        
+        // Auto-select first result if there are any results
+        this.selectedIndex = this.filteredModels.length > 0 ? 0 : -1;
     }
 
     private renderModels(): void {
@@ -230,10 +315,17 @@ class ModelSelector {
 
         this.dropdown.innerHTML = html;
 
-        // Add click listeners to items
+        // Add click and hover listeners to items
         this.dropdown.querySelectorAll('.model-selector-item').forEach((item, index) => {
+            // Click to select
             item.addEventListener('click', () => {
                 this.selectModel(this.filteredModels[index]);
+            });
+            
+            // Hover to highlight (so Enter will select hovered item)
+            item.addEventListener('mouseenter', () => {
+                this.selectedIndex = index;
+                this.updateSelection();
             });
         });
     }
@@ -257,6 +349,7 @@ class ModelSelector {
     private selectModel(model: ModelOption): void {
         this.selectedModel = model;
         this.input.value = model.id;
+        this.currentQuery = ''; // Clear the search query so clicking again shows all models
         this.closeDropdown();
         
         // Add visual feedback
@@ -266,13 +359,18 @@ class ModelSelector {
         // Call callbacks
         this.options.onSelect(model);
         this.options.onValidationChange(true);
+        
+        // Refresh other selectors to exclude this newly selected model
+        this.refreshOtherSelectors();
     }
 
     private openDropdown(): void {
-        // Reset filter to show all models when opening
-        this.currentQuery = '';
-        this.filteredModels = [...this.models];
-        this.selectedIndex = -1;
+        // Use current query and filtered results instead of resetting
+        if (this.currentQuery === '') {
+            // If no query, filter with empty string (this applies exclusions!)
+            this.filterModels('');
+        }
+        // Otherwise keep current filtered results
         
         this.renderModels();
         this.isOpen = true;
@@ -293,8 +391,6 @@ class ModelSelector {
         return div.innerHTML;
     }
 
-
-
     // Public methods
     public getValue(): string {
         return this.selectedModel?.id || '';
@@ -313,10 +409,14 @@ class ModelSelector {
 
     public clear(): void {
         this.selectedModel = null;
+        this.currentQuery = '';
         this.input.value = '';
         this.input.classList.remove('valid', 'invalid');
         this.closeDropdown();
         this.options.onValidationChange(false);
+        
+        // Refresh other selectors when this one is cleared
+        this.refreshOtherSelectors();
     }
 
     public destroy(): void {
@@ -325,6 +425,29 @@ class ModelSelector {
         
         // Remove DOM elements
         this.container.remove();
+    }
+
+    // Public method to link this selector with others for cross-filtering
+    public linkWithOtherSelectors(otherSelectors: ModelSelector[]): void {
+        this.otherSelectors = otherSelectors;
+    }
+
+    // Method to refresh filtering (called when other selectors change)
+    public refreshFiltering(): void {
+        // Re-apply current query with updated exclusions
+        this.filterModels(this.currentQuery);
+        
+        // Re-render if dropdown is open
+        if (this.isOpen) {
+            this.renderModels();
+        }
+    }
+
+    // Private method to refresh all linked selectors
+    private refreshOtherSelectors(): void {
+        this.otherSelectors.forEach(selector => {
+            selector.refreshFiltering();
+        });
     }
 }
 

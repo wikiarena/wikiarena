@@ -696,6 +696,11 @@ class UIManager {
             onValidationChange: (isValid) => {
                 this.modelValidationState.player1 = isValid;
                 this.updateStartRaceButton();
+            },
+            getExcludedModels: () => {
+                // Exclude player 2's selected model from player 1's options
+                const player2Model = this.player2Selector?.getValue();
+                return player2Model ? [player2Model] : [];
             }
         });
 
@@ -709,8 +714,19 @@ class UIManager {
             onValidationChange: (isValid) => {
                 this.modelValidationState.player2 = isValid;
                 this.updateStartRaceButton();
+            },
+            getExcludedModels: () => {
+                // Exclude player 1's selected model from player 2's options
+                const player1Model = this.player1Selector?.getValue();
+                return player1Model ? [player1Model] : [];
             }
         });
+
+        // Link the selectors together for cross-filtering
+        if (this.player1Selector && this.player2Selector) {
+            this.player1Selector.linkWithOtherSelectors([this.player2Selector]);
+            this.player2Selector.linkWithOtherSelectors([this.player1Selector]);
+        }
     }
 
     private initializeFormValidation() {
