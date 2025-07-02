@@ -800,9 +800,9 @@ export class PageGraphRenderer {
       
       // Position start and target within visible area
       const centerX = visibleLeft + visibleWidth / 2;  // Center of visible area
-      const centerY = visibleTop + visibleHeight * 0.8; // 80% down visible area (target)
+      const centerY = visibleTop + visibleHeight * 0.75; // 75% down visible area (target)
       const startX = visibleLeft + visibleWidth / 2;   // Center of visible area  
-      const startY = visibleTop + visibleHeight * 0.2; // 20% down visible area (start)
+      const startY = visibleTop + visibleHeight * 0.25; // 25% down visible area (start)
       
       return {
         centerX,

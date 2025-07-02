@@ -4,6 +4,7 @@ import { TaskConnectionManager } from './task-connection-manager.js';
 import { UIController } from './ui-controller.js';
 import { PageGraphRenderer } from './page-graph-renderer.js';
 import { playerColorService } from './player-color-service.js';
+import { LoadingAnimation } from './loading-animation.js';
 
 // =============================================================================
 // Main Application Class - Orchestrates all components
@@ -14,7 +15,9 @@ class WikiArenaApp {
   private connectionManager: TaskConnectionManager;
   private uiController: UIController;
   private pageGraphRenderer: PageGraphRenderer;
+  private loadingAnimation: LoadingAnimation;
   private unsubscribeFunctions: (() => void)[] = [];
+  private hasReceivedFirstData: boolean = false;
 
   constructor() {
     console.log('🚀 Wiki Arena Frontend initializing (task-centric architecture)...');
@@ -29,6 +32,7 @@ class WikiArenaApp {
     );
     this.uiController = new UIController();
     this.pageGraphRenderer = new PageGraphRenderer('graph-canvas');
+    this.loadingAnimation = new LoadingAnimation('loading-container');
     
     this.setupEventFlow();
     this.setupUIHandlers();
@@ -74,6 +78,13 @@ class WikiArenaApp {
     const unsubscribePageGraph = this.taskManager.subscribe(() => {
       const pageGraphData = this.taskManager.getVisualizationData();
       this.pageGraphRenderer.updateFromPageGraphData(pageGraphData);
+      
+      // Hide loading animation when first data arrives
+      if (!this.hasReceivedFirstData && pageGraphData.pages.length > 0) {
+        this.hasReceivedFirstData = true;
+        this.loadingAnimation.hide();
+        console.log('🎯 First graph data received, hiding loading animation');
+      }
     });
 
     // Task → UI Controller
@@ -171,9 +182,17 @@ class WikiArenaApp {
   public async handleStartGame(): Promise<void> {
     console.log('🎲 User requested new task with multiple games');
 
+    // Reset state for new game
+    this.hasReceivedFirstData = false;
+
     // Show loading state
     this.uiController.showGameStarting();
     this.uiController.setButtonLoading('start-game-btn', true, 'Starting...');
+    
+    // Show loading animation
+    this.loadingAnimation.show();
+    this.loadingAnimation.start();
+    console.log('🎬 Loading animation started');
 
     try {
       // Make API call to create task with multiple games
@@ -214,6 +233,7 @@ class WikiArenaApp {
       }
     } catch (error) {
       console.error('❌ Failed to start task:', error);
+      this.loadingAnimation.hide();
       this.uiController.showError(`Failed to start new task: ${error instanceof Error ? error.message : 'Unknown error'}`);
       this.uiController.updateLoadingState('Click "Start New Game" to try again');
     } finally {
@@ -224,9 +244,17 @@ class WikiArenaApp {
   public async handleStartCustomGame(startPage: string | null, targetPage: string | null): Promise<void> {
     console.log(`🎲 User requested custom task: ${startPage || '(empty)'} -> ${targetPage || '(empty)'}`);
 
+    // Reset state for new game
+    this.hasReceivedFirstData = false;
+
     // Show loading state
     this.uiController.showGameStarting();
     this.uiController.setButtonLoading('start-game-btn', true, 'Starting...');
+    
+    // Show loading animation
+    this.loadingAnimation.show();
+    this.loadingAnimation.start();
+    console.log('🎬 Loading animation started');
 
     try {
       // Make API call to create custom task with multiple games
@@ -267,6 +295,7 @@ class WikiArenaApp {
       }
     } catch (error) {
       console.error('❌ Failed to start custom task:', error);
+      this.loadingAnimation.hide();
       this.uiController.showError(`Failed to start custom task: ${error instanceof Error ? error.message : 'Unknown error'}`);
       this.uiController.updateLoadingState('Click "Start New Game" to try again');
     } finally {
@@ -303,6 +332,7 @@ class WikiArenaApp {
   // =============================================================================
 
   private resetTaskManager(): void {
+    this.hasReceivedFirstData = false;
     this.taskManager.reset();
     this.uiController.resetTaskUI(); // Updated to use new method name
   }
@@ -384,6 +414,9 @@ class WikiArenaApp {
 
   destroy(): void {
     console.log('🧹 Cleaning up Wiki Arena Frontend');
+    
+    // Cleanup loading animation
+    this.loadingAnimation.destroy();
     
     // Unsubscribe from all events
     this.unsubscribeFunctions.forEach(unsubscribe => unsubscribe());
