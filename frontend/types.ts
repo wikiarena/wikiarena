@@ -143,12 +143,32 @@ export interface OptimalPathsUpdatedEvent extends BaseGameEvent {
   optimal_path_length?: number;
 }
 
-export interface GameFinishedEvent extends BaseGameEvent {
-  type: 'GAME_FINISHED';
-  final_move: Move;
-  total_moves: number;
-  success: boolean;
-  optimal_path_length: number;
+export interface GameEndedEvent extends BaseGameEvent {
+  type: 'GAME_ENDED';
+  state: { // TODO(hunter): what do we actually need here?
+    game_id: string;
+    config: {
+      start_page_title: string;
+      target_page_title: string;
+      max_steps: number;
+    };
+    status: string;
+    steps: number;
+    current_page?: {
+      title: string;
+    };
+    move_history: Array<{
+      step: number;
+      from_page_title: string;
+      to_page_title: string;
+    }>;
+  };
+}
+
+export interface TaskEndedEvent extends BaseGameEvent {
+  type: 'TASK_ENDED';
+  start_page: Page;
+  target_page: Page;
 }
 
 export type GameEvent = 
@@ -156,7 +176,8 @@ export type GameEvent =
   | GameStartedEvent 
   | GameMoveCompletedEvent 
   | OptimalPathsUpdatedEvent 
-  | GameFinishedEvent;
+  | GameEndedEvent
+  | TaskEndedEvent;
 
 // =============================================================================
 // Core Game Data Types

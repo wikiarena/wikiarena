@@ -9,7 +9,7 @@ import {
   GameStartedEvent,
   GameMoveCompletedEvent,
   OptimalPathsUpdatedEvent,
-  GameFinishedEvent,
+  GameEndedEvent,
   ConnectionEstablishedEvent,
 } from './types.js';
 import { playerColorService } from './player-color-service.js';
@@ -97,8 +97,8 @@ export class TaskManager {
       case 'OPTIMAL_PATHS_UPDATED':
         this.handleOptimalPathsUpdated(gameId, event as OptimalPathsUpdatedEvent);
         break;
-      case 'GAME_FINISHED':
-        this.handleGameFinished(gameId, event as GameFinishedEvent);
+      case 'GAME_ENDED':
+        this.handleGameEnded(gameId, event as GameEndedEvent);
         break;
       default:
         console.warn('⚠️ Unknown event type:', (event as any).type);
@@ -111,6 +111,27 @@ export class TaskManager {
     const gameSequence = this.task.games.get(gameId)!;
     const completeState = event.complete_state;
     
+    // First, process solver data to get shortest path length for task
+    if (completeState?.solver_results && completeState.solver_results.length > 0) {
+      console.log(`📋 Processing ${completeState.solver_results.length} solver results for game ${gameId}`);
+      
+      completeState.solver_results.forEach(solverResult => {
+        // Set task-level properties if not already set
+        if (!this.task.startPage && solverResult.from_page_title) {
+          // We can infer start/target from solver results if game data is missing
+          this.task.startPage = solverResult.from_page_title;
+          this.task.targetPage = solverResult.to_page_title;
+        }
+        
+        // Set task-level shortest path length from start page
+        if (solverResult.optimal_path_length && 
+            solverResult.from_page_title === (this.task.startPage || (completeState?.game?.config?.start_page_title)) &&
+            !this.task.shortestPathLength) {
+          this.task.shortestPathLength = solverResult.optimal_path_length;
+        }
+      });
+    }
+    
     if (completeState?.game) {
       const gameData = completeState.game;
       
@@ -118,22 +139,20 @@ export class TaskManager {
       gameSequence.status = gameData.status === 'in_progress' ? 'in_progress' : 
                            gameData.status === 'won' ? 'finished' : 'not_started';
       
-      // Set task-level properties if not already set
+      // Set task-level properties if not already set (fallback to game data)
       if (!this.task.startPage) {
         this.task.startPage = gameData.config.start_page_title;
         this.task.targetPage = gameData.config.target_page_title;
       }
       
-      // Build page states from move history
+      // Build page states from move history (now with shortest path length available)
       this.buildPageStatesFromMoveHistory(gameId, gameData.move_history, gameData.config);
       
       console.log(`📋 Initialized game ${gameId} with ${gameSequence.pageStates.length} page states`);
     }
     
-    // Handle solver data if present
+    // Update optimal paths for all pages (now that page states exist)
     if (completeState?.solver_results && completeState.solver_results.length > 0) {
-      console.log(`📋 Processing ${completeState.solver_results.length} solver results for game ${gameId}`);
-      
       completeState.solver_results.forEach(solverResult => {
         this.updateOptimalPathsForPage(
           gameId,
@@ -141,14 +160,10 @@ export class TaskManager {
           solverResult.optimal_paths || [],
           solverResult.optimal_path_length
         );
-        
-        // Set task-level shortest path length from start page
-        if (solverResult.optimal_path_length && 
-            solverResult.from_page_title === this.task.startPage &&
-            !this.task.shortestPathLength) {
-          this.task.shortestPathLength = solverResult.optimal_path_length;
-        }
       });
+      
+      // After updating all solver results, calculate distance changes
+      this.updateDistanceChanges(gameId);
     }
     
     this.updateTaskProgress();
@@ -230,7 +245,6 @@ export class TaskManager {
     // Calculate distance changes now that we have optimal path data
     this.updateDistanceChanges(gameId);
     
-    // TODO(hunter): remove this after task init event refactor
     // Set task-level shortest path length if not set
     if (event.optimal_path_length && !this.task.shortestPathLength) {
       this.task.shortestPathLength = event.optimal_path_length;
@@ -239,7 +253,8 @@ export class TaskManager {
     this.notifyListeners();
   }
 
-  private handleGameFinished(gameId: string, _event: GameFinishedEvent): void {
+  // TODO(hunter): when should we close websocket connection? (after all solves, or when next game starts?)
+  private handleGameEnded(gameId: string, _event: GameEndedEvent): void {
     console.log('🏁 TaskManager: handling game finished for game', gameId);
     
     const gameSequence = this.task.games.get(gameId)!;
@@ -266,7 +281,9 @@ export class TaskManager {
       optimalPaths: [],
       isStartPage: true,
       isTargetPage: config.start_page_title === config.target_page_title,
-      visitedFromPage: undefined
+      visitedFromPage: undefined,
+      // Set distance for start page if we have task-level information
+      distanceToTarget: this.task.shortestPathLength
     };
     
     gameSequence.pageStates.push(startPageState);
@@ -289,16 +306,24 @@ export class TaskManager {
 
   private updateOptimalPathsForPage(gameId: string, pageTitle: string, paths: string[][], pathLength?: number): void {
     const gameSequence = this.task.games.get(gameId)!;
-    const pageStateIndex = gameSequence.pageStates.findIndex(
-      state => state.pageTitle === pageTitle
-    );
     
-    if (pageStateIndex >= 0) {
-      const pageState = gameSequence.pageStates[pageStateIndex];
-      pageState.optimalPaths = paths;
-      pageState.distanceToTarget = pathLength;
+    // Find ALL page states with this title (page might be visited multiple times)
+    const matchingIndices: number[] = [];
+    gameSequence.pageStates.forEach((state, index) => {
+      if (state.pageTitle === pageTitle) {
+        matchingIndices.push(index);
+      }
+    });
+    
+    if (matchingIndices.length > 0) {
+      // Update optimal paths for ALL occurrences of this page
+      matchingIndices.forEach(index => {
+        const pageState = gameSequence.pageStates[index];
+        pageState.optimalPaths = paths;
+        pageState.distanceToTarget = pathLength;
+      });
       
-      console.log(`✅ Updated optimal paths for game ${gameId}, page: ${pageTitle} (${paths.length} paths, distance: ${pathLength})`);
+      console.log(`✅ Updated optimal paths for game ${gameId}, page: ${pageTitle} (${paths.length} paths, distance: ${pathLength}) - updated ${matchingIndices.length} occurrences`);
     } else {
       console.warn(`⚠️ Could not find page state for game ${gameId}, page: ${pageTitle}. Available pages: ${gameSequence.pageStates.map(s => s.pageTitle).join(', ')}`);
     }
@@ -318,6 +343,8 @@ export class TaskManager {
       }
     }
   }
+
+
 
   // =============================================================================
   // Task Progress Management
@@ -428,7 +455,7 @@ export class TaskManager {
         existingPage.type = 'visited';
       }
       
-      // Update distance if available
+      // Update distance if available (unlikely)
       if (pageState.distanceToTarget !== undefined) {
         existingPage.distanceToTarget = pageState.distanceToTarget;
       }

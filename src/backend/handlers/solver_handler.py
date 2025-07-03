@@ -25,13 +25,23 @@ class SolverHandler:
         # TODO(hunter): clear the cache when the game is over, need an handle_game_ended()
     
     def get_cached_results(self, game_id: str) -> List[Dict[str, Any]]:
-        """Get all cached solver results for a game."""
+        """Get all cached solver results for a game in frontend-compatible format."""
         game_cache = self.cache.get(game_id, {})
-        return list(game_cache.values())
+        
+        # Convert to frontend format with optimal_paths/optimal_path_length fields
+        results = []
+        for from_page, cache_data in game_cache.items():
+            result = {
+                "optimal_paths": cache_data.get("shortest_paths", []),
+                "optimal_path_length": cache_data.get("shortest_path_length"),
+                "from_page_title": cache_data.get("from_page_title", from_page),  # Use key as fallback
+                "to_page_title": cache_data.get("to_page_title")
+            }
+            results.append(result)
+        
+        return results
     
-    def get_cached_result_for_page(self, game_id: str, from_page: str) -> Optional[Dict[str, Any]]:
-        """Get cached solver result for a specific page in a game."""
-        return self.cache.get(game_id, {}).get(from_page)
+
 
     async def handle_move_completed(self, event: GameEvent):
         """Handle move_completed events by triggering parallel task solver."""

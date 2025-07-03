@@ -108,10 +108,7 @@ class WebSocketHandler:
         
         message = {
             "type": "GAME_ENDED",
-            "game_id": event.game_id,
-            "final_status": game_state_data.status.value,
-            "total_steps": game_state_data.steps,
-            "error_message": getattr(game_state_data, 'error_message', None)
+            "state": game_state_data.model_dump()
         }
         
         await websocket_manager.broadcast_to_game(event.game_id, message)
