@@ -1,10 +1,13 @@
 import asyncio
 import json
 import logging
-from typing import Dict, Set, List, Optional, Any
+from typing import Dict, Set, List, Optional, Any, TYPE_CHECKING
 from fastapi import WebSocket, WebSocketDisconnect
 from datetime import datetime
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from backend.utils.state_collector import StateCollector
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +21,7 @@ class GameWebSocketManager:
         self.connection_games: Dict[WebSocket, str] = {}
         self.lock = asyncio.Lock()
         # StateCollector will be injected
-        self.state_collector = None
+        self.state_collector: Optional[StateCollector] = None
     
     async def connect(self, websocket: WebSocket, game_id: str):
         """Connect a WebSocket to a specific game."""
@@ -43,11 +46,11 @@ class GameWebSocketManager:
         
         # Send enhanced connection confirmation with complete state
         await self._send_to_websocket(websocket, {
-            "type": "connection_established",
-            "game_id": game_id,
-            "timestamp": datetime.now().isoformat(),
-            "message": f"Connected to game {game_id}",
+            "type": "CONNECTION_ESTABLISHED",
             "complete_state": complete_state,
+            # TODO(hunter): nothing uses these and game_id is already in the URL
+            # "game_id": game_id,
+            # "timestamp": datetime.now().isoformat(),
         })
     
     async def disconnect(self, websocket: WebSocket):
@@ -71,11 +74,11 @@ class GameWebSocketManager:
             logger.debug(f"No WebSocket connections for game {game_id}")
             return
         
-        # Add metadata to message
-        message.update({
-            "game_id": game_id,
-            "timestamp": datetime.now().isoformat()
-        })
+        # Add metadata to message # TODO(hunter): nothing uses the game_id or timestamp
+        # message.update({
+        #     "game_id": game_id,
+        #     "timestamp": datetime.now().isoformat()
+        # })
         
         # Get connections (copy to avoid modification during iteration)
         connections = list(self.game_connections[game_id])

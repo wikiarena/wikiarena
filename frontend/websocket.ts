@@ -177,8 +177,7 @@ export class WebSocketClient {
     return (
       event &&
       typeof event === 'object' &&
-      typeof event.type === 'string' &&
-      typeof event.game_id === 'string'
+      typeof event.type === 'string'
       // No data field required - backend sends flat structure
     );
   }

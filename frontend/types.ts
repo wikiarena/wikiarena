@@ -93,8 +93,7 @@ export interface BaseGameEvent {
 }
 
 export interface ConnectionEstablishedEvent extends BaseGameEvent {
-  type: 'connection_established';
-  message: string;
+  type: 'CONNECTION_ESTABLISHED';
   complete_state?: {
     game?: {
       game_id: string;
@@ -121,7 +120,6 @@ export interface ConnectionEstablishedEvent extends BaseGameEvent {
       from_page_title: string;
       to_page_title: string;
     }>;
-    timestamp: string;
   };
 }
 

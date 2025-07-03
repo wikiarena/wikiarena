@@ -28,7 +28,6 @@ class StateCollector:
             Dict containing:
             - game: Core game state (if available)
             - solver: Cached solver results (if available) 
-            - timestamp: When this state was collected
         """
         logger.debug(f"Collecting complete state for game {game_id}")
         
@@ -41,7 +40,6 @@ class StateCollector:
         complete_state = {
             "game": game_state.model_dump() if game_state else None,
             "solver_results": solver_results,
-            "timestamp": datetime.now().isoformat()
         }
         
         logger.debug(f"Complete state collected for game {game_id}: "

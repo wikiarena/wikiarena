@@ -85,7 +85,7 @@ export class TaskManager {
     }
     
     switch (event.type) {
-      case 'connection_established':
+      case 'CONNECTION_ESTABLISHED':
         this.handleConnectionEstablished(gameId, event as ConnectionEstablishedEvent);
         break;
       case 'GAME_STARTED':
