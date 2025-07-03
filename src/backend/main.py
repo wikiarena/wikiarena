@@ -52,26 +52,26 @@ async def lifespan(app: FastAPI):
     
     # Create event handlers with dependencies
     from backend.handlers.websocket_handler import WebSocketHandler
-    from backend.handlers.optimal_path_handler import OptimalPathHandler
+    from backend.handlers.solver_handler import SolverHandler
     from backend.handlers.storage_handler import StorageHandler
     from backend.utils.state_collector import StateCollector
     
     websocket_handler = WebSocketHandler()
-    optimal_path_handler = OptimalPathHandler(event_bus, solver)
+    solver_handler = SolverHandler(event_bus, solver)
     storage_handler = StorageHandler()
     
     # Create state collector and wire it to websocket manager
-    state_collector = StateCollector(game_coordinator, optimal_path_handler)
+    state_collector = StateCollector(game_coordinator, solver_handler)
     websocket_manager.state_collector = state_collector
     
     # Register event handlers
-    event_bus.subscribe("task_selected", optimal_path_handler.handle_task_selected) # start solving task
+    event_bus.subscribe("task_selected", solver_handler.handle_task_selected) # start solving task
     event_bus.subscribe("task_solved", task_coordinator.handle_task_solved) # start games (old handle_initial_paths_ready)
     event_bus.subscribe("task_solved", websocket_handler.handle_task_solved) # send shortest paths to frontend for all games under that task
 
     event_bus.subscribe("move_completed", websocket_handler.handle_move_completed) # broadcast move to all clients
-    event_bus.subscribe("move_completed", optimal_path_handler.handle_move_completed) # solve new subtask
-    event_bus.subscribe("optimal_paths_found", websocket_handler.handle_optimal_paths_found) # broadcast optimal paths to all clients
+    event_bus.subscribe("move_completed", solver_handler.handle_move_completed) # solve new subtask
+    event_bus.subscribe("shortest_paths_found", websocket_handler.handle_shortest_paths_found) # broadcast optimal paths to all clients
     event_bus.subscribe("game_ended", websocket_handler.handle_game_ended) # broadcast game ended to all clients
     event_bus.subscribe("game_ended", storage_handler.handle_game_ended) # store game in database# NOTE: task_solved is similar to initial_paths_ready
 

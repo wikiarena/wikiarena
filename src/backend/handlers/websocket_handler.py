@@ -18,8 +18,8 @@ class WebSocketHandler:
         """Handle task_solved events by broadcasting optimal path update for each game's WebSocket clients."""
         logger.debug(f"Broadcasting task_solved for game {event.game_id}")
         
-        optimal_paths = event.data.get("optimal_paths", [])
-        optimal_path_length = event.data.get("optimal_path_length", -1)
+        optimal_paths = event.data.get("shortest_paths", [])
+        optimal_path_length = event.data.get("shortest_path_length", -1)
         from_page_title = event.data.get("from_page_title")
         to_page_title = event.data.get("to_page_title")
 
@@ -37,15 +37,15 @@ class WebSocketHandler:
             await websocket_manager.broadcast_to_game(game_id, message)
             logger.debug(f"Broadcasted task solver to clients for game {game_id}")
     
-    async def handle_optimal_paths_found(self, event: GameEvent):
+    async def handle_shortest_paths_found(self, event: GameEvent):
         """Handle task solver completion by broadcasting updated optimal paths."""
         logger.debug(f"Broadcasting task solver results for game {event.game_id}")
         
         message = {
             "type": "OPTIMAL_PATHS_UPDATED",
             "game_id": event.game_id,
-            "optimal_paths": event.data.get("optimal_paths", []),
-            "optimal_path_length": event.data.get("optimal_path_length", -1),
+            "optimal_paths": event.data.get("shortest_paths", []),
+            "optimal_path_length": event.data.get("shortest_path_length", -1),
             "from_page_title": event.data.get("from_page_title"),
             "to_page_title": event.data.get("to_page_title"),
         }

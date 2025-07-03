@@ -8,7 +8,7 @@ from wiki_arena.solver import WikiTaskSolver
 
 logger = logging.getLogger(__name__)
 
-class OptimalPathHandler:
+class SolverHandler:
     """
     Handles task solver in response to game events.
     
@@ -46,7 +46,7 @@ class OptimalPathHandler:
             return
         
         # Start task solver in background (non-blocking)
-        asyncio.create_task(self._find_optimal_paths(
+        asyncio.create_task(self._find_shortest_paths(
             event.game_id,
             game_state.current_page.title,
             game_state.config.target_page_title,
@@ -81,8 +81,8 @@ class OptimalPathHandler:
             
             # Cache results for all games in this task
             cache_data = {
-                "optimal_paths": solver_result.paths,
-                "optimal_path_length": solver_result.path_length,
+                "shortest_paths": solver_result.paths,
+                "shortest_path_length": solver_result.path_length,
                 "from_page_title": task.start_page_title,
                 "to_page_title": task.target_page_title,
             }
@@ -100,8 +100,8 @@ class OptimalPathHandler:
                 data={
                     "task_id": task_id,
                     "game_ids": game_ids,
-                    "optimal_paths": solver_result.paths,
-                    "optimal_path_length": solver_result.path_length,
+                    "shortest_paths": solver_result.paths,
+                    "shortest_path_length": solver_result.path_length,
                     "from_page_title": task.start_page_title,
                     "to_page_title": task.target_page_title,
                 }
@@ -130,7 +130,7 @@ class OptimalPathHandler:
                 }
             ))
     
-    async def _find_optimal_paths(
+    async def _find_shortest_paths(
         self, 
         game_id: str, 
         from_page: str, 
@@ -141,7 +141,7 @@ class OptimalPathHandler:
         
         This method runs in the background and doesn't block game execution.
         For initial path calculations, emits 'initial_paths_ready' event.
-        For subsequent moves, emits 'optimal_paths_found' event.
+        For subsequent moves, emits 'shortest_paths_found' event.
         """
         try:
             logger.debug(f"Analyzing path: {from_page} -> {to_page} for game {game_id}")
@@ -160,21 +160,21 @@ class OptimalPathHandler:
             if game_id not in self.cache:
                 self.cache[game_id] = {}
             self.cache[game_id][from_page] = {
-                "optimal_paths": solver_result.paths,
-                "optimal_path_length": solver_result.path_length,
+                "shortest_paths": solver_result.paths,
+                "shortest_path_length": solver_result.path_length,
                 "from_page_title": from_page,
                 "to_page_title": to_page,
             }
             
             await self.event_bus.publish(GameEvent(
-                type="optimal_paths_found",
+                type="shortest_paths_found",
                 game_id=game_id,
                 data={
                     "game_id": game_id,
                     "from_page_title": from_page,
                     "to_page_title": to_page,
-                    "optimal_paths": solver_result.paths,
-                    "optimal_path_length": solver_result.path_length,
+                    "shortest_paths": solver_result.paths,
+                    "shortest_path_length": solver_result.path_length,
                 }
             ))
             logger.info(

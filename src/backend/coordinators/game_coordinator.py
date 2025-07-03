@@ -26,7 +26,7 @@ class GameCoordinator:
     Does NOT handle:
     - Task coordination (handled by TaskCoordinator)
     - WebSocket broadcasting (handled by WebSocketHandler)
-    - Path solving (handled by OptimalPathHandler) 
+    - Path solving (handled by SolverHandler) 
     - Storage (handled by StorageHandler)
     """
     

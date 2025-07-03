@@ -3,7 +3,7 @@ from datetime import datetime
 import logging
 
 from backend.coordinators.game_coordinator import GameCoordinator
-from backend.handlers.optimal_path_handler import OptimalPathHandler
+from backend.handlers.solver_handler import SolverHandler
 
 logger = logging.getLogger(__name__)
 
@@ -13,12 +13,12 @@ class StateCollector:
     
     This utility gathers all available information about a game:
     - Core game state from GameCoordinator
-    - Cached solver results from OptimalPathHandler
+    - Cached solver results from SolverHandler
     """
     
-    def __init__(self, game_coordinator: GameCoordinator, optimal_path_handler: OptimalPathHandler):
+    def __init__(self, game_coordinator: GameCoordinator, solver_handler: SolverHandler):
         self.game_coordinator = game_coordinator
-        self.optimal_path_handler = optimal_path_handler
+        self.solver_handler = solver_handler
     
     async def get_complete_state(self, game_id: str) -> Dict[str, Any]:
         """
@@ -35,7 +35,7 @@ class StateCollector:
         game_state = await self.game_coordinator.get_game_state(game_id)
         
         # Get all cached solver results for this game
-        solver_results = self.optimal_path_handler.get_cached_results(game_id)
+        solver_results = self.solver_handler.get_cached_results(game_id)
         
         complete_state = {
             "game": game_state.model_dump() if game_state else None,
