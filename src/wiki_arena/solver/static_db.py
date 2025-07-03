@@ -22,41 +22,6 @@ from wiki_arena.utils.wiki_helpers import (
 
 logger = logging.getLogger(__name__)
 
-@dataclass
-class CacheStats:
-    """Track cache hit/miss statistics for measurement."""
-    hits: int = 0
-    misses: int = 0
-    total_requests: int = 0
-    start_time: float = field(default_factory=time.time)
-    
-    @property
-    def hit_rate(self) -> float:
-        """Calculate hit rate as percentage."""
-        if self.total_requests == 0:
-            return 0.0
-        return (self.hits / self.total_requests) * 100
-    
-    @property
-    def runtime_minutes(self) -> float:
-        """Calculate runtime in minutes."""
-        return (time.time() - self.start_time) / 60
-    
-    def reset(self):
-        """Reset all statistics and restart timing."""
-        self.hits = 0
-        self.misses = 0
-        self.total_requests = 0
-        self.start_time = time.time()
-    
-    def log_stats(self, operation_name: str):
-        """Log current statistics."""
-        logger.info(
-            f"Cooperative cache stats for {operation_name}: "
-            f"{self.hits}/{self.total_requests} hits ({self.hit_rate:.1f}%) "
-            f"over {self.runtime_minutes:.1f} minutes"
-        )
-
 class StaticSolverDB:
     """
     The sole gateway to the hyper-optimized wiki_graph.sqlite database.
@@ -355,18 +320,5 @@ class StaticSolverDB:
             
         return total_count
     
-    def get_cache_stats(self) -> CacheStats:
-        """Return empty cache stats since cooperative cache was removed."""
-        return CacheStats()  # Always returns empty stats
-    
-    def reset_cache_stats(self):
-        """No-op since cooperative cache was removed."""
-        pass
-    
-    def log_cache_stats(self):
-        """No-op since cooperative cache was removed."""
-        pass
-
-
 # Global instance for the static solver database
 static_solver_db = StaticSolverDB() 
