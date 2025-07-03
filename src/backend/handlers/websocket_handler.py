@@ -116,3 +116,26 @@ class WebSocketHandler:
         
         await websocket_manager.broadcast_to_game(event.game_id, message)
         logger.info(f"Broadcasted game_ended to clients for game {event.game_id}")
+
+    async def handle_task_ended(self, event: GameEvent):
+        """Handle task_ended events by broadcasting task completion to all WebSocket clients."""
+        logger.debug(f"Broadcasting task_ended for task {event.game_id}")
+        
+        task_id = event.data.get("task_id")
+        start_page = event.data.get("start_page")
+        target_page = event.data.get("target_page")
+        
+        message = {
+            "type": "TASK_ENDED",
+            "task_id": task_id,
+            "start_page": start_page,
+            "target_page": target_page,
+        }
+        
+        # Broadcast to all games in the system since we don't have game IDs anymore
+        # Note: This could be optimized to only broadcast to games that were part of this task
+        active_games = websocket_manager.get_all_games()
+        for game_id in active_games:
+            await websocket_manager.broadcast_to_game(game_id, message)
+        
+        logger.info(f"Broadcasted task_ended to {len(active_games)} game channels for task {task_id}")

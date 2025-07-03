@@ -185,6 +185,52 @@ class TaskCoordinator:
         for task_id in completed_tasks:
             del self.active_tasks[task_id]
     
+    async def handle_game_ended(self, event: GameEvent):
+        """Handle game_ended events to track task completion and emit task_ended when all games finish."""
+        game_id = event.game_id
+        task_id = self.game_to_task.get(game_id)
+        
+        if not task_id:
+            logger.warning(f"No task found for ended game {game_id}")
+            return
+        
+        task_data = self.active_tasks.get(task_id)
+        if not task_data:
+            logger.warning(f"Task data not found for task {task_id} (game {game_id} ended)")
+            return
+        
+        logger.info(f"Game {game_id} ended for task {task_id}")
+        
+        # Remove this game from the task's game list and mapping
+        if game_id in task_data.game_ids:
+            task_data.game_ids.remove(game_id)
+        self.game_to_task.pop(game_id, None)
+        
+        # Check if all games in this task have ended
+        remaining_games = [gid for gid in task_data.game_ids if gid in self.game_coordinator.active_games]
+        
+        if not remaining_games:
+            # All games completed - emit task_ended event
+            logger.info(f"All games completed for task {task_id} - emitting task_ended event")
+            
+            await self.event_bus.publish(GameEvent(
+                type="task_ended",
+                game_id=task_id,  # Use task_id as game_id for task-level events
+                data={
+                    "task_id": task_id,
+                    "start_page": task_data.task.start_page_title,
+                    "target_page": task_data.task.target_page_title,
+                }
+            ))
+            
+            # Remove the completed task
+            del self.active_tasks[task_id]
+            logger.info(f"Task {task_id} cleanup completed")
+        else:
+            # Update the remaining games list
+            task_data.game_ids = remaining_games
+            logger.info(f"Task {task_id} still has {len(remaining_games)} games running")
+    
     async def shutdown(self):
         """Gracefully shutdown TaskCoordinator."""
         logger.info("Shutting down TaskCoordinator...")
