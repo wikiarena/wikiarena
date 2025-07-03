@@ -4,6 +4,7 @@ from datetime import datetime
 
 from anthropic import Anthropic, AnthropicError
 from .language_model import LanguageModel, ToolCall
+from .navigate_tool import NAVIGATE_TOOL
 from wiki_arena.models import GameState, MoveMetrics, ModelConfig
 from mcp.types import Tool
 
@@ -28,19 +29,12 @@ class AnthropicModel(LanguageModel):
     
     async def _format_tools_for_provider(
         self,
-        tools: List[Tool],
+        tools: Optional[List[Tool]] = None,  # Parameter kept for compatibility but not used
     ) -> List[Dict[str, Any]]:
         """
-        Translate the tools to the language model's format.
+        Return the hardcoded navigate tool in Anthropic format.
         """
-        formatted_tools = []
-        for mcp_tool in tools:
-            formatted_tools.append({
-                "name": mcp_tool.name,
-                "description": mcp_tool.description or f"Tool named {mcp_tool.name} without a description.", # Ensure description is present
-                "input_schema": mcp_tool.inputSchema
-            })
-        return formatted_tools
+        return [NAVIGATE_TOOL.to_anthropic_format()]
 
     async def generate_response(
         self,
@@ -52,7 +46,7 @@ class AnthropicModel(LanguageModel):
         start_time = datetime.now()
 
         # TODO(hunter): should I cache the tools? lets not for now since they come every time
-        formatted_tools = await self._format_tools_for_provider(tools)
+        formatted_tools = await self._format_tools_for_provider()
         system_prompt = game_state.config.system_prompt_template.format(
             start_page_title=game_state.config.start_page_title,
             target_page_title=game_state.config.target_page_title,

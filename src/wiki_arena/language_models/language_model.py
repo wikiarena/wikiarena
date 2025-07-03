@@ -46,18 +46,19 @@ class LanguageModel(ABC):
     @abstractmethod
     async def _format_tools_for_provider(
         self,
-        tools: List[Tool],
+        tools: Optional[List[Tool]] = None,
     ) -> Any: # not sure on type here
         """
-        Translate the tools to the language model's format.
+        Return the hardcoded navigate tool in the provider's format.
+        The tools parameter is kept for compatibility but not used.
         """
         pass
 
     @abstractmethod
     async def generate_response(
         self,
-        tools: List[Tool],
-        game_state: GameState,
+        tools: Optional[List[Tool]] = None,
+        game_state: Optional[GameState] = None,
     ) -> ToolCall:
         """
         Given the current game state, lets the language model choose a tool call.

@@ -7,14 +7,13 @@ from datetime import datetime
 from mcp.types import Tool # Assuming Tool is available at this path
 from wiki_arena.models import GameState, MoveMetrics, ModelConfig
 from .language_model import LanguageModel, ToolCall
+from .navigate_tool import NAVIGATE_TOOL
 
 
 class RandomModel(LanguageModel):
     """
-    A language model that randomly selects a link from the current page
-    if the 'navigate' tool is available.
+    A language model that randomly selects a link from the current page.
     """
-    TARGET_TOOL_NAME = "navigate"
 
     def __init__(self, model_config: ModelConfig):
         super().__init__(model_config)
@@ -22,7 +21,7 @@ class RandomModel(LanguageModel):
 
     async def generate_response(
         self,
-        tools: List[Tool],
+        tools: List[Tool],  # Parameter kept for compatibility but not used
         game_state: GameState,
     ) -> ToolCall:
         """
@@ -42,21 +41,6 @@ class RandomModel(LanguageModel):
             response_time_ms=end_time - start_time,
             request_timestamp=datetime.now()
         )
-        
-        target_tool_present = any(tool.name == self.TARGET_TOOL_NAME for tool in tools)
-
-        if not target_tool_present:
-            # This case should ideally not happen if the game is designed
-            # for this tool, or we need a fallback (e.g., error or no-op).
-            # For now, let's assume the game expects this tool.
-            # Consider raising an error or returning a specific ToolCall
-            # indicating no valid action could be taken.
-            return ToolCall(
-                model_text_response=f"Tool '{self.TARGET_TOOL_NAME}' not available.",
-                tool_name=None,
-                tool_arguments=None,
-                metrics=metrics
-            )
 
         if not game_state.current_page.links:
             return ToolCall(
@@ -68,17 +52,16 @@ class RandomModel(LanguageModel):
 
         selected_link = random.choice(game_state.current_page.links)
         
-        # The tool expects 'page_title' as an argument based on typical usage,
-        # ensure this matches the actual tool definition provided by MCP server.
+        # Use the correct parameter name from the hardcoded tool definition
         return ToolCall(
             model_text_response=f"Randomly selected link: {selected_link}",
-            tool_name=self.TARGET_TOOL_NAME,
-            tool_arguments={"page_title": selected_link},
+            tool_name=NAVIGATE_TOOL.name,
+            tool_arguments={"page": selected_link},  # Using "page" as defined in NAVIGATE_TOOL
             metrics=metrics
         )
 
-    async def _format_tools_for_provider(self, tools: List[Tool]) -> Any:
+    async def _format_tools_for_provider(self, tools: Optional[List[Tool]] = None) -> Any:
         """
         RandomModel does not need to format tools for a specific provider.
         """
-        return tools 
+        return [NAVIGATE_TOOL.to_mcp_tool_format()] 
