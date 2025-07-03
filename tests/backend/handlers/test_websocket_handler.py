@@ -126,8 +126,8 @@ class TestWebSocketHandler:
         messages = test_ws.get_messages()
         assert len(messages) == 1
         data = json.loads(messages[0])
-        assert data["type"] == "connection_established"
-        assert data["game_id"] == game_id
+        assert data["type"] == "CONNECTION_ESTABLISHED"
+        # Note: game_id is not included in CONNECTION_ESTABLISHED message (it's in the URL)
         
         # Disconnect
         await websocket_manager.disconnect(test_ws)
@@ -202,76 +202,28 @@ class TestWebSocketHandler:
         assert move_data["to_page_title"] == "Programming language"
     
     @pytest.mark.asyncio
-    async def test_websocket_handler_game_started_broadcast(
-        self,
-        websocket_handler,
-        connected_websocket,
-        sample_game_config
-    ):
-        """Test WebSocketHandler broadcasting game_started events."""
-        test_ws, game_id = connected_websocket
-        
-        # Create initial game state
-        initial_page = Page(
-            title="Python (programming language)",
-            url="https://en.wikipedia.org/wiki/Python_(programming_language)",
-            text="Python is a programming language...",
-            links=["JavaScript", "Programming", "Computer science"]
-        )
-        
-        initial_state = GameState(
-            game_id=game_id,
-            config=sample_game_config,
-            current_page=initial_page,
-            status=GameStatus.IN_PROGRESS,
-            steps=0
-        )
-        
-        # Create game_started event
-        start_event = GameEvent(
-            type="game_started",
-            game_id=game_id,
-            data={"game_state": initial_state}
-        )
-        
-        # Process through real handler
-        await websocket_handler.handle_game_started(start_event)
-        
-        # Should receive GAME_STARTED message
-        messages = test_ws.get_messages()
-        assert len(messages) == 1
-        
-        data = json.loads(messages[0])
-        assert data["type"] == "GAME_STARTED"
-        assert data["game_id"] == game_id
-        assert data["start_page"] == "Python (programming language)"
-        assert data["target_page"] == "JavaScript"
-        assert data["status"] == "in_progress"
-        assert data["steps"] == 0
-    
-    @pytest.mark.asyncio
-    async def test_websocket_handler_optimal_paths_broadcast(
+    async def test_websocket_handler_shortest_paths_broadcast(
         self,
         websocket_handler,
         connected_websocket
     ):
-        """Test WebSocketHandler broadcasting optimal_paths_found events."""
+        """Test WebSocketHandler broadcasting shortest_paths_found events."""
         test_ws, game_id = connected_websocket
         
-        # Create optimal_paths_found event
+        # Create shortest_paths_found event
         paths_event = GameEvent(
-            type="optimal_paths_found",
+            type="shortest_paths_found",
             game_id=game_id,
             data={
-                "optimal_paths": [["Python (programming language)", "Programming language", "JavaScript"]],
-                "optimal_path_length": 3,
+                "shortest_paths": [["Python (programming language)", "Programming language", "JavaScript"]],
+                "shortest_path_length": 3,
             }
         )
         
         # Process through real handler
-        await websocket_handler.handle_optimal_paths_found(paths_event)
+        await websocket_handler.handle_shortest_paths_found(paths_event)
         
-        # Should receive OPTIMAL_PATHS_UPDATED message
+        # Should receive SHORTEST_PATHS_UPDATED message
         messages = test_ws.get_messages()
         assert len(messages) == 1
         
@@ -350,16 +302,16 @@ class TestWebSocketHandler:
         
         # Create event for game_1 only
         paths_event = GameEvent(
-            type="optimal_paths_found",
+            type="shortest_paths_found",
             game_id=game_1,  # Only game_1
             data={
-                "optimal_paths": [["A", "B", "C"]],
-                "optimal_path_length": 3
+                "shortest_paths": [["A", "B", "C"]],
+                "shortest_path_length": 3
             }
         )
         
         # Process event
-        await websocket_handler.handle_optimal_paths_found(paths_event)
+        await websocket_handler.handle_shortest_paths_found(paths_event)
         
         # Only ws1 should receive message
         assert len(ws1.get_messages()) == 1
@@ -396,16 +348,16 @@ class TestWebSocketHandler:
         
         # Create event
         paths_event = GameEvent(
-            type="optimal_paths_found",
+            type="shortest_paths_found",
             game_id=game_id,
             data={
-                "optimal_paths": [["Multi", "Broadcast", "Test"]],
-                "optimal_path_length": 3
+                "shortest_paths": [["Multi", "Broadcast", "Test"]],
+                "shortest_path_length": 3
             }
         )
         
         # Process event
-        await websocket_handler.handle_optimal_paths_found(paths_event)
+        await websocket_handler.handle_shortest_paths_found(paths_event)
         
         # Both WebSockets should receive message
         assert len(ws1.get_messages()) == 1
@@ -454,8 +406,8 @@ class TestWebSocketHandler:
         # Should be valid JSON
         data = json.loads(messages[0])
         
-        # Should contain timestamp (added by manager)
-        assert "timestamp" in data
+        # Should contain move timestamp (even if None)
+        assert "timestamp" in data["move"]
         assert data["game_id"] == game_id
         
         # Should preserve all original data structure

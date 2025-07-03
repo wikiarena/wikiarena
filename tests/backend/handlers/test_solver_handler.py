@@ -1,5 +1,5 @@
 """
-Level 2: OptimalPathHandler Tests (pytest version)
+Level 2: SolverHandler Tests (pytest version)
 Testing the task solver handler with real EventBus and wiki_arena solver.
 """
 
@@ -10,20 +10,20 @@ from typing import List
 
 from wiki_arena import EventBus, GameEvent
 from wiki_arena.models import GameState, GameConfig, ModelConfig, Page, Move, GameStatus
-from backend.handlers import OptimalPathHandler
+from backend.handlers import SolverHandler
 
 logger = logging.getLogger(__name__)
 
 @pytest.mark.integration
 @pytest.mark.requires_db
-class TestOptimalPathHandler:
-    """Integration tests for OptimalPathHandler with real solver."""
+class TestSolverHandler:
+    """Integration tests for SolverHandler with real solver."""
     
     @pytest.mark.asyncio
     async def test_path_analysis_on_move(
         self, 
         event_bus: EventBus, 
-        optimal_path_handler: OptimalPathHandler,
+        solver_handler: SolverHandler,
         move_completed_event: GameEvent
     ):
         """Test task solver triggered by move_completed event."""
@@ -31,11 +31,11 @@ class TestOptimalPathHandler:
         
         async def track_analysis(event: GameEvent):
             analysis_results.append(event.data)
-            logger.info(f"task solver completed: {event.data.get('optimal_path_length')} steps")
+            logger.info(f"task solver completed: {event.data.get('shortest_path_length')} steps")
         
         # Subscribe to events
-        event_bus.subscribe("optimal_paths_found", track_analysis)
-        event_bus.subscribe("move_completed", optimal_path_handler.handle_move_completed)
+        event_bus.subscribe("shortest_paths_found", track_analysis)
+        event_bus.subscribe("move_completed", solver_handler.handle_move_completed)
         
         # Publish move completed event
         await event_bus.publish(move_completed_event)
@@ -47,50 +47,66 @@ class TestOptimalPathHandler:
         assert len(analysis_results) > 0, "No task solver results received"
         
         result = analysis_results[0]
-        assert "optimal_path_length" in result
+        assert "shortest_path_length" in result
         assert "from_page_title" in result
         assert "to_page_title" in result
         assert result["from_page_title"] == "Programming language"  # Current page after move
         assert result["to_page_title"] == "JavaScript"              # Target page
-        assert isinstance(result["optimal_path_length"], int)
-        assert result["optimal_path_length"] >= 0
+        assert isinstance(result["shortest_path_length"], int)
+        assert result["shortest_path_length"] >= 0
     
     @pytest.mark.asyncio
-    async def test_initial_path_analysis(
+    async def test_task_selected_analysis(
         self,
         event_bus: EventBus,
-        optimal_path_handler: OptimalPathHandler,
-        game_started_event: GameEvent
+        solver_handler: SolverHandler
     ):
-        """Test initial task solver on game start."""
+        """Test task solver triggered by task_selected event."""
         analysis_results = []
         
         async def track_analysis(event: GameEvent):
             analysis_results.append(event.data)
-            logger.info(f"Initial analysis: {event.data.get('optimal_path_length')} steps")
+            logger.info(f"Task solved: {event.data.get('shortest_path_length')} steps")
         
-        event_bus.subscribe("game_started", optimal_path_handler.handle_game_started)
-        event_bus.subscribe("initial_paths_ready", track_analysis)
+        event_bus.subscribe("task_solved", track_analysis)
+        event_bus.subscribe("task_selected", solver_handler.handle_task_selected)
         
-        await event_bus.publish(game_started_event)
+        # Create a mock task for testing
+        from wiki_arena.models import Task
+        test_task = Task(
+            start_page_title="Python (programming language)",
+            target_page_title="JavaScript"
+        )
+        
+        task_event = GameEvent(
+            type="task_selected",
+            game_id="test_task_123",  # This is actually task_id for task events
+            data={
+                "task": test_task,
+                "task_id": "test_task_123",
+                "game_ids": ["game1", "game2"]
+            }
+        )
+        
+        await event_bus.publish(task_event)
         
         # Wait for analysis
         await asyncio.sleep(1.0)
         
-        # Should have initial task solver
-        assert len(analysis_results) > 0, "No initial task solver results received"
+        # Should have task solution
+        assert len(analysis_results) > 0, "No task solution results received"
         
         result = analysis_results[0]
-        assert result["is_initial"] == True
-        assert result["step"] == 0
+        assert result["task_id"] == "test_task_123"
         assert result["from_page_title"] == "Python (programming language)"
         assert result["to_page_title"] == "JavaScript"
+        assert "shortest_path_length" in result
     
     @pytest.mark.asyncio
     async def test_path_analysis_error_handling(
         self,
         event_bus: EventBus,
-        optimal_path_handler: OptimalPathHandler
+        solver_handler: SolverHandler
     ):
         """Test error handling in task solver."""
         error_events = []
@@ -104,8 +120,8 @@ class TestOptimalPathHandler:
             success_events.append(event.data)
         
         event_bus.subscribe("path_analysis_failed", track_errors)
-        event_bus.subscribe("optimal_paths_found", track_success)
-        event_bus.subscribe("move_completed", optimal_path_handler.handle_move_completed)
+        event_bus.subscribe("shortest_paths_found", track_success)
+        event_bus.subscribe("move_completed", solver_handler.handle_move_completed)
         
         # Create move event with invalid/non-existent pages
         test_config = GameConfig(
@@ -166,7 +182,7 @@ class TestOptimalPathHandler:
     async def test_concurrent_path_analysis(
         self,
         event_bus: EventBus,
-        optimal_path_handler: OptimalPathHandler
+        solver_handler: SolverHandler
     ):
         """Test multiple concurrent path analyses."""
         analysis_results = []
@@ -175,8 +191,8 @@ class TestOptimalPathHandler:
             analysis_results.append(event.data)
             logger.info(f"Analysis completed for game {event.game_id}")
         
-        event_bus.subscribe("optimal_paths_found", track_analysis)
-        event_bus.subscribe("move_completed", optimal_path_handler.handle_move_completed)
+        event_bus.subscribe("shortest_paths_found", track_analysis)
+        event_bus.subscribe("move_completed", solver_handler.handle_move_completed)
         
         # Create multiple move events for different games
         test_games = [

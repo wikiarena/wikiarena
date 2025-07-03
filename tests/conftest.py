@@ -10,7 +10,7 @@ from typing import AsyncGenerator
 from wiki_arena import EventBus, GameEvent
 from wiki_arena.solver import WikiTaskSolver,wiki_task_solver
 from wiki_arena.models import GameState, GameConfig, ModelConfig, Page, Move, GameStatus
-from backend.handlers.optimal_path_handler import OptimalPathHandler
+from backend.handlers.solver_handler import SolverHandler
 
 # Configure logging for tests
 logging.basicConfig(level=logging.INFO)
@@ -21,9 +21,9 @@ def event_bus() -> EventBus:
     return EventBus()
 
 @pytest.fixture
-def optimal_path_handler(event_bus: EventBus, solver: WikiTaskSolver = wiki_task_solver) -> OptimalPathHandler:
-    """Create OptimalPathHandler with initialized solver."""
-    return OptimalPathHandler(event_bus, solver)
+def solver_handler(event_bus: EventBus, solver: WikiTaskSolver = wiki_task_solver) -> SolverHandler:
+    """Create SolverHandler with initialized solver."""
+    return SolverHandler(event_bus, solver)
 
 @pytest.fixture
 def sample_game_config() -> GameConfig:
