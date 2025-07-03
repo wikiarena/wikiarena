@@ -5,6 +5,7 @@ import { UIController } from './ui-controller.js';
 import { PageGraphRenderer } from './page-graph-renderer.js';
 import { playerColorService } from './player-color-service.js';
 import { LoadingAnimation } from './loading-animation.js';
+import { WikipediaRandomService } from './wikipedia-random.js';
 
 // =============================================================================
 // Main Application Class - Orchestrates all components
@@ -16,6 +17,7 @@ class WikiArenaApp {
   private uiController: UIController;
   private pageGraphRenderer: PageGraphRenderer;
   private loadingAnimation: LoadingAnimation;
+  private wikipediaRandomService: WikipediaRandomService;
   private unsubscribeFunctions: (() => void)[] = [];
   private hasReceivedFirstData: boolean = false;
 
@@ -33,6 +35,7 @@ class WikiArenaApp {
     this.uiController = new UIController();
     this.pageGraphRenderer = new PageGraphRenderer('graph-canvas');
     this.loadingAnimation = new LoadingAnimation('loading-container');
+    this.wikipediaRandomService = new WikipediaRandomService();
     
     this.setupEventFlow();
     this.setupUIHandlers();
@@ -180,127 +183,15 @@ class WikiArenaApp {
   // =============================================================================
   
   public async handleStartGame(): Promise<void> {
-    console.log('🎲 User requested new task with multiple games');
-
-    // Reset state for new game
-    this.hasReceivedFirstData = false;
-
-    // Show loading state
-    this.uiController.showGameStarting();
-    this.uiController.setButtonLoading('start-game-btn', true, 'Starting...');
-    
-    // Show loading animation
-    this.loadingAnimation.show();
-    this.loadingAnimation.start();
-    console.log('🎬 Loading animation started');
-
-    try {
-      // Make API call to create task with multiple games
-      const response = await this.createRandomTask();
-      
-      if (response.ok) {
-        const data = await response.json();
-        console.log('✅ Task created:', data);
-        
-        // Extract task info from response
-        const { task_id, start_page, target_page, game_ids } = data;
-        
-        if (!task_id || !game_ids || game_ids.length === 0) {
-          throw new Error('Invalid task response: missing task_id or game_ids');
-        }
-        
-        console.log(`🎯 Created task ${task_id} with ${game_ids.length} games: ${start_page} → ${target_page}`);
-        
-        // Reset task manager for new task
-        this.resetTaskManager();
-        
-        // Create task with multiple games
-        const gameConfigs = game_ids.map((gameId: string) => ({
-          gameId: gameId,
-          startPage: start_page,
-          targetPage: target_page
-        }));
-        
-        this.taskManager.createTask(gameConfigs);
-        
-        // Connect to all games in the task using connection manager
-        await this.connectionManager.connectToTask(game_ids);
-        
-        console.log(`🔌 Connected to task ${task_id} with ${game_ids.length} games`);
-      } else {
-        const errorText = await response.text();
-        throw new Error(`Failed to create task: ${response.status} - ${errorText}`);
-      }
-    } catch (error) {
-      console.error('❌ Failed to start task:', error);
-      this.loadingAnimation.hide();
-      this.uiController.showError(`Failed to start new task: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      this.uiController.updateLoadingState('Click "Start New Game" to try again');
-    } finally {
-      this.uiController.setButtonLoading('start-game-btn', false);
-    }
+    console.log('🎲 User requested new random task');
+    // Use unified task creation with null pages (will select random pages)
+    await this.createUnifiedTask(null, null);
   }
 
   public async handleStartCustomGame(startPage: string | null, targetPage: string | null): Promise<void> {
     console.log(`🎲 User requested custom task: ${startPage || '(empty)'} -> ${targetPage || '(empty)'}`);
-
-    // Reset state for new game
-    this.hasReceivedFirstData = false;
-
-    // Show loading state
-    this.uiController.showGameStarting();
-    this.uiController.setButtonLoading('start-game-btn', true, 'Starting...');
-    
-    // Show loading animation
-    this.loadingAnimation.show();
-    this.loadingAnimation.start();
-    console.log('🎬 Loading animation started');
-
-    try {
-      // Make API call to create custom task with multiple games
-      const response = await this.createCustomTask(startPage, targetPage);
-      
-      if (response.ok) {
-        const data = await response.json();
-        console.log('✅ Custom task created:', data);
-        
-        // Extract task info from response
-        const { task_id, start_page, target_page, game_ids } = data;
-        
-        if (!task_id || !game_ids || game_ids.length === 0) {
-          throw new Error('Invalid task response: missing task_id or game_ids');
-        }
-        
-        console.log(`🎯 Created custom task ${task_id} with ${game_ids.length} games: ${start_page} → ${target_page}`);
-        
-        // Reset task manager for new task
-        this.resetTaskManager();
-        
-        // Create task with multiple games
-        const gameConfigs = game_ids.map((gameId: string) => ({
-          gameId: gameId,
-          startPage: start_page,
-          targetPage: target_page
-        }));
-        
-        this.taskManager.createTask(gameConfigs);
-        
-        // Connect to all games in the task using connection manager
-        await this.connectionManager.connectToTask(game_ids);
-        
-        console.log(`🔌 Connected to custom task ${task_id} with ${game_ids.length} games`);
-      } else {
-        const errorText = await response.text();
-        throw new Error(`Failed to create custom task: ${response.status} - ${errorText}`);
-      }
-    } catch (error) {
-      console.error('❌ Failed to start custom task:', error);
-      this.loadingAnimation.hide();
-      this.uiController.showError(`Failed to start custom task: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      this.uiController.updateLoadingState('Click "Start New Game" to try again');
-    } finally {
-      this.uiController.setButtonLoading('start-game-btn', false);
-    }
+    // Use unified task creation with provided pages (will use hint text or random if empty)
+    await this.createUnifiedTask(startPage, targetPage);
   }
 
   // =============================================================================
@@ -372,41 +263,7 @@ class WikiArenaApp {
     });
   }
 
-  private async createRandomTask(): Promise<Response> {
-    const apiUrl = 'http://localhost:8000/api/tasks';
-    
-    // Create a task request with random task selection strategy and multiple games
-    const taskRequest = {
-      task_strategy: {
-        type: 'random',
-        language: 'en',
-        max_retries: 3
-      },
-      model_selections: [
-        {
-          model_provider: 'random',
-          model_name: 'random'
-        },
-        {
-          model_provider: 'random',
-          model_name: 'random'
-        },
-        // {
-        //   model_provider: 'random',
-        //   model_name: 'random'
-        // },
-      ],
-      max_steps: 20
-    };
-    
-    return fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(taskRequest)
-    });
-  }
+
 
   // =============================================================================
   // Lifecycle Management
@@ -417,6 +274,10 @@ class WikiArenaApp {
     
     // Cleanup loading animation
     this.loadingAnimation.destroy();
+    
+    // Cleanup Wikipedia random service
+    this.wikipediaRandomService.stopCycling();
+    this.wikipediaRandomService.stopSlotMachine();
     
     // Unsubscribe from all events
     this.unsubscribeFunctions.forEach(unsubscribe => unsubscribe());
@@ -453,6 +314,155 @@ class WikiArenaApp {
     this.uiController.debugElements();
     
     console.log('Page Graph Renderer:', this.pageGraphRenderer);
+  }
+
+  // =============================================================================
+  // Task Creation Helpers
+  // =============================================================================
+
+  /**
+   * Get current hint text from an input element (from its placeholder)
+   */
+  private getCurrentHintText(elementId: string): string | null {
+    const element = document.getElementById(elementId) as HTMLInputElement;
+    if (!element) return null;
+    
+    const placeholder = element.placeholder;
+    // Return placeholder if it's not the default search text
+    if (placeholder && 
+        placeholder !== 'Search Wikipedia...' && 
+        placeholder !== 'Search start page...' && 
+        placeholder !== 'Search target page...' &&
+        placeholder.length > 0) {
+      return placeholder;
+    }
+    
+    return null;
+  }
+
+  /**
+   * Resolve page selection: use provided page, or hint text, or get random page
+   */
+  private async resolvePageSelection(
+    providedPage: string | null, 
+    inputElementId: string, 
+    pageType: 'start' | 'target',
+    excludePage?: string
+  ): Promise<string> {
+    // If user provided a page, use it
+    if (providedPage && providedPage.trim()) {
+      return providedPage.trim();
+    }
+
+    // Try to use current hint text
+    const hintText = this.getCurrentHintText(inputElementId);
+    if (hintText) {
+      // Set the hint text as the actual input value for user feedback
+      const element = document.getElementById(inputElementId) as HTMLInputElement;
+      if (element) {
+        element.value = hintText;
+      }
+      return hintText;
+    }
+
+    // Fall back to random page selection with validation
+    if (pageType === 'start') {
+      return await this.wikipediaRandomService.getRandomStartPage();
+    } else {
+      return await this.wikipediaRandomService.getRandomTargetPage(excludePage);
+    }
+  }
+
+  /**
+   * Unified task creation method used by both quickstart and custom race
+   */
+  public async createUnifiedTask(
+    requestedStartPage: string | null, 
+    requestedTargetPage: string | null,
+    startPageInputId: string = 'start-page-input',
+    targetPageInputId: string = 'target-page-input'
+  ): Promise<void> {
+    console.log('🎲 Creating unified task:', { requestedStartPage, requestedTargetPage });
+
+    // Reset state for new game
+    this.hasReceivedFirstData = false;
+
+    // Show loading state
+    this.uiController.showGameStarting();
+    this.uiController.setButtonLoading('start-game-btn', true, 'Starting...');
+    
+    // Show loading animation
+    this.loadingAnimation.show();
+    this.loadingAnimation.start();
+    console.log('🎬 Loading animation started');
+
+    try {
+      // Resolve both pages (with validation and fallbacks)
+      console.log('🔍 Resolving page selections...');
+      const startPage = await this.resolvePageSelection(
+        requestedStartPage, 
+        startPageInputId, 
+        'start'
+      );
+      
+      const targetPage = await this.resolvePageSelection(
+        requestedTargetPage, 
+        targetPageInputId, 
+        'target',
+        startPage  // Exclude start page from target selection
+      );
+
+      // Ensure pages are different
+      if (startPage === targetPage) {
+        throw new Error('Start and target pages cannot be the same. Please try again.');
+      }
+
+      console.log(`✅ Resolved pages: ${startPage} → ${targetPage}`);
+
+      // Make API call to create custom task with the resolved pages
+      const response = await this.createCustomTask(startPage, targetPage);
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('✅ Task created:', data);
+        
+        // Extract task info from response
+        const { task_id, start_page, target_page, game_ids } = data;
+        
+        if (!task_id || !game_ids || game_ids.length === 0) {
+          throw new Error('Invalid task response: missing task_id or game_ids');
+        }
+        
+        console.log(`🎯 Created task ${task_id} with ${game_ids.length} games: ${start_page} → ${target_page}`);
+        
+        // Reset task manager for new task
+        this.resetTaskManager();
+        
+        // Create task with multiple games
+        const gameConfigs = game_ids.map((gameId: string) => ({
+          gameId: gameId,
+          startPage: start_page,
+          targetPage: target_page
+        }));
+        
+        this.taskManager.createTask(gameConfigs);
+        
+        // Connect to all games in the task using connection manager
+        await this.connectionManager.connectToTask(game_ids);
+        
+        console.log(`🔌 Connected to task ${task_id} with ${game_ids.length} games`);
+      } else {
+        const errorText = await response.text();
+        throw new Error(`Failed to create task: ${response.status} - ${errorText}`);
+      }
+    } catch (error) {
+      console.error('❌ Failed to create task:', error);
+      this.loadingAnimation.hide();
+      this.uiController.showError(`Failed to create task: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      this.uiController.updateLoadingState('Click "Start New Game" to try again');
+    } finally {
+      this.uiController.setButtonLoading('start-game-btn', false);
+    }
   }
 }
 
@@ -540,14 +550,13 @@ window.addEventListener('beforeunload', destroyApp);
 export { WikiArenaApp };
 
 import { WikipediaAutocomplete } from './wikipedia-autocomplete.js';
-import { ModelSelector, type ModelOption } from './model-selector.js';
+import { ModelSelector } from './model-selector.js';
 
 // Basic UI functionality for the new design
 class UIManager {
-    private sidebar: HTMLElement;
-    private landingModal: HTMLElement;
-    private raceView: HTMLElement;
-    private startRaceBtn: HTMLButtonElement;
+      private sidebar: HTMLElement;
+  private landingModal: HTMLElement;
+  private startRaceBtn: HTMLButtonElement;
     private player1Input: HTMLInputElement;
     private player2Input: HTMLInputElement;
     private player1Selector: ModelSelector | null = null;
@@ -563,10 +572,9 @@ class UIManager {
     private app: WikiArenaApp | null = null;
 
     constructor() {
-        this.sidebar = document.getElementById('sidebar')!;
-        this.landingModal = document.getElementById('landing-modal')!;
-        this.raceView = document.getElementById('race-view')!;
-        this.startRaceBtn = document.getElementById('start-race-btn') as HTMLButtonElement;
+            this.sidebar = document.getElementById('sidebar')!;
+    this.landingModal = document.getElementById('landing-modal')!;
+    this.startRaceBtn = document.getElementById('start-race-btn') as HTMLButtonElement;
         this.player1Input = document.getElementById('player1-model') as HTMLInputElement;
         this.player2Input = document.getElementById('player2-model') as HTMLInputElement;
         this.startPageInput = document.getElementById('start-page-input') as HTMLInputElement;
@@ -644,49 +652,59 @@ class UIManager {
         });
     }
 
-    private initializeAutocomplete() {
-        // Initialize start page autocomplete
-        this.startPageAutocomplete = new WikipediaAutocomplete(this.startPageInput, {
-            placeholder: 'Search start page...',
-            onSelect: (result) => {
-                console.log('Start page selected:', result.title);
-                this.updateStartRaceButton();
-            },
-            onValidationChange: (isValid) => {
-                this.pageValidationState.start = isValid;
-                // Defer the uniqueness check until after the autocomplete component updates its own classes
-                setTimeout(() => this.updateStartRaceButton(), 0);
-            },
-            onSlotMachineStart: () => {
-                this.startPageSlotBtn.disabled = true;
-            },
-            onSlotMachineEnd: () => {
-                this.startPageSlotBtn.disabled = false;
-                this.updateStartRaceButton();
-            }
-        });
+      private initializeAutocomplete() {
+    // Initialize start page autocomplete with validation for outgoing links
+    this.startPageAutocomplete = new WikipediaAutocomplete(this.startPageInput, {
+      placeholder: 'Search start page...',
+      pageType: 'start',
+      onSelect: (result) => {
+        console.log('Start page selected:', result.title);
+        this.updateStartRaceButton();
+      },
+      onValidationChange: (isValid, hasLinks) => {
+        this.pageValidationState.start = isValid;
+        // Show additional feedback for link validation
+        if (isValid && hasLinks === false) {
+          console.warn(`Start page "${this.startPageInput.value}" may not have outgoing links`);
+        }
+        // Defer the uniqueness check until after the autocomplete component updates its own classes
+        setTimeout(() => this.updateStartRaceButton(), 0);
+      },
+      onSlotMachineStart: () => {
+        this.startPageSlotBtn.disabled = true;
+      },
+      onSlotMachineEnd: () => {
+        this.startPageSlotBtn.disabled = false;
+        this.updateStartRaceButton();
+      }
+    });
 
-        // Initialize target page autocomplete
-        this.targetPageAutocomplete = new WikipediaAutocomplete(this.targetPageInput, {
-            placeholder: 'Search target page...',
-            onSelect: (result) => {
-                console.log('Target page selected:', result.title);
-                this.updateStartRaceButton();
-            },
-            onValidationChange: (isValid) => {
-                this.pageValidationState.target = isValid;
-                // Defer the uniqueness check until after the autocomplete component updates its own classes
-                setTimeout(() => this.updateStartRaceButton(), 0);
-            },
-            onSlotMachineStart: () => {
-                this.targetPageSlotBtn.disabled = true;
-            },
-            onSlotMachineEnd: () => {
-                this.targetPageSlotBtn.disabled = false;
-                this.updateStartRaceButton();
-            }
-        });
-    }
+    // Initialize target page autocomplete with validation for incoming links
+    this.targetPageAutocomplete = new WikipediaAutocomplete(this.targetPageInput, {
+      placeholder: 'Search target page...',
+      pageType: 'target',
+      onSelect: (result) => {
+        console.log('Target page selected:', result.title);
+        this.updateStartRaceButton();
+      },
+      onValidationChange: (isValid, hasLinks) => {
+        this.pageValidationState.target = isValid;
+        // Show additional feedback for link validation
+        if (isValid && hasLinks === false) {
+          console.warn(`Target page "${this.targetPageInput.value}" may not have incoming links`);
+        }
+        // Defer the uniqueness check until after the autocomplete component updates its own classes
+        setTimeout(() => this.updateStartRaceButton(), 0);
+      },
+      onSlotMachineStart: () => {
+        this.targetPageSlotBtn.disabled = true;
+      },
+      onSlotMachineEnd: () => {
+        this.targetPageSlotBtn.disabled = false;
+        this.updateStartRaceButton();
+      }
+    });
+  }
 
     private initializeSlotMachineButtons() {
         // Start page slot machine button
@@ -841,64 +859,64 @@ class UIManager {
         this.landingModal.classList.add('hidden');
     }
 
-    private async startRandomRace() {
-        console.log('Starting random race...');
-        
-        if (!this.app) {
-            console.error('WikiArenaApp not initialized yet');
-            return;
-        }
-
-        try {
-            // Hide the landing modal first
-            this.hideLandingModal();
-            
-            // Call the main app's method to start a random race
-            await this.app.handleStartGame();
-            
-        } catch (error) {
-            console.error('Failed to start random race:', error);
-            // Show the landing modal again if there was an error
-            this.showLandingModal();
-        }
+      private async startRandomRace() {
+    console.log('Starting random race...');
+    
+    if (!this.app) {
+      console.error('WikiArenaApp not initialized yet');
+      return;
     }
 
-    private async startCustomRace() {
-        const startPageValue = this.startPageInput.value.trim();
-        const targetPageValue = this.targetPageInput.value.trim();
-        
-        // Convert empty strings to null for the API
-        const startPage = startPageValue || null;
-        const targetPage = targetPageValue || null;
-        
-        const player1Model = this.player1Selector?.getValue() || '';
-        const player2Model = this.player2Selector?.getValue() || '';
-
-        console.log('Starting custom race:', {
-            startPage,
-            targetPage,
-            player1Model,
-            player2Model
-        });
-
-        if (!this.app) {
-            console.error('WikiArenaApp not initialized yet');
-            return;
-        }
-
-        try {
-            // Hide the landing modal first
-            this.hideLandingModal();
-            
-            // Call the main app's method to start a custom race
-            await this.app.handleStartCustomGame(startPage, targetPage);
-            
-        } catch (error) {
-            console.error('Failed to start custom race:', error);
-            // Show the landing modal again if there was an error
-            this.showLandingModal();
-        }
+    try {
+      // Hide the landing modal first
+      this.hideLandingModal();
+      
+      // Call the unified task creation method with null pages (fully random)
+      await this.app.createUnifiedTask(null, null);
+      
+    } catch (error) {
+      console.error('Failed to start random race:', error);
+      // Show the landing modal again if there was an error
+      this.showLandingModal();
     }
+  }
+
+      private async startCustomRace() {
+    const startPageValue = this.startPageInput.value.trim();
+    const targetPageValue = this.targetPageInput.value.trim();
+    
+    // Convert empty strings to null for the API
+    const startPage = startPageValue || null;
+    const targetPage = targetPageValue || null;
+    
+    const player1Model = this.player1Selector?.getValue() || '';
+    const player2Model = this.player2Selector?.getValue() || '';
+
+    console.log('Starting custom race:', {
+      startPage,
+      targetPage,
+      player1Model,
+      player2Model
+    });
+
+    if (!this.app) {
+      console.error('WikiArenaApp not initialized yet');
+      return;
+    }
+
+    try {
+      // Hide the landing modal first
+      this.hideLandingModal();
+      
+      // Call the unified task creation method with the specified start/target page input IDs
+      await this.app.createUnifiedTask(startPage, targetPage, 'start-page-input', 'target-page-input');
+      
+    } catch (error) {
+      console.error('Failed to start custom race:', error);
+      // Show the landing modal again if there was an error
+      this.showLandingModal();
+    }
+  }
 
     // Public methods for external access
     public showLanding() {

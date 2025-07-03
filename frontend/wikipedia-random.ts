@@ -3,14 +3,77 @@ interface RandomPageCache {
     timestamp: number;
 }
 
+interface ValidatedPageCache {
+    pages: string[];
+    timestamp: number;
+}
+
 class WikipediaRandomService {
     private cache: RandomPageCache | null = null;
+    private validatedStartPageCache: ValidatedPageCache | null = null;
+    private validatedTargetPageCache: ValidatedPageCache | null = null;
     private readonly CACHE_DURATION = 10 * 60 * 1000; // 10 minutes
     private readonly RANDOM_PAGES_COUNT = 100;
     
     private cycleInterval: NodeJS.Timeout | null = null;
-    private currentIndex = 0;
     private callbacks: Array<(title: string) => void> = [];
+
+    /**
+     * Check if a page has outgoing links (valid for start page)
+     */
+    async hasOutgoingLinks(pageTitle: string): Promise<boolean> {
+        try {
+            const response = await fetch(
+                `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(pageTitle)}&prop=links&pllimit=1&format=json&origin=*`
+            );
+
+            if (!response.ok) {
+                return false;
+            }
+
+            const data = await response.json();
+            const pages = data.query?.pages;
+            
+            if (!pages) {
+                return false;
+            }
+
+            // Check if any page has links
+            for (const page of Object.values(pages)) {
+                if ((page as any).links && Array.isArray((page as any).links) && (page as any).links.length > 0) {
+                    return true;
+                }
+            }
+            
+            return false;
+        } catch (error) {
+            console.error(`Error checking outgoing links for ${pageTitle}:`, error);
+            return false;
+        }
+    }
+
+    /**
+     * Check if a page has incoming links (valid for target page)
+     */
+    async hasIncomingLinks(pageTitle: string): Promise<boolean> {
+        try {
+            const response = await fetch(
+                `https://en.wikipedia.org/w/api.php?action=query&list=backlinks&bltitle=${encodeURIComponent(pageTitle)}&bllimit=1&format=json&origin=*`
+            );
+
+            if (!response.ok) {
+                return false;
+            }
+
+            const data = await response.json();
+            const backlinks = data.query?.backlinks;
+            
+            return Array.isArray(backlinks) && backlinks.length > 0;
+        } catch (error) {
+            console.error(`Error checking incoming links for ${pageTitle}:`, error);
+            return false;
+        }
+    }
 
     /**
      * Fetch random Wikipedia page titles
@@ -73,6 +136,115 @@ class WikipediaRandomService {
                 'Geology', 'World Cuisine', 'Film History', 'Astronomy', 'Literature'
             ];
         }
+    }
+
+    /**
+     * Fetch random pages that are valid for use as start pages (have outgoing links)
+     */
+    async fetchValidStartPages(): Promise<string[]> {
+        // Check cache first
+        if (this.validatedStartPageCache && Date.now() - this.validatedStartPageCache.timestamp < this.CACHE_DURATION) {
+            return this.validatedStartPageCache.pages;
+        }
+
+        const allPages = await this.fetchRandomPages();
+        const validStartPages: string[] = [];
+        
+        // Test pages in batches to avoid overwhelming the API
+        const batchSize = 10;
+        for (let i = 0; i < allPages.length && validStartPages.length < 20; i += batchSize) {
+            const batch = allPages.slice(i, i + batchSize);
+            const validationPromises = batch.map(async (page) => {
+                try {
+                    const hasLinks = await this.hasOutgoingLinks(page);
+                    return hasLinks ? page : null;
+                } catch {
+                    return null;
+                }
+            });
+            
+            const batchResults = await Promise.all(validationPromises);
+            const validInBatch = batchResults.filter((page): page is string => page !== null);
+            validStartPages.push(...validInBatch);
+        }
+
+        // Cache the results
+        this.validatedStartPageCache = {
+            pages: validStartPages,
+            timestamp: Date.now()
+        };
+
+        return validStartPages;
+    }
+
+    /**
+     * Fetch random pages that are valid for use as target pages (have incoming links)
+     */
+    async fetchValidTargetPages(): Promise<string[]> {
+        // Check cache first
+        if (this.validatedTargetPageCache && Date.now() - this.validatedTargetPageCache.timestamp < this.CACHE_DURATION) {
+            return this.validatedTargetPageCache.pages;
+        }
+
+        const allPages = await this.fetchRandomPages();
+        const validTargetPages: string[] = [];
+        
+        // Test pages in batches to avoid overwhelming the API
+        const batchSize = 10;
+        for (let i = 0; i < allPages.length && validTargetPages.length < 20; i += batchSize) {
+            const batch = allPages.slice(i, i + batchSize);
+            const validationPromises = batch.map(async (page) => {
+                try {
+                    const hasLinks = await this.hasIncomingLinks(page);
+                    return hasLinks ? page : null;
+                } catch {
+                    return null;
+                }
+            });
+            
+            const batchResults = await Promise.all(validationPromises);
+            const validInBatch = batchResults.filter((page): page is string => page !== null);
+            validTargetPages.push(...validInBatch);
+        }
+
+        // Cache the results
+        this.validatedTargetPageCache = {
+            pages: validTargetPages,
+            timestamp: Date.now()
+        };
+
+        return validTargetPages;
+    }
+
+    /**
+     * Get a random valid start page (has outgoing links)
+     */
+    async getRandomStartPage(): Promise<string> {
+        const validPages = await this.fetchValidStartPages();
+        if (validPages.length === 0) {
+            // Fallback to any random page if validation fails
+            const fallbackPages = await this.fetchRandomPages();
+            return fallbackPages.length > 0 ? fallbackPages[Math.floor(Math.random() * fallbackPages.length)] : 'Ancient Rome';
+        }
+        
+        return validPages[Math.floor(Math.random() * validPages.length)];
+    }
+
+    /**
+     * Get a random valid target page (has incoming links)
+     */
+    async getRandomTargetPage(excludePage?: string): Promise<string> {
+        const validPages = await this.fetchValidTargetPages();
+        const availablePages = excludePage ? validPages.filter(page => page !== excludePage) : validPages;
+        
+        if (availablePages.length === 0) {
+            // Fallback to any random page if validation fails
+            const fallbackPages = await this.fetchRandomPages();
+            const availableFallback = excludePage ? fallbackPages.filter(page => page !== excludePage) : fallbackPages;
+            return availableFallback.length > 0 ? availableFallback[Math.floor(Math.random() * availableFallback.length)] : 'Quantum Physics';
+        }
+        
+        return availablePages[Math.floor(Math.random() * availablePages.length)];
     }
 
     /**
@@ -154,6 +326,8 @@ class WikipediaRandomService {
      */
     clearCache(): void {
         this.cache = null;
+        this.validatedStartPageCache = null;
+        this.validatedTargetPageCache = null;
     }
 
     /**

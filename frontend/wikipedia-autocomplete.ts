@@ -5,8 +5,9 @@ interface AutocompleteOptions {
     debounceMs?: number;
     minQueryLength?: number;
     placeholder?: string;
+    pageType?: 'start' | 'target' | 'any';
     onSelect?: (result: WikipediaSearchResult) => void;
-    onValidationChange?: (isValid: boolean) => void;
+    onValidationChange?: (isValid: boolean, hasLinks?: boolean) => void;
     onSlotMachineStart?: () => void;
     onSlotMachineEnd?: () => void;
 }
@@ -35,6 +36,7 @@ class WikipediaAutocomplete {
             debounceMs: 300,
             minQueryLength: 2,
             placeholder: 'Search Wikipedia...',
+            pageType: 'any',
             onSelect: () => {},
             onValidationChange: () => {},
             onSlotMachineStart: () => {},
@@ -102,8 +104,8 @@ class WikipediaAutocomplete {
 
         // Trigger validation immediately for empty input (which is now valid)
         if (query.trim() === '') {
-            this.options.onValidationChange(true);
-            this.input.classList.remove('invalid');
+            this.options.onValidationChange(true, undefined);
+            this.input.classList.remove('invalid', 'warning');
             this.input.classList.add('valid');
         }
 
@@ -305,8 +307,8 @@ class WikipediaAutocomplete {
         this.closeDropdown();
         
         // Mark as valid immediately since dropdown results are always valid
-        this.options.onValidationChange(true);
-        this.input.classList.remove('invalid');
+        this.options.onValidationChange(true, undefined);
+        this.input.classList.remove('invalid', 'warning');
         this.input.classList.add('valid');
         
         // Call onSelect callback
@@ -318,9 +320,9 @@ class WikipediaAutocomplete {
         
         if (!title) {
             // Empty input is now valid since pages are optional
-            this.options.onValidationChange(true);
+            this.options.onValidationChange(true, undefined);
             // Remove any previous validation styling
-            this.input.classList.remove('valid', 'invalid');
+            this.input.classList.remove('valid', 'invalid', 'warning');
             this.input.classList.add('valid');
             return;
         }
@@ -328,14 +330,35 @@ class WikipediaAutocomplete {
         try {
             const isValid = await this.searchService.validatePage(title);
             
-            this.options.onValidationChange(isValid);
+            if (!isValid) {
+                this.options.onValidationChange(false, undefined);
+                this.input.classList.remove('valid', 'warning');
+                this.input.classList.add('invalid');
+                return;
+            }
+
+            // Page exists, now check for links if pageType is specified
+            let hasRequiredLinks = true;
+            if (this.options.pageType === 'start') {
+                hasRequiredLinks = await this.randomService.hasOutgoingLinks(title);
+            } else if (this.options.pageType === 'target') {
+                hasRequiredLinks = await this.randomService.hasIncomingLinks(title);
+            }
+
+            // Update validation state with link information
+            this.options.onValidationChange(true, hasRequiredLinks);
             
-            // Add visual feedback
-            this.input.classList.toggle('valid', isValid);
-            this.input.classList.toggle('invalid', !isValid);
+            // Add visual feedback for link validation
+            this.input.classList.remove('valid', 'invalid', 'warning');
+            if (hasRequiredLinks) {
+                this.input.classList.add('valid');
+            } else {
+                // Page exists but doesn't have required links - show as warning
+                this.input.classList.add('warning');
+            }
         } catch (error) {
-            this.options.onValidationChange(false);
-            this.input.classList.remove('valid');
+            this.options.onValidationChange(false, undefined);
+            this.input.classList.remove('valid', 'warning');
             this.input.classList.add('invalid');
         }
     }

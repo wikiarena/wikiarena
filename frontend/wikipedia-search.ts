@@ -61,7 +61,7 @@ class WikipediaSearchService {
             const data = await response.json();
             
             // OpenSearch format: [query, [titles], [descriptions], [urls]]
-            const [searchTerm, titles, descriptions, urls] = data;
+            const [, titles, descriptions, urls] = data;
             
             const results: WikipediaSearchResult[] = titles
                 .map((title: string, index: number) => ({

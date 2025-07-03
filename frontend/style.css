@@ -120,4 +120,20 @@
     border-radius: 50%;
     z-index: 6;
   }
+}
+
+/* Form validation states */
+input.valid {
+    border-color: #22c55e !important;
+    box-shadow: 0 0 0 1px #22c55e !important;
+}
+
+input.invalid {
+    border-color: #ef4444 !important;
+    box-shadow: 0 0 0 1px #ef4444 !important;
+}
+
+input.warning {
+    border-color: #f59e0b !important;
+    box-shadow: 0 0 0 1px #f59e0b !important;
 } 
