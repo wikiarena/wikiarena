@@ -520,6 +520,17 @@ export class PageGraphRenderer {
             font-size: 11px;
             margin-top: 6px;
           ">Debug Linear Spawning</button>
+          <button id="debugVisitSizingBtn" style="
+            width: 100%;
+            padding: 6px;
+            background: #f472b6;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            margin-top: 6px;
+          ">Debug Visit-Based Sizing</button>
           <div style="margin-top: 8px; padding: 8px; background: rgba(20, 30, 45, 0.7); border-radius: 4px; font-size: 10px; color: #cbd5e1;">
             <strong>Expanded Physics:</strong><br/>
             Physics space: ${this.width}×${this.height}px<br/>
@@ -702,6 +713,12 @@ export class PageGraphRenderer {
     debugLinearSpawningBtn?.addEventListener('click', () => {
       this.debugLinearSpawning();
     });
+
+    // Debug visit-based sizing button
+    const debugVisitSizingBtn = this.controlsContainer.querySelector('#debugVisitSizingBtn') as HTMLButtonElement;
+    debugVisitSizingBtn?.addEventListener('click', () => {
+      this.debugVisitBasedSizing();
+    });
   }
 
   private updateSimulationForces(): void {
@@ -800,7 +817,7 @@ export class PageGraphRenderer {
       
       // Position start and target within visible area
       const centerX = visibleLeft + visibleWidth / 2;  // Center of visible area
-      const centerY = visibleTop + visibleHeight * 0.75; // 75% down visible area (target)
+      const centerY = visibleTop + visibleHeight * 0.80; // 80% down visible area (target)
       const startX = visibleLeft + visibleWidth / 2;   // Center of visible area  
       const startY = visibleTop + visibleHeight * 0.25; // 25% down visible area (start)
       
@@ -1008,8 +1025,8 @@ export class PageGraphRenderer {
     const leftGames = existingGames.filter(id => this.gameAssignments.get(id) === 'left');
     const rightGames = existingGames.filter(id => this.gameAssignments.get(id) === 'right');
 
-    // Assign to the side with fewer games, or left if equal
-    const side = leftGames.length <= rightGames.length ? 'left' : 'right';
+    // Assign to the side with fewer games, or right if equal
+    const side = leftGames.length < rightGames.length ? 'left' : 'right';
     this.gameAssignments.set(gameId, side);
 
     console.log(`🎮 Assigned game ${gameId} to ${side} side`);
@@ -1184,7 +1201,10 @@ export class PageGraphRenderer {
 
   updateFromPageGraphData(pageGraphData: PageGraphData): void {
     console.log('🗺️ Enhanced Page Graph: Updating visualization with interactive physics');
-    console.log('📊 Received pages:', pageGraphData.pages.map(p => `${p.pageTitle} (${p.type})`));
+    console.log('📊 Received pages:', pageGraphData.pages.map(p => {
+      const visitCount = p.visits?.length || (p.type === 'start' ? 2 : 1);
+      return `${p.pageTitle} (${p.type}, ${visitCount} visits)`;
+    }));
     
     if (pageGraphData.pages.length === 0) {
       this.clear();
@@ -1255,7 +1275,9 @@ export class PageGraphRenderer {
         };
         
         newPageMap.set(newPage.pageTitle, pageWithPosition);
-        console.log(`➕ Smart positioned new page: ${newPage.pageTitle} (${newPage.type}) at (${pageWithPosition.x}, ${pageWithPosition.y})`);
+        const visitCount = this.getVisitCount(pageWithPosition);
+        const radius = this.getPageRadius(pageWithPosition);
+        console.log(`➕ Smart positioned new page: ${newPage.pageTitle} (${newPage.type}) at (${pageWithPosition.x}, ${pageWithPosition.y}) - ${visitCount} visits → ${radius.toFixed(1)}px radius`);
       }
     });
 
@@ -1523,20 +1545,28 @@ export class PageGraphRenderer {
       this.moveDistanceTextToTop(nodeGroup);
     });
 
-    // Handle start nodes with play button triangle
+    // Handle start nodes - treat them like regular visited nodes (they'll be larger due to more visits)
     const startNodes = pageUpdate.filter((d: PageNode) => d.type === 'start');
     startNodes.each((d: PageNode, i: number, nodes: ArrayLike<SVGGElement>) => {
       const nodeGroup = d3.select(nodes[i]);
       const radius = this.getPageRadius(d);
       
-      // Remove circle and any existing elements
-      nodeGroup.select('circle').remove();
+      // Remove any existing elements
       nodeGroup.selectAll('.pie-slice').remove();
       nodeGroup.selectAll('.target-ring').remove();
       nodeGroup.selectAll('.start-triangle').remove();
       
-      // Create start triangle
-      this.createStartTriangle(nodeGroup as any, d, radius);
+      // Check if start node needs pie chart (multiple games started from same page)
+      if (this.needsPieChart(d)) {
+        nodeGroup.select('circle').remove();
+        this.createPieChart(nodeGroup as any, d, radius);
+        this.moveDistanceTextToTop(nodeGroup);
+      } else {
+        // Regular circle for start node
+        nodeGroup.select('circle')
+          .attr('r', radius)
+          .attr('fill', this.getPageColor(d));
+      }
     });
 
     // Update distance text
@@ -1545,11 +1575,11 @@ export class PageGraphRenderer {
       .style('font-size', (d: PageNode) => this.getDistanceFontSize(d))
       .style('display', (d: PageNode) => d.distanceToTarget !== undefined ? 'block' : 'none');
 
-    // Update title labels
+    // Update title labels - position based on node radius
     pageUpdate.select('.title-text')
       .text((d: PageNode) => this.getPageLabel(d))
       .attr('text-anchor', 'middle')
-      .attr('dy', -35)
+      .attr('dy', (d: PageNode) => -(this.getPageRadius(d) + 8)) // Position 8px above the node edge
       .style('fill', '#e2e8f0')
       .style('font-size', '12px')
       .style('font-weight', 'bold')
@@ -1771,81 +1801,29 @@ export class PageGraphRenderer {
     console.log(`🎯 Created target rings for ${pageNode.pageTitle} with ${rings.length} concentric circles`);
   }
 
-  /**
-   * Create start triangle for start nodes (like a play button)
-   * Creates a right-pointing triangle with green fill and darker green stroke
-   */
-  private createStartTriangle(nodeGroup: d3.Selection<SVGGElement, PageNode, any, any>, pageNode: PageNode, radius: number): void {
-    // Create a circular background first for better visibility
-    nodeGroup.append('circle')
-      .attr('class', 'start-triangle')
-      .attr('r', radius)
-      .attr('fill', '#065f46') // Dark green background
-      .attr('stroke', '#059669') // Lighter green stroke
-      .attr('stroke-width', 3);
 
-    // Calculate triangle points for a right-pointing triangle (play button style)
-    // Triangle should be centered and sized to fit nicely within the circle
-    const triangleSize = radius * 0.8; // Make triangle 60% of the circle radius
-    
-    // Right-pointing triangle points (tip pointing right)
-    const points = [
-      [-triangleSize * 0.5, -triangleSize * 0.6], // Top left
-      [-triangleSize * 0.5, triangleSize * 0.6],  // Bottom left  
-      [triangleSize * 0.7, 0]                     // Right tip (slightly offset for better proportions)
-    ];
-
-    // Create the triangle path
-    const trianglePath = `M${points[0][0]},${points[0][1]} L${points[1][0]},${points[1][1]} L${points[2][0]},${points[2][1]} Z`;
-    
-    nodeGroup.append('path')
-      .attr('class', 'start-triangle')
-      .attr('d', trianglePath)
-      .attr('fill', '#10b981') // Bright green triangle
-      .attr('stroke', '#059669') // Medium green stroke
-      .attr('stroke-width', 2);
-
-    // Ensure distance text appears on top by moving it to the end (re-appending)
-    const distanceText = nodeGroup.select('.distance-text');
-    if (!distanceText.empty()) {
-      // Remove and re-add to put it on top
-      const textContent = distanceText.text();
-      const fontSize = distanceText.style('font-size');
-      const display = distanceText.style('display');
-      
-      distanceText.remove();
-      
-      nodeGroup.append('text')
-        .attr('class', 'distance-text')
-        .attr('text-anchor', 'middle')
-        .attr('dy', '0.35em')
-        .style('fill', 'white')
-        .style('font-weight', 'bold')
-        .style('pointer-events', 'none')
-        .style('text-shadow', '1px 1px 2px rgba(0,0,0,0.8)') // Add text shadow for better visibility
-        .text(textContent)
-        .style('font-size', fontSize)
-        .style('display', display);
-    }
-
-    console.log(`▶️ Created start triangle for ${pageNode.pageTitle} with play button style`);
-  }
 
   // =============================================================================
   // Page Styling
   // =============================================================================
 
+  private getVisitCount(page: PageNode): number {
+    return page.visits.length;
+  }
+
   private getPageRadius(page: PageNode): number {
+    // Base radius for different node types
     switch (page.type) {
-      case 'start':
       case 'target':
         return 30;
-      case 'visited':
-        return 20;
       case 'optimal_path':
         return 15;
+      case 'start':
+      case 'visited':
       default:
-        return 18;
+        // Scale radius based on visit count - area proportional to visits
+        // This means radius is proportional to sqrt(visits)
+        return 20 * Math.max(1, Math.sqrt(page.visits.length));
     }
   }
 
@@ -2204,5 +2182,44 @@ export class PageGraphRenderer {
          }
        });
      });
+   }
+
+   debugVisitBasedSizing(): void {
+     console.log('📏 Visit-Based Node Sizing Debug:');
+     
+     // Group nodes by visit count for analysis
+     const sizeMap = new Map<number, PageNode[]>();
+     this.pages.forEach(page => {
+       const visitCount = this.getVisitCount(page);
+       if (!sizeMap.has(visitCount)) {
+         sizeMap.set(visitCount, []);
+       }
+       sizeMap.get(visitCount)!.push(page);
+     });
+     
+     // Show sizing information
+     console.log(`Found nodes with ${sizeMap.size} different visit counts:`);
+     Array.from(sizeMap.keys()).sort((a, b) => a - b).forEach(visitCount => {
+       const nodes = sizeMap.get(visitCount)!;
+       const radius = this.getPageRadius(nodes[0]); // All nodes with same visit count have same radius
+       const area = Math.PI * radius * radius;
+       const areaRatio = area / (Math.PI * 15 * 15); // Ratio compared to base radius of 15
+       
+       console.log(`\n📊 ${visitCount} visit${visitCount === 1 ? '' : 's'}:`);
+       console.log(`  Radius: ${radius.toFixed(1)}px (scale factor: ${(radius / 15).toFixed(2)}x)`);
+       console.log(`  Area: ${area.toFixed(0)}px² (${areaRatio.toFixed(2)}x base area)`);
+       console.log(`  Nodes (${nodes.length}): ${nodes.map(n => `${n.pageTitle} (${n.type})`).join(', ')}`);
+     });
+     
+     // Show extreme cases
+     const maxVisits = Math.max(...Array.from(sizeMap.keys()));
+     const minVisits = Math.min(...Array.from(sizeMap.keys()));
+     const maxRadius = this.getPageRadius(sizeMap.get(maxVisits)![0]);
+     const minRadius = this.getPageRadius(sizeMap.get(minVisits)![0]);
+     
+     console.log(`\n🔍 Scaling range:`);
+     console.log(`  Min: ${minVisits} visits → ${minRadius.toFixed(1)}px radius`);
+     console.log(`  Max: ${maxVisits} visits → ${maxRadius.toFixed(1)}px radius`);
+     console.log(`  Range: ${(maxRadius / minRadius).toFixed(2)}x size difference`);
    }
  }  

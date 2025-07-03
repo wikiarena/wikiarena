@@ -8,6 +8,7 @@ import { playerColorService } from './player-color-service.js';
 export class UIController {
   private elements: Map<string, HTMLElement> = new Map();
   private onStepToMove?: (moveIndex: number) => void;
+  private onEnterLiveMode?: () => void;
   private selectedGameId: string | null = null; // For game switching in info panel
 
   constructor() {
@@ -40,7 +41,10 @@ export class UIController {
       'step-info',
       'stepping-controls',
       // Progress bars container
-      'progress-bars-container'
+      'progress-bars-container',
+      // Page step slider
+      'page-step-slider-container',
+      'page-step-slider'
     ];
 
     elementIds.forEach(id => {
@@ -137,6 +141,9 @@ export class UIController {
         steppingInfo.canStepBackward
       );
     }
+
+    // Update page step slider
+    this.updatePageStepSlider(task, steppingInfo);
   }
 
   private updateTaskInfo(task: Task): void {
@@ -745,8 +752,9 @@ export class UIController {
     onEnterLiveMode?: () => void;
     onStepToMove?: (moveIndex: number) => void;
   }): void {
-    // Store the step-to-move handler
+    // Store the handlers
     this.onStepToMove = handlers.onStepToMove;
+    this.onEnterLiveMode = handlers.onEnterLiveMode;
     
     // Start game button
     const startGameBtn = this.elements.get('start-game-btn');
@@ -770,7 +778,111 @@ export class UIController {
       liveModeBtn.addEventListener('click', handlers.onEnterLiveMode);
     }
 
+    // Setup slider event listeners
+    this.setupSliderEventListeners();
+
     console.log('✅ UI event listeners setup');
+  }
+
+  // =============================================================================
+  // Page Step Slider
+  // =============================================================================
+
+  private updatePageStepSlider(task: Task, steppingInfo?: {
+    currentPageIndex: number;
+    viewingPageIndex: number;
+    renderingMode: RenderingMode;
+    canStepForward: boolean;
+    canStepBackward: boolean;
+  }): void {
+    const sliderContainer = this.elements.get('page-step-slider-container');
+    const slider = this.elements.get('page-step-slider') as HTMLInputElement;
+    
+    if (!sliderContainer || !slider) return;
+
+    // Show/hide slider based on game state
+    if (task.games.size === 0 || task.currentPageIndex < 0) {
+      sliderContainer.style.display = 'none';
+      return;
+    }
+
+    sliderContainer.style.display = 'flex';
+
+    // Calculate the maximum page index across all games
+    const maxPageIndex = task.currentPageIndex;
+    
+    // Update slider properties
+    slider.min = '0';
+    slider.max = maxPageIndex.toString();
+    slider.disabled = maxPageIndex === 0;
+
+    // Set slider value based on viewing mode
+    if (steppingInfo) {
+      if (steppingInfo.renderingMode === 'live') {
+        slider.value = maxPageIndex.toString();
+      } else {
+        slider.value = steppingInfo.viewingPageIndex.toString();
+      }
+    }
+
+    // Update handle width proportionally to number of steps
+    this.updateSliderHandleWidth(slider, maxPageIndex);
+  }
+
+  private updateSliderHandleWidth(slider: HTMLInputElement, maxPageIndex: number): void {
+    // Calculate proportional width: if max is 0 (only 1 position), width = 100%
+    // if max is 1 (2 positions), width = 50%, if max is 2 (3 positions), width = 33.33%, etc.
+    const totalPositions = maxPageIndex + 1;
+    const handleWidthPercent = Math.max(5, 100 / totalPositions); // Minimum 5% width for usability
+    
+    // Get the slider container to get its pixel width
+    const container = slider.parentElement;
+    if (!container) return;
+    
+    const containerWidth = container.offsetWidth;
+    const handleWidthPx = Math.max(20, (containerWidth * handleWidthPercent) / 100); // Minimum 20px for usability
+    
+    // Update CSS custom property for cross-browser handle width
+    slider.style.setProperty('--thumb-width', `${handleWidthPx}px`);
+    
+    console.log(`🎚️ Updated slider handle: ${totalPositions} positions, ${handleWidthPercent.toFixed(1)}% width (${handleWidthPx}px)`);
+  }
+
+  private setupSliderEventListeners(): void {
+    const slider = this.elements.get('page-step-slider') as HTMLInputElement;
+    if (!slider) return;
+
+    // Handle slider input (dragging)
+    slider.addEventListener('input', (event) => {
+      const value = parseInt((event.target as HTMLInputElement).value);
+      this.handleSliderChange(value, false); // false = not final
+    });
+
+    // Handle slider change (final value when user releases)
+    slider.addEventListener('change', (event) => {
+      const value = parseInt((event.target as HTMLInputElement).value);
+      this.handleSliderChange(value, true); // true = final
+    });
+  }
+
+  private handleSliderChange(pageIndex: number, isFinal: boolean): void {
+    // Get current max page index to determine if we're at the end
+    const slider = this.elements.get('page-step-slider') as HTMLInputElement;
+    if (!slider) return;
+
+    const maxPageIndex = parseInt(slider.max);
+
+    if (pageIndex === maxPageIndex && isFinal) {
+      // User dragged to the far right - enter live mode
+      if (this.onEnterLiveMode) {
+        this.onEnterLiveMode();
+      }
+    } else {
+      // User is stepping to a specific page
+      if (this.onStepToMove) {
+        this.onStepToMove(pageIndex);
+      }
+    }
   }
 
   // =============================================================================
