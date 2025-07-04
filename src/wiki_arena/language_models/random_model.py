@@ -41,7 +41,7 @@ class RandomModel(LanguageModel):
         """
 
         start_time = time.time()
-        await asyncio.sleep(1.0)
+        # await asyncio.sleep(1.0)
         end_time = time.time()
 
         # Create zero metrics since this is not a real API call
