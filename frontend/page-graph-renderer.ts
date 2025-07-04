@@ -744,6 +744,16 @@ export class PageGraphRenderer {
             return this.physicsConfig.optimalPathLinkStrength;
           }
           
+          // NEW: Weaken edges connected to nodes that have been visited multiple times
+          const sourceTitle = typeof d.source === 'string' ? d.source : d.source.pageTitle;
+          const targetTitle = typeof d.target === 'string' ? d.target : d.target.pageTitle;
+          const sourceNode = this.pageMap.get(sourceTitle);
+          const targetNode = this.pageMap.get(targetTitle);
+          if ((sourceNode && sourceNode.visits.length > 1) || (targetNode && targetNode.visits.length > 1)) {
+            // Treat like a progress/regress move (weak influence)
+            return this.physicsConfig.progressMoveLinkStrength;
+          }
+          
           // For move edges, use distanceChange to determine strength
           if (d.distanceChange !== undefined) {
             if (d.distanceChange === 0) {
@@ -1325,6 +1335,16 @@ export class PageGraphRenderer {
            // Optimal path edges always use their own strength
            if (d.type === 'optimal_path') {
              return this.physicsConfig.optimalPathLinkStrength;
+           }
+           
+           // NEW: Weaken edges connected to nodes that have been visited multiple times
+           const sourceTitle = typeof d.source === 'string' ? d.source : d.source.pageTitle;
+           const targetTitle = typeof d.target === 'string' ? d.target : d.target.pageTitle;
+           const sourceNode = this.pageMap.get(sourceTitle);
+           const targetNode = this.pageMap.get(targetTitle);
+           if ((sourceNode && sourceNode.visits.length > 1) || (targetNode && targetNode.visits.length > 1)) {
+             // Treat like a progress/regress move (weak influence)
+             return this.physicsConfig.progressMoveLinkStrength;
            }
            
            // For move edges, use distanceChange to determine strength
