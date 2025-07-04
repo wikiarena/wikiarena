@@ -12,6 +12,7 @@ from backend.websockets.game_hub import websocket_manager
 from backend.coordinators.game_coordinator import GameCoordinator
 from backend.coordinators.task_coordinator import TaskCoordinator
 from wiki_arena import EventBus
+from wiki_arena.wikipedia import LiveWikiService
 
 # Configure unified logging to match wiki_arena style
 from wiki_arena.logging_config import setup_logging
@@ -28,16 +29,8 @@ async def lifespan(app: FastAPI):
     event_bus = EventBus()
     
     # Initialize core services
-    from wiki_arena.config import load_config
-    from wiki_arena.mcp_client.client import MCPClient, create_server_params_from_config
-    
-    app_config = load_config()
-    server_config = app_config['mcp_servers'][config.mcp_server_name]
-    server_params = create_server_params_from_config(server_config.get("transport", {}))
-    
-    mcp_client = MCPClient()
-    await mcp_client.connect(server_params)
-    logger.info("MCP client connected")
+    wiki_service = LiveWikiService()
+    logger.info("LiveWikiService created.")
     
     # Create and initialize solver
     from wiki_arena.solver import WikiTaskSolver
@@ -47,7 +40,7 @@ async def lifespan(app: FastAPI):
     logger.info("WikiTaskSolver created")
     
     # Create coordinators
-    game_coordinator = GameCoordinator(event_bus, mcp_client)
+    game_coordinator = GameCoordinator(event_bus, wiki_service)
     task_coordinator = TaskCoordinator(event_bus, game_coordinator)
     
     # Create event handlers with dependencies
@@ -86,7 +79,7 @@ async def lifespan(app: FastAPI):
     app.state.event_bus = event_bus
     app.state.game_coordinator = game_coordinator
     app.state.task_coordinator = task_coordinator
-    app.state.mcp_client = mcp_client
+    app.state.wiki_service = wiki_service
     app.state.solver = solver
     
     logger.info("Wiki Arena API startup complete")
@@ -97,7 +90,6 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down Wiki Arena API...")
     await game_coordinator.shutdown()
     await task_coordinator.shutdown()
-    await mcp_client.disconnect()
     logger.info("Wiki Arena API shutdown complete")
 
 # Create FastAPI app

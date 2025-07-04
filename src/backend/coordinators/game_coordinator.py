@@ -7,7 +7,7 @@ from wiki_arena import EventBus, GameEvent
 from wiki_arena.game.game_manager import GameManager
 from wiki_arena.models import GameConfig, GameState, GameStatus, Task
 from wiki_arena.language_models import create_model
-from wiki_arena.mcp_client.client import MCPClient
+from wiki_arena.wikipedia import LiveWikiService
 
 from backend.models.api_models import ModelSelection
 
@@ -30,9 +30,9 @@ class GameCoordinator:
     - Storage (handled by StorageHandler)
     """
     
-    def __init__(self, event_bus: EventBus, mcp_client: MCPClient):
+    def __init__(self, event_bus: EventBus, wiki_service: LiveWikiService):
         self.event_bus = event_bus
-        self.mcp_client = mcp_client
+        self.wiki_service = wiki_service
         self.active_games: Dict[str, GameManager] = {} # { game_id: GameManager }
         # background was because we thought we would support an interactive mode (viewer can step through)
         # TODO(hunter): refactor this as everything is background now
@@ -55,7 +55,7 @@ class GameCoordinator:
         
         # Create GameManager with event bus
         # TODO(hunter): we could pass the language model and config to the constructor?
-        game_manager = GameManager(self.mcp_client, event_bus=self.event_bus) 
+        game_manager = GameManager(self.wiki_service, event_bus=self.event_bus) 
         initial_state = await game_manager.initialize_game(game_config)
         
         if initial_state.status == GameStatus.ERROR:

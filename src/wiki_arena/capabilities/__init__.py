@@ -1,1 +1,0 @@
-# Capabilities package - defines what the game needs, not how it's implemented 

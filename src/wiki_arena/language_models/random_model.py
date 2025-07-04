@@ -4,25 +4,36 @@ import time
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 
-from mcp.types import Tool # Assuming Tool is available at this path
 from wiki_arena.models import GameState, MoveMetrics, ModelConfig
 from .language_model import LanguageModel, ToolCall
 
-
 class RandomModel(LanguageModel):
     """
-    A language model that randomly selects a link from the current page
-    if the 'navigate' tool is available.
+    A language model that randomly selects a link from the current page.
     """
-    TARGET_TOOL_NAME = "navigate"
 
     def __init__(self, model_config: ModelConfig):
         super().__init__(model_config)
         # No specific settings needed for RandomModel yet
 
+    async def _format_tools_for_provider(
+        self,
+        mcp_tools: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """
+        RandomModel doesn't need to format tools - just return them as-is.
+        
+        Args:
+            mcp_tools: List of tool definitions in MCP format
+            
+        Returns:
+            Tools in MCP format (unchanged)
+        """
+        return mcp_tools
+
     async def generate_response(
         self,
-        tools: List[Tool],
+        tools: List[Dict[str, Any]],
         game_state: GameState,
     ) -> ToolCall:
         """
@@ -42,21 +53,6 @@ class RandomModel(LanguageModel):
             response_time_ms=end_time - start_time,
             request_timestamp=datetime.now()
         )
-        
-        target_tool_present = any(tool.name == self.TARGET_TOOL_NAME for tool in tools)
-
-        if not target_tool_present:
-            # This case should ideally not happen if the game is designed
-            # for this tool, or we need a fallback (e.g., error or no-op).
-            # For now, let's assume the game expects this tool.
-            # Consider raising an error or returning a specific ToolCall
-            # indicating no valid action could be taken.
-            return ToolCall(
-                model_text_response=f"Tool '{self.TARGET_TOOL_NAME}' not available.",
-                tool_name=None,
-                tool_arguments=None,
-                metrics=metrics
-            )
 
         if not game_state.current_page.links:
             return ToolCall(
@@ -66,19 +62,27 @@ class RandomModel(LanguageModel):
                 metrics=metrics
             )
 
+        # Find the navigate tool (assuming it exists)
+        navigate_tool = None
+        for tool in tools:
+            if tool["name"] == "navigate":
+                navigate_tool = tool
+                break
+        
+        if not navigate_tool:
+            return ToolCall(
+                model_text_response="No navigate tool available.",
+                tool_name=None,
+                tool_arguments=None,
+                metrics=metrics
+            )
+
         selected_link = random.choice(game_state.current_page.links)
         
-        # The tool expects 'page_title' as an argument based on typical usage,
-        # ensure this matches the actual tool definition provided by MCP server.
+        # Use the correct parameter name from the tool definition
         return ToolCall(
             model_text_response=f"Randomly selected link: {selected_link}",
-            tool_name=self.TARGET_TOOL_NAME,
-            tool_arguments={"page_title": selected_link},
+            tool_name=navigate_tool["name"],
+            tool_arguments={"page": selected_link},  # Using "page" as defined in tool schema
             metrics=metrics
         )
-
-    async def _format_tools_for_provider(self, tools: List[Tool]) -> Any:
-        """
-        RandomModel does not need to format tools for a specific provider.
-        """
-        return tools 

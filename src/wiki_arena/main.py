@@ -6,7 +6,7 @@ from rich.logging import RichHandler
 from datetime import datetime
 
 from wiki_arena.config import load_config
-from wiki_arena.mcp_client.client import MCPClient, create_server_params_from_config
+from wiki_arena.wikipedia import LiveWikiService
 from wiki_arena.game.game_manager import GameManager
 from wiki_arena.models import GameConfig, ModelConfig, GameResult
 from wiki_arena.models import GameStatus
@@ -15,41 +15,17 @@ from wiki_arena.storage import GameStorageService, StorageConfig
 from wiki_arena.language_models import create_model
 
 async def main():
-    # 1. Load configuration
-    try:
-        app_config = load_config()
-    except FileNotFoundError as e:
-        print(f"CRITICAL: Error loading configuration: {e}", file=sys.stderr)
-        sys.exit(1)
-    except json.JSONDecodeError as e:
-        print(f"CRITICAL: Error parsing configuration file: {e}", file=sys.stderr)
-        sys.exit(1)
 
     # Configure unified logging
     from wiki_arena.logging_config import setup_logging
-    
-    log_level_str = app_config.get("app_settings", {}).get("log_level", "INFO").upper()
-    setup_logging(level=log_level_str)
-    
+    setup_logging(level="DEBUG")
     logging.debug("Unified logging configured.")
 
-    # 2. Get the configuration for the specific server we want to use
-    # TODO(hunter): make this a sysarg or config arg for default server
-    mcp_server_config_name = "stdio_mcp_server"
-    try:
-        server_config = app_config['mcp_servers'][mcp_server_config_name]
-        server_params = create_server_params_from_config(server_config.get("transport", {}))
-    except (ValueError, TypeError, KeyError) as e:
-        logging.error(f"Error in server configuration for '{mcp_server_config_name}': {e}", exc_info=True)
-        sys.exit(1)
-
-    # 3. Instantiate and connect the MCP client
-    mcp_client = MCPClient()
+    # 2. Instantiate the wiki service
+    wiki_service = LiveWikiService()
+    logging.info("LiveWikiService created.")
 
     try:
-        await mcp_client.connect(server_params)
-        logging.info(f"Connected to {mcp_server_config_name}")
-
         # 4. Select a random task
         task = await get_random_task_async()
         if not task:
@@ -81,7 +57,7 @@ async def main():
         logging.info(f"Game storage configured: {storage_config.storage_path}")
 
         # 6. Create and start game
-        game_manager = GameManager(mcp_client)
+        game_manager = GameManager(wiki_service)
         initial_state = await game_manager.initialize_game(game_config)
         logging.info(f"Game started: {initial_state.game_id}")
         logging.info(f"Current page: {initial_state.current_page.title}")
@@ -149,8 +125,7 @@ async def main():
         logging.critical(f"An unexpected error occurred during application runtime: {e}", exc_info=True)
 
     finally:
-        # 8. Ensure the client disconnects when the application finishes
-        await mcp_client.disconnect()
+        # 8. Application shutdown
         logging.info("Application shutting down.")
 
 if __name__ == "__main__":

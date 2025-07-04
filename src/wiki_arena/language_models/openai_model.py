@@ -5,7 +5,6 @@ from datetime import datetime
 from openai import OpenAI, OpenAIError
 from .language_model import LanguageModel, ToolCall
 from wiki_arena.models import GameState, MoveMetrics, ModelConfig
-from mcp.types import Tool
 
 class OpenAIModel(LanguageModel):
     """
@@ -28,26 +27,32 @@ class OpenAIModel(LanguageModel):
 
     async def _format_tools_for_provider(
         self,
-        tools: List[Tool],
-    ) -> List[Dict[str, Any]]: # OpenAI tool format might be different
+        mcp_tools: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
         """
-        Translate the tools to the OpenAI model's format.
+        Convert MCP tool definitions to OpenAI function calling format.
+        
+        Args:
+            mcp_tools: List of tool definitions in MCP format
+            
+        Returns:
+            Tools formatted for OpenAI's API
         """
         formatted_tools = []
-        for mcp_tool in tools:
+        for mcp_tool in mcp_tools:
             formatted_tools.append({
                 "type": "function",
                 "function": {
-                    "name": mcp_tool.name,
-                    "description": mcp_tool.description or f"Tool named {mcp_tool.name} without a description.",
-                    "parameters": mcp_tool.inputSchema
+                    "name": mcp_tool["name"],
+                    "description": mcp_tool["description"],
+                    "parameters": mcp_tool["inputSchema"]
                 }
             })
         return formatted_tools
 
     async def generate_response(
         self,
-        tools: List[Tool],
+        tools: List[Dict[str, Any]],
         game_state: GameState,
     ) -> ToolCall:
         """

@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Optional, List, Tuple
 import uuid
 import asyncio
+import json
 
 from wiki_arena.models import (
     GameConfig,
@@ -16,31 +17,26 @@ from wiki_arena.models import (
     ModelConfig
 )
 from wiki_arena.events import EventBus, GameEvent
-from wiki_arena.mcp_client.client import MCPClient
-from mcp.types import Tool, CallToolResult, TextContent
+from wiki_arena.wikipedia import LiveWikiService
 
 from wiki_arena.language_models import PROVIDERS
 from wiki_arena.language_models.language_model import LanguageModel, ToolCall
-
-# Capability-based architecture
-from wiki_arena.services.capability_registry import CapabilityRegistry
+from wiki_arena.tools import get_available_tools
 
 class GameManager:
-    def __init__(self, mcp_client: MCPClient, event_bus: Optional[EventBus] = None):
-        """Initialize the game manager with an MCP client and optional event bus."""
-        self.mcp_client = mcp_client
-        self.capability_registry = CapabilityRegistry(mcp_client)
+    def __init__(self, wiki_service: LiveWikiService, event_bus: Optional[EventBus] = None):
+        """Initialize the game manager with a wiki service and optional event bus."""
+        self.wiki_service = wiki_service
         self.state: Optional[GameState] = None
         self.language_model: Optional[LanguageModel] = None
-        self.available_tools: List[Tool] = []
+        self.available_tools: List[dict] = []  # MCP format tools from tools.py
         self.event_bus = event_bus
-        # TODO(hunter): I know start game logic shouldn't be in init but I want to know why
 
     def _generate_game_id(self, model_config: ModelConfig) -> str:
         """Generate descriptive game ID with model info."""
         timestamp = datetime.now()
         date_str = timestamp.strftime("%Y%m%d_%H%M%S")
-        uuid_short = str(uuid.uuid4())[:8]
+        uuid_short = str(uuid.uuid4())[:4]
         model_key = model_config.model_name
         
         return f"{model_key}_{date_str}_{uuid_short}"
@@ -54,7 +50,7 @@ class GameManager:
             error_message=None
         )
 
-        # Initialize Language Model using simplified system
+        # Initialize Language Model
         try:
             provider = config.model.provider
             if provider not in PROVIDERS:
@@ -76,38 +72,21 @@ class GameManager:
             return self.state
 
         try:
-            # Initialize capability registry
-            if not await self.capability_registry.initialize():
-                self.state.status = GameStatus.ERROR
-                self.state.error_message = "Failed to initialize capabilities"
-                logging.error(self.state.error_message)
-                return self.state
-            
-            # Get navigation capability
-            nav_capability = self.capability_registry.get_navigation_capability()
-            if not nav_capability:
-                self.state.status = GameStatus.ERROR
-                self.state.error_message = "Navigation capability not available"
-                logging.error(self.state.error_message)
-                return self.state
+            # Load tools from tools.py - no discovery needed!
+            self.available_tools = get_available_tools()
+            logging.info(f"Loaded {len(self.available_tools)} tools from game definition.")
 
-            # Still need tools for language model interface
-            list_tools_result = await self.mcp_client.list_tools()
-            self.available_tools = list_tools_result.tools
-            if not self.available_tools:
-                logging.warning("No tools discovered from MCP server. The game might not function correctly if tools are expected.")
-            else:
-                logging.info(f"Discovered {len(self.available_tools)} tools from MCP server.")
-
-            # Use navigation capability to get initial page
-            nav_result = await nav_capability.navigate_to_page(config.start_page_title)
-            if not nav_result.is_success:
+            # Navigate to start page directly using the wiki service
+            try:
+                start_page = await self.wiki_service.get_page(config.start_page_title)
+                self.state.current_page = start_page
+            except (ConnectionError, ValueError) as e:
                 self.state.status = GameStatus.ERROR
-                self.state.error_message = nav_result.error_message
-                logging.error(f"Failed to initialize start page '{config.start_page_title}': {nav_result.error_message}")
+                self.state.error_message = f"Failed to initialize start page '{config.start_page_title}': {e}"
+                logging.error(f"Failed to initialize start page '{config.start_page_title}': {e}")
                 return self.state
 
-            self.state.current_page = nav_result.page
+            self.state.current_page = start_page
             self.state.status = GameStatus.IN_PROGRESS # TODO(hunter): this should update state to NOT_STARTED from INITIALIZING
             self.state.steps = 0 # Start at 0 steps, first move will increment it to 1
             
@@ -120,31 +99,30 @@ class GameManager:
             self.state.error_message = f"Unhandled exception during game start: {e}"
             return self.state
 
-    async def play_turn(self) -> bool: # True if game over, False otherwise
+    async def play_turn(self) -> bool:
         """Play a single turn of the game. Returns True if game is over, False otherwise."""
         if not self.state:
             logging.error("play_turn called but game state is None. Game cannot proceed.")
-            return True # Game is over (critically)
+            return True
 
         if self.state.status != GameStatus.IN_PROGRESS:
             logging.warning(f"play_turn called but game status is {self.state.status.value}. Game is already considered over.")
             if not self.state.error_message and self.state.status not in [GameStatus.WON, GameStatus.NOT_STARTED]:
                  self.state.error_message = f"Game ended: play_turn called when status was {self.state.status.value}"
-            return True # Game is over
+            return True
 
         current_step = self.state.steps + 1
         current_page_title = self.state.current_page.title
 
-        # Early validation - these are critical errors that prevent any move attempt
-        critical_error = self._check_critical_errors()
-        if critical_error:
+        # Early validation
+        if not self.language_model:
             self.state.status = GameStatus.ERROR
-            self.state.error_message = critical_error
-            logging.error(f"Game {self.state.game_id}: Critical error - {critical_error}")
+            self.state.error_message = "Language model not initialized"
+            logging.error(f"Game {self.state.game_id}: Critical error - Language model not initialized")
             return True
 
         try:
-            # Attempt to get model response
+            # Get model response
             tool_call_request = await self._get_model_response()
             
             # Validate and process the model response
@@ -172,34 +150,24 @@ class GameManager:
                 return True
             
             # Attempt navigation
-            nav_result = await self._attempt_navigation(target_page)
-            if not nav_result.is_success:
+            try:
+                next_page = await self.wiki_service.get_page(target_page)
+            except (ConnectionError, ValueError) as e:
                 nav_error = GameError(
                     type=ErrorType.APP_NAVIGATION_ERROR,
-                    message=f"Navigation failed: {nav_result.error_message}",
-                    metadata={"target_page": target_page, "nav_error": nav_result.error_message}
+                    message=f"Navigation failed: {e}",
+                    metadata={"target_page": target_page, "nav_error": str(e)}
                 )
                 self._create_error_move(current_step, current_page_title, nav_error, tool_call_request)
-                self.state.status = GameStatus.ERROR  # Navigation failures are system errors
+                self.state.status = GameStatus.ERROR
                 await self._emit_game_ended_event()
                 return True
-            
+
             # Success! Create successful move and update game state
-            return await self._handle_successful_move(current_step, current_page_title, nav_result, tool_call_request)
+            return await self._handle_successful_move(current_step, current_page_title, next_page, tool_call_request)
             
         except Exception as e:
             return self._handle_unexpected_exception(e, current_step, current_page_title, locals().get('tool_call_request'))
-
-    def _check_critical_errors(self) -> Optional[str]:
-        """Check for critical errors that prevent any move attempt."""
-        if not self.language_model:
-            return "Language model not initialized"
-        
-        nav_capability = self.capability_registry.get_navigation_capability()
-        if not nav_capability:
-            return "Navigation capability not available"
-        
-        return None
 
     async def _get_model_response(self):
         """Get response from language model with proper error handling."""
@@ -231,15 +199,15 @@ class GameManager:
                 }
             )
         
-        # Check if tool exists
-        tool_definition = next((t for t in self.available_tools if t.name == tool_call_request.tool_name), None)
+        # Check if tool exists in available tools
+        tool_definition = next((t for t in self.available_tools if t["name"] == tool_call_request.tool_name), None)
         if not tool_definition:
             return GameError(
                 type=ErrorType.MODEL_INVALID_TOOL,
                 message=f"Model requested unavailable tool: {tool_call_request.tool_name}",
                 metadata={
                     "requested_tool": tool_call_request.tool_name,
-                    "available_tools": [t.name for t in self.available_tools]
+                    "available_tools": [t["name"] for t in self.available_tools]
                 }
             )
         
@@ -281,7 +249,6 @@ class GameManager:
     def _validate_link(self, target_page: str, tool_call_request) -> Optional[GameError]:
         """Validate that the target page is available as a link on the current page."""
         if target_page not in self.state.current_page.links:
-            # Special case: check if model is trying to go to target page directly
             is_target_page = target_page == self.state.config.target_page_title
             
             return GameError(
@@ -301,21 +268,16 @@ class GameManager:
         
         return None
 
-    async def _attempt_navigation(self, target_page: str):
-        """Attempt navigation using the navigation capability."""
-        nav_capability = self.capability_registry.get_navigation_capability()
-        return await nav_capability.navigate_to_page(target_page)
-
-    async def _handle_successful_move(self, step: int, from_page: str, nav_result, tool_call_request) -> bool:
+    async def _handle_successful_move(self, step: int, from_page: str, new_page: Page, tool_call_request) -> bool:
         """Handle a successful move and update game state."""
         # Update current page
-        self.state.current_page = nav_result.page
+        self.state.current_page = new_page
         
         # Create successful move record
         move = Move(
             step=step,
             from_page_title=from_page,
-            to_page_title=nav_result.page.title,
+            to_page_title=new_page.title,
             model_response=tool_call_request.model_text_response,
             tool_call_attempt={
                 "tool_name": tool_call_request.tool_name,
@@ -328,13 +290,13 @@ class GameManager:
         self.state.move_history.append(move)
         self.state.steps += 1
         
-        logging.info(f"Game {self.state.game_id} Step {step}: '{from_page}' -> '{nav_result.page.title}'")
+        logging.info(f"Game {self.state.game_id} Step {step}: '{from_page}' -> '{new_page.title}'")
         
         # Check win condition
-        if nav_result.page.title == self.state.config.target_page_title:
+        if new_page.title == self.state.config.target_page_title:
             self.state.status = GameStatus.WON
             self.state.error_message = "Target page reached!"
-            logging.info(f"Game {self.state.game_id}: Won! Reached target '{nav_result.page.title}' in {self.state.steps} steps.")
+            logging.info(f"Game {self.state.game_id}: Won! Reached target '{new_page.title}' in {self.state.steps} steps.")
             game_over = True
         # Check max steps
         elif self.state.steps >= self.state.config.max_steps:
@@ -354,7 +316,7 @@ class GameManager:
                     "move": move,
                     "game_state": self.state,
                     "from_page": from_page,
-                    "to_page": nav_result.page.title
+                    "to_page": new_page.title
                 }
             ))
             
@@ -396,7 +358,6 @@ class GameManager:
         """Handle unexpected exceptions with proper categorization."""
         exception_str = str(exception)
         
-        # TODO(hunter): when do I expect any of these to happen?
         # Categorize based on exception content
         if exception_str.startswith("PROVIDER_RATE_LIMIT:"):
             error_type = ErrorType.PROVIDER_RATE_LIMIT
@@ -425,10 +386,8 @@ class GameManager:
         )
         
         if tool_call_request:
-            # We had a model response, so create a Move
             self._create_error_move(step, from_page, error, tool_call_request)
         else:
-            # No model response, just update game state
             self.state.error_message = error.message
         
         self.state.status = GameStatus.ERROR

@@ -5,7 +5,6 @@ from datetime import datetime
 from anthropic import Anthropic, AnthropicError
 from .language_model import LanguageModel, ToolCall
 from wiki_arena.models import GameState, MoveMetrics, ModelConfig
-from mcp.types import Tool
 
 class AnthropicModel(LanguageModel):
     """
@@ -25,26 +24,32 @@ class AnthropicModel(LanguageModel):
             # set a 'failed' state, or handle it in another way.
             # For now, re-raising to make the initialization failure explicit.
             raise
-    
+
     async def _format_tools_for_provider(
         self,
-        tools: List[Tool],
+        mcp_tools: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
         """
-        Translate the tools to the language model's format.
+        Convert MCP tool definitions to Anthropic tool format.
+        
+        Args:
+            mcp_tools: List of tool definitions in MCP format
+            
+        Returns:
+            Tools formatted for Anthropic's API
         """
         formatted_tools = []
-        for mcp_tool in tools:
+        for mcp_tool in mcp_tools:
             formatted_tools.append({
-                "name": mcp_tool.name,
-                "description": mcp_tool.description or f"Tool named {mcp_tool.name} without a description.", # Ensure description is present
-                "input_schema": mcp_tool.inputSchema
+                "name": mcp_tool["name"],
+                "description": mcp_tool["description"],
+                "input_schema": mcp_tool["inputSchema"]
             })
         return formatted_tools
 
     async def generate_response(
         self,
-        tools: List[Tool],
+        tools: List[Dict[str, Any]],
         game_state: GameState,
     ) -> ToolCall:
         # TODO(hunter): error handling for game state
