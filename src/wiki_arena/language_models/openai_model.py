@@ -4,9 +4,7 @@ from datetime import datetime
 
 from openai import OpenAI, OpenAIError
 from .language_model import LanguageModel, ToolCall
-from .navigate_tool import NAVIGATE_TOOL
 from wiki_arena.models import GameState, MoveMetrics, ModelConfig
-from mcp.types import Tool
 
 class OpenAIModel(LanguageModel):
     """
@@ -29,16 +27,32 @@ class OpenAIModel(LanguageModel):
 
     async def _format_tools_for_provider(
         self,
-        tools: Optional[List[Tool]] = None,  # Parameter kept for compatibility but not used
+        mcp_tools: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
         """
-        Return the hardcoded navigate tool in OpenAI format.
+        Convert MCP tool definitions to OpenAI function calling format.
+        
+        Args:
+            mcp_tools: List of tool definitions in MCP format
+            
+        Returns:
+            Tools formatted for OpenAI's API
         """
-        return [NAVIGATE_TOOL.to_openai_format()]
+        formatted_tools = []
+        for mcp_tool in mcp_tools:
+            formatted_tools.append({
+                "type": "function",
+                "function": {
+                    "name": mcp_tool["name"],
+                    "description": mcp_tool["description"],
+                    "parameters": mcp_tool["inputSchema"]
+                }
+            })
+        return formatted_tools
 
     async def generate_response(
         self,
-        tools: List[Tool],
+        tools: List[Dict[str, Any]],
         game_state: GameState,
     ) -> ToolCall:
         """
@@ -46,7 +60,7 @@ class OpenAIModel(LanguageModel):
         """
         start_time = datetime.now()
         
-        formatted_tools = await self._format_tools_for_provider()
+        formatted_tools = await self._format_tools_for_provider(tools)
         system_prompt = game_state.config.system_prompt_template.format(
             start_page_title=game_state.config.start_page_title,
             target_page_title=game_state.config.target_page_title,

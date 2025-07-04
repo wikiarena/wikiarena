@@ -1072,8 +1072,6 @@ dependencies = [
     { name = "openai" },
     { name = "psutil" },
     { name = "pydantic" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
     { name = "python-multipart" },
     { name = "requests" },
     { name = "tqdm" },
@@ -1084,11 +1082,9 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "httpx" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
-    { name = "websockets" },
 ]
 
 [package.metadata]
@@ -1102,8 +1098,6 @@ requires-dist = [
     { name = "openai", specifier = ">=1.79.0" },
     { name = "psutil", specifier = ">=7.0.0" },
     { name = "pydantic", specifier = ">=2.11.4" },
-    { name = "pytest", specifier = ">=8.3.5" },
-    { name = "pytest-asyncio", specifier = ">=1.0.0" },
     { name = "python-multipart", specifier = ">=0.0.20" },
     { name = "requests", specifier = ">=2.32.3" },
     { name = "tqdm", specifier = ">=4.66.0" },
@@ -1114,11 +1108,9 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "httpx", specifier = ">=0.28.1" },
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "pytest-asyncio", specifier = ">=1.0.0" },
     { name = "pytest-cov", specifier = ">=6.2.1" },
-    { name = "websockets", specifier = ">=11.0.3" },
 ]
 
 [[package]]

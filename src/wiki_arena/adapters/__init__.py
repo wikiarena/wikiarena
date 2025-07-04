@@ -1,1 +1,0 @@
-# Adapters package - maps between capability interfaces and MCP tool implementations 

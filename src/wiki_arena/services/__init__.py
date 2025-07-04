@@ -1,1 +1,0 @@
-# Services package - capability registry and service management 

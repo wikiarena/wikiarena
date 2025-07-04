@@ -46,31 +46,38 @@ class LanguageModel(ABC):
     @abstractmethod
     async def _format_tools_for_provider(
         self,
-        tools: Optional[List[Tool]] = None,
-    ) -> Any: # not sure on type here
+        mcp_tools: List[Dict[str, Any]],
+    ) -> Any:
         """
-        Return the hardcoded navigate tool in the provider's format.
-        The tools parameter is kept for compatibility but not used.
+        Convert MCP tool definitions to the provider's format.
+        
+        Args:
+            mcp_tools: List of tool definitions in MCP format
+            
+        Returns:
+            Tools formatted for the specific provider's API
         """
         pass
 
     @abstractmethod
     async def generate_response(
         self,
-        tools: Optional[List[Tool]] = None,
-        game_state: Optional[GameState] = None,
+        tools: List[Dict[str, Any]],
+        game_state: GameState,
     ) -> ToolCall:
         """
-        Given the current game state, lets the language model choose a tool call.
+        Given the current game state and available tools, let the language model choose a tool call.
 
         This method should be implemented by concrete Language Model classes. It will
         typically involve:
-        1. Formatting a prompt based on the game state (current page, target, history, rules, available tools).
-        2. Sending the prompt to the Language Model provider.
-        3. Parsing the AI's response to extract a tool call (name and arguments) and any textual thoughts.
-        4. Returning a ToolCall object.
+        1. Converting tools from MCP format to provider format
+        2. Formatting a prompt based on the game state (current page, target, history, rules, available tools).
+        3. Sending the prompt to the Language Model provider.
+        4. Parsing the AI's response to extract a tool call (name and arguments) and any textual thoughts.
+        5. Returning a ToolCall object.
 
         Args:
+            tools: List of available tools in MCP format
             game_state: The current state of the game.
 
         Returns:

@@ -4,9 +4,7 @@ from datetime import datetime
 
 from anthropic import Anthropic, AnthropicError
 from .language_model import LanguageModel, ToolCall
-from .navigate_tool import NAVIGATE_TOOL
 from wiki_arena.models import GameState, MoveMetrics, ModelConfig
-from mcp.types import Tool
 
 class AnthropicModel(LanguageModel):
     """
@@ -26,19 +24,32 @@ class AnthropicModel(LanguageModel):
             # set a 'failed' state, or handle it in another way.
             # For now, re-raising to make the initialization failure explicit.
             raise
-    
+
     async def _format_tools_for_provider(
         self,
-        tools: Optional[List[Tool]] = None,  # Parameter kept for compatibility but not used
+        mcp_tools: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
         """
-        Return the hardcoded navigate tool in Anthropic format.
+        Convert MCP tool definitions to Anthropic tool format.
+        
+        Args:
+            mcp_tools: List of tool definitions in MCP format
+            
+        Returns:
+            Tools formatted for Anthropic's API
         """
-        return [NAVIGATE_TOOL.to_anthropic_format()]
+        formatted_tools = []
+        for mcp_tool in mcp_tools:
+            formatted_tools.append({
+                "name": mcp_tool["name"],
+                "description": mcp_tool["description"],
+                "input_schema": mcp_tool["inputSchema"]
+            })
+        return formatted_tools
 
     async def generate_response(
         self,
-        tools: List[Tool],
+        tools: List[Dict[str, Any]],
         game_state: GameState,
     ) -> ToolCall:
         # TODO(hunter): error handling for game state
@@ -46,7 +57,7 @@ class AnthropicModel(LanguageModel):
         start_time = datetime.now()
 
         # TODO(hunter): should I cache the tools? lets not for now since they come every time
-        formatted_tools = await self._format_tools_for_provider()
+        formatted_tools = await self._format_tools_for_provider(tools)
         system_prompt = game_state.config.system_prompt_template.format(
             start_page_title=game_state.config.start_page_title,
             target_page_title=game_state.config.target_page_title,
