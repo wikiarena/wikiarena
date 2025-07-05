@@ -1,10 +1,11 @@
 // Main entry point for Wiki Arena event-driven frontend
 import { TaskManager } from './task-manager.js';
 import { TaskConnectionManager } from './task-connection-manager.js';
-import { UIController } from './ui-controller.js';
+import { RaceHUDController } from './race-hud-controller.js';
 import { PageGraphRenderer } from './page-graph-renderer.js';
 import { playerColorService } from './player-color-service.js';
 import { LoadingAnimation } from './loading-animation.js';
+import { type ModelOption } from './model-selector.js';
 
 // =============================================================================
 // Main Application Class - Orchestrates all components
@@ -13,7 +14,7 @@ import { LoadingAnimation } from './loading-animation.js';
 class WikiArenaApp {
   private taskManager: TaskManager;
   private connectionManager: TaskConnectionManager;
-  private uiController: UIController;
+  private raceHUDController: RaceHUDController;
   private pageGraphRenderer: PageGraphRenderer;
   private loadingAnimation: LoadingAnimation;
   private unsubscribeFunctions: (() => void)[] = [];
@@ -30,7 +31,7 @@ class WikiArenaApp {
     this.connectionManager = new TaskConnectionManager(
       (gameId, event) => this.taskManager.handleGameEvent(gameId, event)
     );
-    this.uiController = new UIController();
+    this.raceHUDController = new RaceHUDController();
     this.pageGraphRenderer = new PageGraphRenderer('graph-canvas');
     this.loadingAnimation = new LoadingAnimation('loading-container');
     
@@ -59,21 +60,6 @@ class WikiArenaApp {
   // =============================================================================
 
   private setupEventFlow(): void {
-    // Connection Manager → UI Controller (task-level status)
-    const unsubscribeConnectionStatus = this.connectionManager.onStatusChange(taskStatus => {
-      console.log('📊 Task connection status:', taskStatus);
-      
-      // Convert TaskConnectionStatus to legacy ConnectionStatus format
-      const legacyStatus = {
-        connected: taskStatus.overallStatus === 'connected',
-        connecting: taskStatus.overallStatus === 'connecting',
-        error: taskStatus.errors.length > 0 ? taskStatus.errors[0] : null,
-        reconnectAttempts: 0 // TODO: Aggregate from games if needed
-      };
-      
-      this.uiController.updateConnectionStatus(legacyStatus);
-    });
-
     // Task → Page Graph Renderer
     const unsubscribePageGraph = this.taskManager.subscribe(() => {
       const pageGraphData = this.taskManager.getVisualizationData();
@@ -98,20 +84,12 @@ class WikiArenaApp {
         canStepBackward: this.taskManager.canStepBackward()
       };
       
-      // Update UI with Task data directly (NEW approach)
-      this.uiController.updateTask(task, steppingInfo);
-      
-      // Check if user selected a different game and update accordingly
-      const selectedGameId = this.uiController.getSelectedGameId();
-      if (selectedGameId && task.games.has(selectedGameId)) {
-        // Re-render with updated selection if needed
-        this.uiController.updateTask(task, steppingInfo);
-      }
+      // Update UI with Task data directly
+      this.raceHUDController.updateTask(task, steppingInfo);
     });
 
     // Store unsubscribe functions for cleanup
     this.unsubscribeFunctions.push(
-      unsubscribeConnectionStatus,
       unsubscribePageGraph,
       unsubscribeTaskUI
     );
@@ -120,47 +98,12 @@ class WikiArenaApp {
   }
 
   private setupUIHandlers(): void {
-    this.uiController.setupEventListeners({
-      onStartGame: () => this.handleStartGame(),
-      onStepBackward: () => this.handleStepBackward(),
-      onStepForward: () => this.handleStepForward(),
-      onEnterLiveMode: () => this.handleEnterLiveMode(),
+    this.raceHUDController.setupEventListeners({
       onStepToMove: (moveIndex: number) => this.handleStepToMove(moveIndex)
     });
     
-    // Setup info panel toggle
-    this.setupInfoPanelToggle();
-    
     // Setup window resize handler
     this.setupWindowResize();
-  }
-  
-  private setupInfoPanelToggle(): void {
-    const toggleButton = document.getElementById('info-toggle');
-    const infoPanel = document.getElementById('info-panel');
-    
-    if (toggleButton && infoPanel) {
-      // Panel starts collapsed by default
-      let isCollapsed = true;
-      
-      // Set initial button state to match collapsed panel
-      toggleButton.textContent = '📊';
-      toggleButton.title = 'Show info panel';
-      
-      toggleButton.addEventListener('click', () => {
-        isCollapsed = !isCollapsed;
-        
-        if (isCollapsed) {
-          infoPanel.classList.add('collapsed');
-          toggleButton.textContent = '📊';
-          toggleButton.title = 'Show info panel';
-        } else {
-          infoPanel.classList.remove('collapsed');
-          toggleButton.textContent = '✖️';
-          toggleButton.title = 'Hide info panel';
-        }
-      });
-    }
   }
   
   private setupWindowResize(): void {
@@ -179,78 +122,12 @@ class WikiArenaApp {
   // User Action Handlers
   // =============================================================================
   
-  public async handleStartGame(): Promise<void> {
-    console.log('🎲 User requested new task with multiple games');
-
-    // Reset state for new game
-    this.hasReceivedFirstData = false;
-
-    // Show loading state
-    this.uiController.showGameStarting();
-    this.uiController.setButtonLoading('start-game-btn', true, 'Starting...');
-    
-    // Show loading animation
-    this.loadingAnimation.show();
-    this.loadingAnimation.start();
-    console.log('🎬 Loading animation started');
-
-    try {
-      // Make API call to create task with multiple games
-      const response = await this.createRandomTask();
-      
-      if (response.ok) {
-        const data = await response.json();
-        console.log('✅ Task created:', data);
-        
-        // Extract task info from response
-        const { task_id, start_page, target_page, game_ids } = data;
-        
-        if (!task_id || !game_ids || game_ids.length === 0) {
-          throw new Error('Invalid task response: missing task_id or game_ids');
-        }
-        
-        console.log(`🎯 Created task ${task_id} with ${game_ids.length} games: ${start_page} → ${target_page}`);
-        
-        // Reset task manager for new task
-        this.resetTaskManager();
-        
-        // Create task with multiple games
-        const gameConfigs = game_ids.map((gameId: string) => ({
-          gameId: gameId,
-          startPage: start_page,
-          targetPage: target_page
-        }));
-        
-        this.taskManager.createTask(gameConfigs);
-        
-        // Connect to all games in the task using connection manager
-        await this.connectionManager.connectToTask(game_ids);
-        
-        console.log(`🔌 Connected to task ${task_id} with ${game_ids.length} games`);
-      } else {
-        const errorText = await response.text();
-        throw new Error(`Failed to create task: ${response.status} - ${errorText}`);
-      }
-    } catch (error) {
-      console.error('❌ Failed to start task:', error);
-      this.loadingAnimation.hide();
-      this.uiController.showError(`Failed to start new task: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      this.uiController.updateLoadingState('Click "Start New Game" to try again');
-    } finally {
-      this.uiController.setButtonLoading('start-game-btn', false);
-    }
-  }
-
-  public async handleStartCustomGame(startPage: string | null, targetPage: string | null): Promise<void> {
+  public async handleStartCustomRace(startPage: string | null, targetPage: string | null, player1Model: ModelOption | null, player2Model: ModelOption | null): Promise<void> {
     console.log(`🎲 User requested custom task: ${startPage || '(empty)'} -> ${targetPage || '(empty)'}`);
 
-    // Reset state for new game
+    // Reset state for new race
     this.hasReceivedFirstData = false;
 
-    // Show loading state
-    this.uiController.showGameStarting();
-    this.uiController.setButtonLoading('start-game-btn', true, 'Starting...');
-    
     // Show loading animation
     this.loadingAnimation.show();
     this.loadingAnimation.start();
@@ -258,7 +135,7 @@ class WikiArenaApp {
 
     try {
       // Make API call to create custom task with multiple games
-      const response = await this.createCustomTask(startPage, targetPage);
+      const response = await this.createCustomTask(startPage, targetPage, player1Model, player2Model);
       
       if (response.ok) {
         const data = await response.json();
@@ -291,15 +168,13 @@ class WikiArenaApp {
         console.log(`🔌 Connected to custom task ${task_id} with ${game_ids.length} games`);
       } else {
         const errorText = await response.text();
-        throw new Error(`Failed to create custom task: ${response.status} - ${errorText}`);
+        throw new Error(`Failed to create task: ${response.status} - ${errorText}`);
       }
     } catch (error) {
-      console.error('❌ Failed to start custom task:', error);
+      console.error('❌ Failed to start task:', error);
       this.loadingAnimation.hide();
-      this.uiController.showError(`Failed to start custom task: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      this.uiController.updateLoadingState('Click "Start New Game" to try again');
-    } finally {
-      this.uiController.setButtonLoading('start-game-btn', false);
+      // NOTE: We don't have a dedicated error UI in the new design yet
+      alert(`Failed to start new race: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
@@ -334,15 +209,20 @@ class WikiArenaApp {
   private resetTaskManager(): void {
     this.hasReceivedFirstData = false;
     this.taskManager.reset();
-    this.uiController.resetTaskUI(); // Updated to use new method name
+    this.raceHUDController.resetTaskUI(); // Updated to use new method name
   }
 
   // =============================================================================
   // API Calls
   // =============================================================================
 
-  private async createCustomTask(startPage: string | null, targetPage: string | null): Promise<Response> {
+  private async createCustomTask(startPage: string | null, targetPage: string | null, player1Model: ModelOption | null, player2Model: ModelOption | null): Promise<Response> {
     const apiUrl = 'http://localhost:8000/api/tasks';
+    
+    const model_selections = [
+        player1Model ? { model_provider: player1Model.provider, model_name: player1Model.id } : { model_provider: 'random', model_name: 'random' },
+        player2Model ? { model_provider: player2Model.provider, model_name: player2Model.id } : { model_provider: 'random', model_name: 'random' }
+    ];
     
     const taskRequest = {
       task_strategy: {
@@ -350,53 +230,8 @@ class WikiArenaApp {
         start_page: startPage,
         target_page: targetPage
       },
-      model_selections: [
-        {
-          model_provider: 'random',
-          model_name: 'random'
-        },
-        {
-          model_provider: 'random',
-          model_name: 'random'
-        }
-      ],
+      model_selections: model_selections,
       max_steps: 30
-    };
-    
-    return fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(taskRequest)
-    });
-  }
-
-  private async createRandomTask(): Promise<Response> {
-    const apiUrl = 'http://localhost:8000/api/tasks';
-    
-    // Create a task request with random task selection strategy and multiple games
-    const taskRequest = {
-      task_strategy: {
-        type: 'random',
-        language: 'en',
-        max_retries: 3
-      },
-      model_selections: [
-        {
-          model_provider: 'random',
-          model_name: 'random'
-        },
-        {
-          model_provider: 'random',
-          model_name: 'random'
-        },
-        // {
-        //   model_provider: 'random',
-        //   model_name: 'random'
-        // },
-      ],
-      max_steps: 20
     };
     
     return fetch(apiUrl, {
@@ -450,7 +285,7 @@ class WikiArenaApp {
     // Detailed debug info
     this.taskManager.debugState();
     this.connectionManager.debugConnections();
-    this.uiController.debugElements();
+    this.raceHUDController.debugElements();
     
     console.log('Page Graph Renderer:', this.pageGraphRenderer);
   }
@@ -475,8 +310,7 @@ function initializeApp(): void {
     (window as any).wikiArena = {
       app,
       debug: () => app?.debug(),
-      startGame: () => app?.handleStartGame(),
-      startCustomGame: (start: string, target: string) => app?.handleStartCustomGame(start, target),
+      startCustomRace: (start: string, target: string) => app?.handleStartCustomRace(start, target, null, null),
       centerGraph: () => app?.centerGraph(),
       clearGraph: () => app?.clearGraph(),
       // New stepping controls
@@ -540,7 +374,7 @@ window.addEventListener('beforeunload', destroyApp);
 export { WikiArenaApp };
 
 import { WikipediaAutocomplete } from './wikipedia-autocomplete.js';
-import { ModelSelector, type ModelOption } from './model-selector.js';
+import { ModelSelector } from './model-selector.js';
 
 // Basic UI functionality for the new design
 class UIManager {
@@ -610,7 +444,7 @@ class UIManager {
 
         // Quickstart - start random race
         quickstartBtn.addEventListener('click', () => {
-            this.startRandomRace();
+            this.startCustomRace();
         });
 
         // Leaderboard
@@ -623,7 +457,6 @@ class UIManager {
     private initializeLandingModal() {
         const leaderboardBtn = document.getElementById('leaderboard-modal-btn')!;
         const aboutBtn = document.getElementById('about-modal-btn')!;
-        const quickstartBtn = document.getElementById('quickstart-modal-btn')!;
 
         leaderboardBtn.addEventListener('click', () => {
             console.log('Leaderboard modal clicked');
@@ -633,10 +466,6 @@ class UIManager {
         aboutBtn.addEventListener('click', () => {
             console.log('About modal clicked');
             // TODO: Implement about modal
-        });
-
-        quickstartBtn.addEventListener('click', () => {
-            this.startRandomRace();
         });
 
         this.startRaceBtn.addEventListener('click', () => {
@@ -768,6 +597,7 @@ class UIManager {
 
         // Trigger initial validation for empty pages (they should be valid)
         this.triggerInitialPageValidation();
+        this.triggerInitialModelValidation();
 
         // Initialize the form state
         this.updateStartRaceButton();
@@ -789,6 +619,20 @@ class UIManager {
         }
     }
 
+    private triggerInitialModelValidation() {
+        if (this.player1Selector) {
+            setTimeout(() => {
+                this.player1Selector!.validateCurrentSelection();
+            }, 100);
+        }
+
+        if (this.player2Selector) {
+            setTimeout(() => {
+                this.player2Selector!.validateCurrentSelection();
+            }, 100);
+        }
+    }
+
     private updateStartRaceButton() {
         // Check page validation from autocomplete (for page existence)
         const hasValidStartPage = this.pageValidationState.start;
@@ -797,9 +641,6 @@ class UIManager {
         // Check model selection
         const hasPlayer1 = this.modelValidationState.player1;
         const hasPlayer2 = this.modelValidationState.player2;
-        const player1ModelId = this.player1Selector?.getValue() || '';
-        const player2ModelId = this.player2Selector?.getValue() || '';
-        const differentModels = player1ModelId !== player2ModelId || player1ModelId === '';
         
         // Uniqueness validation for pages
         const startPageValue = this.startPageInput.value.trim();
@@ -827,8 +668,7 @@ class UIManager {
         
         // Final validation check for the start button
         const differentPages = !areSameAndNotEmpty;
-        const isValid = hasValidStartPage && hasValidTargetPage && hasPlayer1 && hasPlayer2 && 
-                       differentModels && differentPages;
+        const isValid = hasValidStartPage && hasValidTargetPage && hasPlayer1 && hasPlayer2 && differentPages;
         
         this.startRaceBtn.disabled = !isValid;
     }
@@ -841,44 +681,18 @@ class UIManager {
         this.landingModal.classList.add('hidden');
     }
 
-    private async startRandomRace() {
-        console.log('Starting random race...');
-        
-        if (!this.app) {
-            console.error('WikiArenaApp not initialized yet');
-            return;
-        }
-
-        try {
-            // Hide the landing modal first
-            this.hideLandingModal();
-            
-            // Call the main app's method to start a random race
-            await this.app.handleStartGame();
-            
-        } catch (error) {
-            console.error('Failed to start random race:', error);
-            // Show the landing modal again if there was an error
-            this.showLandingModal();
-        }
-    }
-
     private async startCustomRace() {
-        const startPageValue = this.startPageInput.value.trim();
-        const targetPageValue = this.targetPageInput.value.trim();
+        const startPage = this.startPageInput.value.trim() || null;
+        const targetPage = this.targetPageInput.value.trim() || null;
         
-        // Convert empty strings to null for the API
-        const startPage = startPageValue || null;
-        const targetPage = targetPageValue || null;
-        
-        const player1Model = this.player1Selector?.getValue() || '';
-        const player2Model = this.player2Selector?.getValue() || '';
+        const player1Model = this.player1Selector?.getSelectedModel() || null;
+        const player2Model = this.player2Selector?.getSelectedModel() || null;
 
         console.log('Starting custom race:', {
             startPage,
             targetPage,
-            player1Model,
-            player2Model
+            player1Model: player1Model?.id || 'random',
+            player2Model: player2Model?.id || 'random'
         });
 
         if (!this.app) {
@@ -891,7 +705,7 @@ class UIManager {
             this.hideLandingModal();
             
             // Call the main app's method to start a custom race
-            await this.app.handleStartCustomGame(startPage, targetPage);
+            await this.app.handleStartCustomRace(startPage, targetPage, player1Model, player2Model);
             
         } catch (error) {
             console.error('Failed to start custom race:', error);
