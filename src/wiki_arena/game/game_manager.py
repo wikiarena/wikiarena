@@ -78,7 +78,7 @@ class GameManager:
 
             # Navigate to start page directly using the wiki service
             try:
-                start_page = await self.wiki_service.get_page(config.start_page_title)
+                start_page = await self.wiki_service.get_page(config.start_page_title, include_all_namespaces=False)
                 self.state.current_page = start_page
             except (ConnectionError, ValueError) as e:
                 self.state.status = GameStatus.ERROR
@@ -151,7 +151,7 @@ class GameManager:
             
             # Attempt navigation
             try:
-                next_page = await self.wiki_service.get_page(target_page)
+                next_page = await self.wiki_service.get_page(target_page, include_all_namespaces=False)
             except (ConnectionError, ValueError) as e:
                 nav_error = GameError(
                     type=ErrorType.APP_NAVIGATION_ERROR,
