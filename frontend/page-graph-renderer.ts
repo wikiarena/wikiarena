@@ -8,6 +8,7 @@ import { playerColorService } from './player-color-service.js';
 
 interface PhysicsConfig {
   chargeStrength: number;
+  chargeDistanceMax: number;
   linkDistance: number; 
   linkStrength: number; // For move edges (general)
   neutralMoveLinkStrength: number; // For moves with distanceChange = 0 (strong)
@@ -15,8 +16,6 @@ interface PhysicsConfig {
   multiVisitLinkStrength: number; // For edges connected to multi-visit nodes
   alphaDecay: number;
   velocityDecay: number;
-  collisionRadius: number;
-  centerStrength: number;
   // Solar System Physics
   orbitalStrength: number;      // 0-1: How strongly nodes stick to orbits
 }
@@ -69,15 +68,14 @@ export class PageGraphRenderer {
   // Enhanced physics configuration with sensible defaults
   private physicsConfig: PhysicsConfig = {
     chargeStrength: 0, // Much weaker for solar system - just anti-overlap
+    chargeDistanceMax: 500,
     linkDistance: 60, // maybe 50
     linkStrength: 0.2, // Weaker links for moves - visual only (fallback)
     neutralMoveLinkStrength: 0.2, // For moves with distanceChange = 0 (strong structural)
-    progressMoveLinkStrength: 0.05, // For moves with distanceChange != 0 (very weak)
+    progressMoveLinkStrength: 0.1, // For moves with distanceChange != 0 (very weak)
     multiVisitLinkStrength: 0.01, // Edges on multi-visit nodes are weak by default
     alphaDecay: 0.01,
     velocityDecay: 0.6, // Higher damping for stable orbits
-    collisionRadius: 25, // Smaller - let nodes get closer in orbits
-    centerStrength: 0.0, // Disabled - using orbital force instead
     orbitalStrength: 0.8 // Strong orbital constraint
   };
 
@@ -382,17 +380,10 @@ export class PageGraphRenderer {
           </div>
           <div class="control-item" style="margin-bottom: 8px;">
             <label style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-              Collision Radius: <span id="collisionValue" style="color: #f59e0b; font-weight: bold;">${this.physicsConfig.collisionRadius}</span>
+              Max Charge Distance: <span id="chargeDistanceMaxValue" style="color: #f59e0b; font-weight: bold;">${this.physicsConfig.chargeDistanceMax}</span>
             </label>
-            <input type="range" id="collisionSlider" min="10" max="60" value="${this.physicsConfig.collisionRadius}" style="width: 100%;">
-            <div style="font-size: 10px; color: #64748b; margin-top: 2px;">Prevents node overlap</div>
-          </div>
-          <div class="control-item" style="margin-bottom: 8px;">
-            <label style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-              Center Strength: <span id="centerValue" style="color: #f59e0b; font-weight: bold;">${this.physicsConfig.centerStrength}</span>
-            </label>
-            <input type="range" id="centerSlider" min="0" max="1" step="0.1" value="${this.physicsConfig.centerStrength}" style="width: 100%;">
-            <div style="font-size: 10px; color: #64748b; margin-top: 2px;">Pull toward canvas center</div>
+            <input type="range" id="chargeDistanceMaxSlider" min="50" max="1000" step="10" value="${this.physicsConfig.chargeDistanceMax}" style="width: 100%;">
+            <div style="font-size: 10px; color: #64748b; margin-top: 2px;">Max distance for charge force to apply</div>
           </div>
         </div>
         
@@ -580,23 +571,13 @@ export class PageGraphRenderer {
       this.updateSimulationForces();
     });
 
-    // Collision radius control
-    const collisionSlider = this.controlsContainer.querySelector('#collisionSlider') as HTMLInputElement;
-    const collisionValue = this.controlsContainer.querySelector('#collisionValue') as HTMLSpanElement;
-    collisionSlider?.addEventListener('input', (e) => {
+    // Max charge distance control
+    const chargeDistanceMaxSlider = this.controlsContainer.querySelector('#chargeDistanceMaxSlider') as HTMLInputElement;
+    const chargeDistanceMaxValue = this.controlsContainer.querySelector('#chargeDistanceMaxValue') as HTMLSpanElement;
+    chargeDistanceMaxSlider?.addEventListener('input', (e) => {
       const value = parseInt((e.target as HTMLInputElement).value);
-      this.physicsConfig.collisionRadius = value;
-      collisionValue.textContent = value.toString();
-      this.updateSimulationForces();
-    });
-
-    // Center strength control
-    const centerSlider = this.controlsContainer.querySelector('#centerSlider') as HTMLInputElement;
-    const centerValue = this.controlsContainer.querySelector('#centerValue') as HTMLSpanElement;
-    centerSlider?.addEventListener('input', (e) => {
-      const value = parseFloat((e.target as HTMLInputElement).value);
-      this.physicsConfig.centerStrength = value;
-      centerValue.textContent = value.toString();
+      this.physicsConfig.chargeDistanceMax = value;
+      chargeDistanceMaxValue.textContent = value.toString();
       this.updateSimulationForces();
     });
 
@@ -758,11 +739,14 @@ export class PageGraphRenderer {
     if (!this.simulation || !this.orbitSystem) return;
 
     // Update classic forces
+    (this.simulation.force('charge') as d3.ForceManyBody<PageNode>)
+        .strength(this.physicsConfig.chargeStrength)
+        .distanceMax(this.physicsConfig.chargeDistanceMax);
+
+    (this.simulation.force('collision') as d3.ForceCollide<PageNode>)
+        .radius((d) => d.type === 'optimal_path' ? 0 : this.getPageRadius(d));
+    
     this.simulation
-      .force('charge', d3.forceManyBody().strength(this.physicsConfig.chargeStrength))
-      .force('collision', d3.forceCollide()
-        .radius(this.physicsConfig.collisionRadius)
-        .strength(0.8))
       .alphaDecay(this.physicsConfig.alphaDecay)
       .velocityDecay(this.physicsConfig.velocityDecay);
 
@@ -908,55 +892,6 @@ export class PageGraphRenderer {
           }
         }
       });
-    };
-  }
-
-  private createSelectiveCollisionForce() {
-    const self = this;
-    return function(alpha: number) {
-      // Filter to only non-optimal-path nodes for collision detection
-      const collisionNodes = self.pages.filter(node => node.type !== 'optimal_path');
-      
-      // Apply collision detection only between non-optimal-path nodes
-      for (let i = 0; i < collisionNodes.length; i++) {
-        const nodeA = collisionNodes[i];
-        const aX = nodeA.x || 0;
-        const aY = nodeA.y || 0;
-        const aRadius = self.physicsConfig.collisionRadius;
-        
-        for (let j = i + 1; j < collisionNodes.length; j++) {
-          const nodeB = collisionNodes[j];
-          const bX = nodeB.x || 0;
-          const bY = nodeB.y || 0;
-          const bRadius = self.physicsConfig.collisionRadius;
-          
-          // Calculate distance between nodes
-          const dx = bX - aX;
-          const dy = bY - aY;
-          const distance = Math.sqrt(dx * dx + dy * dy);
-          const minDistance = aRadius + bRadius;
-          
-          // If nodes are overlapping, push them apart
-          if (distance < minDistance && distance > 0) {
-            const overlap = minDistance - distance;
-            const force = overlap * alpha * 0.8; // 0.8 = collision strength
-            
-            // Unit vector from A to B
-            const unitX = dx / distance;
-            const unitY = dy / distance;
-            
-            // Apply equal and opposite forces
-            const forceX = unitX * force * 0.5;
-            const forceY = unitY * force * 0.5;
-            
-            // Cast to any to access D3 simulation properties
-            (nodeA as any).vx = ((nodeA as any).vx || 0) - forceX;
-            (nodeA as any).vy = ((nodeA as any).vy || 0) - forceY;
-            (nodeB as any).vx = ((nodeB as any).vx || 0) + forceX;
-            (nodeB as any).vy = ((nodeB as any).vy || 0) + forceY;
-          }
-        }
-      }
     };
   }
 
@@ -1152,49 +1087,58 @@ export class PageGraphRenderer {
           y: this.orbitSystem.startY 
         };
         
-      case 'visited':
-        // Position below parent node with side-based x-spacing
+      case 'visited': {
         const parentNode = this.findParentNode(page);
-        if (parentNode && parentNode.x !== undefined && parentNode.y !== undefined) {
-          // Use orbit radius for spacing instead of hardcoded value
-          const spacing = this.orbitSystem.orbitRadius(1); // Use radius for distance 1
-          
-          // Get the game side for this node to determine x-direction
+        if (parentNode && parentNode.x !== undefined && parentNode.y !== undefined && this.orbitSystem) {
+          const spacing = this.orbitSystem.orbitRadius(1);
           const gameSide = this.getGameSide(page);
-          
-          let xOffset = 0;
-          if (gameSide === 'left') {
-            xOffset = -spacing; // Move left for left side nodes
-          } else if (gameSide === 'right') {
-            xOffset = spacing;  // Move right for right side nodes
+      
+          // Vector from parent to the orbit system's center
+          const parentToCenterX = this.orbitSystem.centerX - parentNode.x;
+          const parentToCenterY = this.orbitSystem.centerY - parentNode.y;
+      
+          const distanceToCenter = Math.sqrt(parentToCenterX * parentToCenterX + parentToCenterY * parentToCenterY);
+      
+          // For 'center' games or if the parent is at the center, spawn directly below as a fallback.
+          if (gameSide === 'center' || distanceToCenter < 1) {
+            return {
+              x: parentNode.x,
+              y: parentNode.y + spacing,
+            };
           }
-          // Center nodes get xOffset = 0 (same x as parent)
-          
-          const newPosition = {
-            x: parentNode.x + xOffset,          // Parent x + side-based spacing
-            y: parentNode.y + spacing           // Orbit radius spacing below parent
-          };
-          return newPosition;
-        } 
-
-        // FALLBACK: Position bottom corner of side
-        const gameSide = this.getGameSide(page);
-        if (gameSide === 'left') {
-          return { 
-            x: 0, 
-            y: this.height
-          };
-        } else if (gameSide === 'right') {
-          return { 
-            x: this.width, 
-            y: this.height
-          };
-        } else {
-          return { 
-            x: this.width / 2, 
-            y: this.height / 2
+      
+          // Normalize the vector to get a direction
+          const unitX = parentToCenterX / distanceToCenter;
+          const unitY = parentToCenterY / distanceToCenter;
+      
+          let orthogonalX, orthogonalY;
+      
+          if (gameSide === 'left') {
+            // Counter-clockwise orthogonal vector is (-y, x)
+            orthogonalX = -unitY;
+            orthogonalY = unitX;
+          } else { // Assumes 'right'
+            // Clockwise orthogonal vector is (y, -x)
+            orthogonalX = unitY;
+            orthogonalY = -unitX;
+          }
+      
+          return {
+            x: parentNode.x + orthogonalX * spacing,
+            y: parentNode.y + orthogonalY * spacing,
           };
         }
+      
+        // FALLBACK: Position at a corner if no parent is found
+        const gameSide = this.getGameSide(page);
+        if (gameSide === 'left') {
+          return { x: 0, y: this.height };
+        } else if (gameSide === 'right') {
+          return { x: this.width, y: this.height };
+        } else {
+          return { x: this.width / 2, y: this.height / 2 };
+        }
+      }
 
       case 'optimal_path':
         return { 
@@ -1329,7 +1273,8 @@ export class PageGraphRenderer {
      this.simulation = d3.forceSimulation(this.pages)
        // Light charge force - just for anti-overlap
        .force('charge', d3.forceManyBody()
-         .strength(this.physicsConfig.chargeStrength)) // -80
+         .strength(this.physicsConfig.chargeStrength) // -80
+         .distanceMax(this.physicsConfig.chargeDistanceMax))
       
        // Link force with strength based on distanceChange and edge type
        .force('link', d3.forceLink(links)
@@ -1338,7 +1283,9 @@ export class PageGraphRenderer {
          .strength((d: any) => this.getLinkStrength(d)))
       
               // Light collision detection - completely exclude optimal path nodes
-      .force('collision', this.createSelectiveCollisionForce())
+      .force('collision', d3.forceCollide<PageNode>()
+          .radius((d) => d.type === 'optimal_path' ? 0 : this.getPageRadius(d))
+          .strength(0.8))
       
        // PRIMARY FORCE: Orbital constraint
        .force('orbital', this.createOrbitalForce(this.orbitSystem))
@@ -1578,7 +1525,9 @@ export class PageGraphRenderer {
       .style('fill', '#e2e8f0')
       .style('font-size', '12px')
       .style('font-weight', 'bold')
-      .style('text-shadow', '1px 1px 2px rgba(0,0,0,0.8)');
+      .style('text-shadow', '1px 1px 2px rgba(0,0,0,0.8)')
+      .style('pointer-events', 'none')
+      .style('user-select', 'none');
 
     // Ensure existing pages remain visible
     pageUpdate
@@ -1969,7 +1918,6 @@ export class PageGraphRenderer {
       // Update center forces and restart simulation
       if (this.simulation) {
         this.simulation
-          .force('center', d3.forceCenter(this.width / 2, this.height / 2))
           .alpha(0.3)
           .restart();
       }
