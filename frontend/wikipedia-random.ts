@@ -6,10 +6,9 @@ interface RandomPageCache {
 class WikipediaRandomService {
     private cache: RandomPageCache | null = null;
     private readonly CACHE_DURATION = 10 * 60 * 1000; // 10 minutes
-    private readonly RANDOM_PAGES_COUNT = 100;
+    private readonly RANDOM_PAGES_COUNT = 200; // bulk checking limit
     
     private cycleInterval: NodeJS.Timeout | null = null;
-    private currentIndex = 0;
     private callbacks: Array<(title: string) => void> = [];
 
     /**
@@ -37,24 +36,7 @@ class WikipediaRandomService {
 
             const data = await response.json();
             const pages = data.query?.random || [];
-            
-            const titles = pages
-                .map((page: any) => page.title)
-                .filter((title: string) => {
-                    // Filter out boring/technical pages
-                    const lower = title.toLowerCase();
-                    return !lower.includes('user:') && 
-                           !lower.includes('talk:') &&
-                           !lower.includes('category:') &&
-                           !lower.includes('template:') &&
-                           !lower.includes('wikipedia:') &&
-                           !lower.includes('file:') &&
-                           !lower.includes('help:') &&
-                           !lower.includes('portal:') &&
-                           !lower.includes('list of') &&
-                           title.length > 2 && 
-                           title.length < 50; // Keep interesting, readable titles
-                });
+            const titles = pages.map((page: any) => page.title);
 
             // Cache the results
             this.cache = {
@@ -65,13 +47,7 @@ class WikipediaRandomService {
             return titles;
         } catch (error) {
             console.error('Failed to fetch random Wikipedia pages:', error);
-            // Return fallback titles if API fails
-            return [
-                'Ancient Rome', 'Quantum Physics', 'Chocolate', 'Mount Everest', 'Jazz Music',
-                'Ocean Currents', 'Renaissance Art', 'Space Exploration', 'Coffee Culture', 'Photography',
-                'Marine Biology', 'Medieval History', 'Solar System', 'Classical Music', 'Architecture',
-                'Geology', 'World Cuisine', 'Film History', 'Astronomy', 'Literature'
-            ];
+            return [];
         }
     }
 
@@ -140,7 +116,7 @@ class WikipediaRandomService {
     }
 
     /**
-     * Get a random title immediately (without cycling)
+     * Get a random page title
      */
     async getRandomTitle(): Promise<string> {
         const pages = await this.fetchRandomPages();
