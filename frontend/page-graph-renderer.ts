@@ -1515,7 +1515,8 @@ export class PageGraphRenderer {
     pageUpdate.select('.distance-text')
       .text((d: PageNode) => this.getDistanceText(d))
       .style('font-size', (d: PageNode) => this.getDistanceFontSize(d))
-      .style('display', (d: PageNode) => d.distanceToTarget !== undefined ? 'block' : 'none');
+      .style('display', (d: PageNode) => d.distanceToTarget !== undefined ? 'block' : 'none')
+      .style('fill', (d: PageNode) => this.isColorLight(this.getPageColor(d)) ? '#000000' : '#FFFFFF');
 
     // Update title labels - position based on node radius
     pageUpdate.select('.title-text')
@@ -1525,7 +1526,6 @@ export class PageGraphRenderer {
       .style('fill', '#e2e8f0')
       .style('font-size', '12px')
       .style('font-weight', 'bold')
-      .style('text-shadow', '1px 1px 2px rgba(0,0,0,0.8)')
       .style('pointer-events', 'none')
       .style('user-select', 'none');
 
@@ -1645,14 +1645,36 @@ export class PageGraphRenderer {
         .attr('class', 'distance-text')
         .attr('text-anchor', 'middle')
         .attr('dy', '0.35em')
-        .style('fill', 'white')
+        .style('fill', (d: PageNode) => this.isColorLight(this.getPageColor(d)) ? '#000000' : '#FFFFFF')
         .style('font-weight', 'bold')
         .style('pointer-events', 'none')
-        .style('text-shadow', '1px 1px 2px rgba(0,0,0,0.8)') // Add shadow for better visibility
         .text(textContent)
         .style('font-size', fontSize)
         .style('display', display);
     }
+  }
+
+  /**
+   * Helper function to determine if a color is light or dark.
+   * Used to decide text color (black or white) for overlays.
+   * @param color - The hex color string (e.g., "#RRGGBB").
+   */
+  private isColorLight(color: string): boolean {
+    if (!color.startsWith('#')) {
+      // Can't determine, assume dark background, use white text
+      return false; 
+    }
+  
+    const hex = color.slice(1);
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+  
+    // Using the YIQ formula to determine brightness
+    const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+    
+    // Threshold can be adjusted; 128 is a common midpoint.
+    return yiq >= 128;
   }
 
   // =============================================================================

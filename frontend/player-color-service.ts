@@ -14,7 +14,7 @@ export class PlayerColorService {
   // Provider-based color palettes using brand colors
   private providerColorPalettes: Record<string, string[]> = {
     'anthropic': ['#D97757', '#CC785C', '#D4A27F'], // Coral, Book Cloth, Kraft
-    // 'openai': ['#000000', '#FFFFFF', '#6B7280'],    // Black, white, medium gray
+    'openai': ['#10A37F', '#FFFFFF', '#000000'],    // Green, White, Black
     'google': ['#1C69FF', '#4796E3', '#9177C7'],    // Focus blue, Gemini purple, Error red/pink
     'random': [], // Will be populated with random colors from other providers
   };
