@@ -10,9 +10,9 @@ interface PhysicsConfig {
   chargeStrength: number;
   linkDistance: number; 
   linkStrength: number; // For move edges (general)
-  optimalPathLinkStrength: number; // For optimal path edges
   neutralMoveLinkStrength: number; // For moves with distanceChange = 0 (strong)
   progressMoveLinkStrength: number; // For moves with distanceChange != 0 (very weak)
+  multiVisitLinkStrength: number; // For edges connected to multi-visit nodes
   alphaDecay: number;
   velocityDecay: number;
   collisionRadius: number;
@@ -69,11 +69,11 @@ export class PageGraphRenderer {
   // Enhanced physics configuration with sensible defaults
   private physicsConfig: PhysicsConfig = {
     chargeStrength: 0, // Much weaker for solar system - just anti-overlap
-    linkDistance: 80, // maybe 50
+    linkDistance: 60, // maybe 50
     linkStrength: 0.2, // Weaker links for moves - visual only (fallback)
-    optimalPathLinkStrength: 0.05, // Even weaker for optimal paths - just visual hints
     neutralMoveLinkStrength: 0.2, // For moves with distanceChange = 0 (strong structural)
     progressMoveLinkStrength: 0.05, // For moves with distanceChange != 0 (very weak)
+    multiVisitLinkStrength: 0.01, // Edges on multi-visit nodes are weak by default
     alphaDecay: 0.01,
     velocityDecay: 0.6, // Higher damping for stable orbits
     collisionRadius: 25, // Smaller - let nodes get closer in orbits
@@ -414,13 +414,6 @@ export class PageGraphRenderer {
           </div>
           <div class="control-item" style="margin-bottom: 8px;">
             <label style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-              Optimal Path Link Strength: <span id="optimalLinkStrengthValue" style="color: #f59e0b; font-weight: bold;">${this.physicsConfig.optimalPathLinkStrength}</span>
-            </label>
-            <input type="range" id="optimalLinkStrengthSlider" min="0" max="1" step="0.05" value="${this.physicsConfig.optimalPathLinkStrength}" style="width: 100%;">
-            <div style="font-size: 10px; color: #64748b; margin-top: 2px;">How strongly optimal path edges pull nodes together</div>
-          </div>
-          <div class="control-item" style="margin-bottom: 8px;">
-            <label style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
               Neutral Move Strength: <span id="neutralMoveStrengthValue" style="color: #f59e0b; font-weight: bold;">${this.physicsConfig.neutralMoveLinkStrength}</span>
             </label>
             <input type="range" id="neutralMoveStrengthSlider" min="0" max="1" step="0.05" value="${this.physicsConfig.neutralMoveLinkStrength}" style="width: 100%;">
@@ -432,6 +425,17 @@ export class PageGraphRenderer {
             </label>
             <input type="range" id="progressMoveStrengthSlider" min="0" max="0.1" step="0.01" value="${this.physicsConfig.progressMoveLinkStrength}" style="width: 100%;">
             <div style="font-size: 10px; color: #64748b; margin-top: 2px;">Strength for moves with distanceChange != 0 (very weak)</div>
+          </div>
+        </div>
+        
+        <div class="control-section" style="margin-bottom: 12px;">
+          <h4 style="margin: 0 0 8px 0; color: #cbd5e1; font-size: 11px; text-transform: uppercase;">Multi-Visit Link Strength</h4>
+          <div class="control-item" style="margin-bottom: 8px;">
+            <label style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              Multi-Visit Link Strength: <span id="multiVisitLinkStrengthValue" style="color: #f59e0b; font-weight: bold;">${this.physicsConfig.multiVisitLinkStrength}</span>
+            </label>
+            <input type="range" id="multiVisitLinkStrength" min="0" max="1" step="0.01" value="${this.physicsConfig.multiVisitLinkStrength}" style="width: 100%;">
+            <div style="font-size: 10px; color: #64748b; margin-top: 2px;">Strength for edges on multi-visit nodes.</div>
           </div>
         </div>
         
@@ -616,16 +620,6 @@ export class PageGraphRenderer {
       this.updateSimulationForces();
     });
 
-    // Optimal path link strength control
-    const optimalLinkStrengthSlider = this.controlsContainer.querySelector('#optimalLinkStrengthSlider') as HTMLInputElement;
-    const optimalLinkStrengthValue = this.controlsContainer.querySelector('#optimalLinkStrengthValue') as HTMLSpanElement;
-    optimalLinkStrengthSlider?.addEventListener('input', (e) => {
-      const value = parseFloat((e.target as HTMLInputElement).value);
-      this.physicsConfig.optimalPathLinkStrength = value;
-      optimalLinkStrengthValue.textContent = value.toString();
-      this.updateSimulationForces();
-    });
-
     // Neutral move strength control (distanceChange = 0)
     const neutralMoveStrengthSlider = this.controlsContainer.querySelector('#neutralMoveStrengthSlider') as HTMLInputElement;
     const neutralMoveStrengthValue = this.controlsContainer.querySelector('#neutralMoveStrengthValue') as HTMLSpanElement;
@@ -643,6 +637,15 @@ export class PageGraphRenderer {
       const value = parseFloat((e.target as HTMLInputElement).value);
       this.physicsConfig.progressMoveLinkStrength = value;
       progressMoveStrengthValue.textContent = value.toString();
+      this.updateSimulationForces();
+    });
+
+    // Multi-visit link strength control
+    const multiVisitLinkStrengthSlider = this.controlsContainer.querySelector('#multiVisitLinkStrength') as HTMLInputElement;
+    const multiVisitLinkStrengthValue = this.controlsContainer.querySelector('#multiVisitLinkStrengthValue') as HTMLSpanElement;
+    multiVisitLinkStrengthSlider?.addEventListener('input', (event) => {
+      this.physicsConfig.multiVisitLinkStrength = +(event.target as HTMLInputElement).value;
+      if (multiVisitLinkStrengthValue) multiVisitLinkStrengthValue.textContent = this.physicsConfig.multiVisitLinkStrength.toString();
       this.updateSimulationForces();
     });
 
@@ -721,6 +724,36 @@ export class PageGraphRenderer {
     });
   }
 
+  private getLinkStrength(d: any): number {
+    // Optimal path edges always use their own strength
+    if (d.type === 'optimal_path') {
+      return this.physicsConfig.progressMoveLinkStrength;
+    } 
+
+    // d.source and d.target are full PageNode objects thanks to D3's .id() mapping
+    const sourceNode = d.source as PageNode;
+    const targetNode = d.target as PageNode;
+
+    // Weaken edges connected to nodes that have been visited multiple times
+    if ((sourceNode && sourceNode.visits.length > 1) || (targetNode && targetNode.visits.length > 1)) {
+      return this.physicsConfig.multiVisitLinkStrength;
+    }
+
+    // For move edges, use distanceChange to determine strength
+    if (d.distanceChange !== undefined) {
+      if (d.distanceChange === 0) {
+        // Neutral moves (same distance) get strong structural influence
+        return this.physicsConfig.neutralMoveLinkStrength;
+      } else {
+        // Progress/regress moves get very weak influence
+        return this.physicsConfig.progressMoveLinkStrength;
+      }
+    }
+
+    // Fallback for moves without distanceChange data
+    return this.physicsConfig.linkStrength;
+  }
+
   private updateSimulationForces(): void {
     if (!this.simulation || !this.orbitSystem) return;
 
@@ -738,26 +771,7 @@ export class PageGraphRenderer {
     if (linkForce) {
       linkForce
         .distance(this.physicsConfig.linkDistance)
-        .strength((d: any) => {
-          // Optimal path edges always use their own strength
-          if (d.type === 'optimal_path') {
-            return this.physicsConfig.optimalPathLinkStrength;
-          }
-          
-          // For move edges, use distanceChange to determine strength
-          if (d.distanceChange !== undefined) {
-            if (d.distanceChange === 0) {
-              // Neutral moves (same distance) get strong structural influence
-              return this.physicsConfig.neutralMoveLinkStrength;
-            } else {
-              // Progress/regress moves get very weak influence
-              return this.physicsConfig.progressMoveLinkStrength;
-            }
-          }
-          
-          // Fallback for moves without distanceChange data
-          return this.physicsConfig.linkStrength;
-        });
+        .strength((d: any) => this.getLinkStrength(d));
     }
 
     // Update solar system forces (these are the most important!)
@@ -1321,26 +1335,7 @@ export class PageGraphRenderer {
        .force('link', d3.forceLink(links)
          .id((d: any) => d.pageTitle)
          .distance(this.physicsConfig.linkDistance)
-         .strength((d: any) => {
-           // Optimal path edges always use their own strength
-           if (d.type === 'optimal_path') {
-             return this.physicsConfig.optimalPathLinkStrength;
-           }
-           
-           // For move edges, use distanceChange to determine strength
-           if (d.distanceChange !== undefined) {
-             if (d.distanceChange === 0) {
-               // Neutral moves (same distance) get strong structural influence
-               return this.physicsConfig.neutralMoveLinkStrength;
-             } else {
-               // Progress/regress moves get very weak influence
-               return this.physicsConfig.progressMoveLinkStrength;
-             }
-           }
-           
-           // Fallback for moves without distanceChange data
-           return this.physicsConfig.linkStrength;
-         }))
+         .strength((d: any) => this.getLinkStrength(d)))
       
               // Light collision detection - completely exclude optimal path nodes
       .force('collision', this.createSelectiveCollisionForce())
