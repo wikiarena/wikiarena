@@ -86,7 +86,7 @@ class ModelSelector {
 
     private setupEventListeners(): void {
         // Input events
-        this.input.addEventListener('input', this.handleInput.bind(this));
+        this.input.addEventListener('input', () => this.handleInput());
         this.input.addEventListener('click', this.handleInputClick.bind(this));
         this.input.addEventListener('keydown', this.handleKeydown.bind(this));
         this.input.addEventListener('focus', this.handleFocus.bind(this));
@@ -128,7 +128,7 @@ class ModelSelector {
         return iconMap[provider] || './assets/icons/question-mark.svg';
     }
 
-    private handleInput(): void {
+    private handleInput(openDropdown = true): void {
         const query = this.input.value;
         this.currentQuery = query;
 
@@ -138,11 +138,13 @@ class ModelSelector {
         // Don't reset selectedIndex here since filterModels() handles it
         
         // Open dropdown if there are results or if typing
-        if (this.filteredModels.length > 0 || query.length > 0) {
-            this.renderModels();
-            this.openDropdown();
-        } else {
-            this.closeDropdown();
+        if (openDropdown) {
+            if (this.filteredModels.length > 0 || query.length > 0) {
+                this.renderModels();
+                this.openDropdown();
+            } else {
+                this.closeDropdown();
+            }
         }
 
         // Update validation - check if current input exactly matches a model
@@ -159,7 +161,7 @@ class ModelSelector {
             // Empty input is also valid (no selection)
             this.selectedModel = null;
             this.input.classList.remove('valid', 'invalid');
-            this.options.onValidationChange(false);
+            this.options.onValidationChange(true);
         } else {
             // Partial input - not yet valid
             this.selectedModel = null;
@@ -413,7 +415,7 @@ class ModelSelector {
         this.input.value = '';
         this.input.classList.remove('valid', 'invalid');
         this.closeDropdown();
-        this.options.onValidationChange(false);
+        this.options.onValidationChange(true);
         
         // Refresh other selectors when this one is cleared
         this.refreshOtherSelectors();
@@ -425,6 +427,10 @@ class ModelSelector {
         
         // Remove DOM elements
         this.container.remove();
+    }
+
+    public validateCurrentSelection(): void {
+        this.handleInput(false);
     }
 
     // Public method to link this selector with others for cross-filtering
