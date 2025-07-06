@@ -8,9 +8,6 @@ class WikipediaRandomService {
     private readonly CACHE_DURATION = 10 * 60 * 1000; // 10 minutes
     private readonly RANDOM_PAGES_COUNT = 200; // bulk checking limit
     
-    private cycleInterval: NodeJS.Timeout | null = null;
-    private callbacks: Array<(title: string) => void> = [];
-
     /**
      * Fetch random Wikipedia page titles
      */
@@ -49,70 +46,6 @@ class WikipediaRandomService {
             console.error('Failed to fetch random Wikipedia pages:', error);
             return [];
         }
-    }
-
-    /**
-     * Start cycling through random page titles
-     */
-    async startCycling(callback: (title: string) => void, intervalMs = 1500): Promise<void> {
-        // Add callback to list
-        this.callbacks.push(callback);
-
-        // If already cycling, just add the callback
-        if (this.cycleInterval) {
-            return;
-        }
-
-        // Fetch random pages
-        const pages = await this.fetchRandomPages();
-        if (pages.length === 0) return;
-
-        // Start cycling
-        let currentIndex = 0;
-        
-        // Immediately show first title
-        this.broadcastCurrentTitle(pages[currentIndex]);
-
-        this.cycleInterval = setInterval(() => {
-            currentIndex = (currentIndex + 1) % pages.length;
-            this.broadcastCurrentTitle(pages[currentIndex]);
-        }, intervalMs);
-    }
-
-    /**
-     * Stop cycling and clear callbacks
-     */
-    stopCycling(): void {
-        if (this.cycleInterval) {
-            clearInterval(this.cycleInterval);
-            this.cycleInterval = null;
-        }
-        this.callbacks = [];
-    }
-
-    /**
-     * Remove a specific callback
-     */
-    removeCallback(callback: (title: string) => void): void {
-        this.callbacks = this.callbacks.filter(cb => cb !== callback);
-        
-        // If no more callbacks, stop cycling
-        if (this.callbacks.length === 0) {
-            this.stopCycling();
-        }
-    }
-
-    /**
-     * Broadcast current title to all callbacks
-     */
-    private broadcastCurrentTitle(title: string): void {
-        this.callbacks.forEach(callback => {
-            try {
-                callback(title);
-            } catch (error) {
-                console.error('Error in random title callback:', error);
-            }
-        });
     }
 
     /**

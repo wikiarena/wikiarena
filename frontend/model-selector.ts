@@ -1,3 +1,5 @@
+import { cyclingService } from './cycling-service.js';
+
 interface ModelInfo {
     provider: string;
     input_cost_per_1m_tokens: number;
@@ -20,7 +22,7 @@ interface ModelSelectorOptions {
     placeholder?: string;
     onSelect?: (model: ModelOption) => void;
     onValidationChange?: (isValid: boolean) => void;
-    getExcludedModels?: () => string[];
+    getExcludedModels?: () => ModelOption[];
 }
 
 class ModelSelector {
@@ -35,6 +37,7 @@ class ModelSelector {
     private currentQuery: string = '';
     private selectedModel: ModelOption | null = null;
     private otherSelectors: ModelSelector[] = [];
+    private cycleCallback: ((title: string) => void) | null = null;
 
     constructor(input: HTMLInputElement, options: ModelSelectorOptions = {}) {
         this.input = input;
@@ -111,6 +114,7 @@ class ModelSelector {
             }));
 
             this.filteredModels = [...this.models];
+            this.startCycling();
         } catch (error) {
             console.error('Failed to load models:', error);
         }
@@ -131,6 +135,13 @@ class ModelSelector {
     private handleInput(openDropdown = true): void {
         const query = this.input.value;
         this.currentQuery = query;
+
+        // Stop cycling when user starts typing
+        if (query.trim() !== '') {
+            this.stopCycling();
+        } else {
+            this.startCycling();
+        }
 
         // Filter models based on current input
         this.filterModels(query);
@@ -160,7 +171,8 @@ class ModelSelector {
         } else if (query.trim() === '') {
             // Empty input is also valid (no selection)
             this.selectedModel = null;
-            this.input.classList.remove('valid', 'invalid');
+            this.input.classList.remove('invalid');
+            this.input.classList.add('valid');
             this.options.onValidationChange(true);
         } else {
             // Partial input - not yet valid
@@ -180,8 +192,9 @@ class ModelSelector {
             this.selectedModel = null;
             
             // Reset validation state
-            this.input.classList.remove('valid', 'invalid');
-            this.options.onValidationChange(false);
+            this.input.classList.remove('invalid');
+            this.input.classList.add('valid');
+            this.options.onValidationChange(true);
             
             // Reset filtered models to show all available (minus excluded)
             this.filterModels('');
@@ -238,6 +251,7 @@ class ModelSelector {
     }
 
     private handleFocus(): void {
+        this.stopCycling();
         // Open dropdown when user tabs into the input (or clicks focus)
         if (!this.isOpen) {
             this.openDropdown();
@@ -257,6 +271,11 @@ class ModelSelector {
             }
         }
         
+        // If input is empty, restart cycling
+        if (this.input.value.trim() === '') {
+            this.startCycling();
+        }
+
         // Delay closing to allow clicks on dropdown items
         setTimeout(() => {
             this.closeDropdown();
@@ -271,7 +290,7 @@ class ModelSelector {
 
     private filterModels(query: string): void {
         const lowercaseQuery = query.toLowerCase();
-        const excludedModels = this.options.getExcludedModels();
+        const excludedModels = this.options.getExcludedModels().map(m => m.id);
         
         this.filteredModels = this.models.filter(model => {
             // Check if model matches search query
@@ -413,12 +432,16 @@ class ModelSelector {
         this.selectedModel = null;
         this.currentQuery = '';
         this.input.value = '';
-        this.input.classList.remove('valid', 'invalid');
+        this.input.classList.remove('invalid');
+        this.input.classList.add('valid');
         this.closeDropdown();
         this.options.onValidationChange(true);
         
         // Refresh other selectors when this one is cleared
         this.refreshOtherSelectors();
+        
+        // Restart cycling
+        this.startCycling();
     }
 
     public destroy(): void {
@@ -427,6 +450,9 @@ class ModelSelector {
         
         // Remove DOM elements
         this.container.remove();
+
+        // Stop cycling
+        this.stopCycling();
     }
 
     public validateCurrentSelection(): void {
@@ -455,6 +481,29 @@ class ModelSelector {
             selector.refreshFiltering();
         });
     }
+
+    // --- Placeholder Cycling Methods ---
+
+    private startCycling(): void {
+        if (this.cycleCallback) return;
+
+        this.cycleCallback = (modelName: string) => {
+            // Only cycle if the input is empty and not focused
+            if (this.input.value.trim() === '' && document.activeElement !== this.input) {
+                this.input.placeholder = modelName;
+            }
+        };
+        cyclingService.registerModelCallback(this.cycleCallback);
+    }
+
+    private stopCycling(): void {
+        if (this.cycleCallback) {
+            cyclingService.unregisterModelCallback(this.cycleCallback);
+            this.cycleCallback = null;
+        }
+        // Reset to default placeholder
+        this.input.placeholder = this.options.placeholder;
+    }
 }
 
-export { ModelSelector, type ModelSelectorOptions, type ModelOption }; 
+export { ModelSelector, type ModelSelectorOptions, type ModelOption, type ModelInfo }; 

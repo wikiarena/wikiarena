@@ -1,5 +1,6 @@
 import { WikipediaSearchService, WikipediaSearchResult } from './wikipedia-search.js';
 import { WikipediaRandomService } from './wikipedia-random.js';
+import { cyclingService } from './cycling-service.js';
 
 interface AutocompleteOptions {
     debounceMs?: number;
@@ -170,6 +171,7 @@ class WikipediaAutocomplete {
     }
 
     private handleFocus(): void {
+        this.stopRandomCycling();
         if (this.currentQuery.length >= this.options.minQueryLength && this.results.length > 0) {
             this.openDropdown();
         }
@@ -179,6 +181,10 @@ class WikipediaAutocomplete {
         // Trigger validation for the current input value
         this.validateCurrentSelection();
         
+        if (this.input.value.trim() === '') {
+            this.startRandomCycling();
+        }
+
         // Delay closing to allow clicks on dropdown items
         setTimeout(() => {
             this.closeDropdown();
@@ -389,20 +395,21 @@ class WikipediaAutocomplete {
     }
 
     private startRandomCycling(): void {
-        if (!this.randomCallback) {
-            this.randomCallback = (title: string) => {
-                // Only update placeholder if input is still empty
-                if (this.input.value.trim() === '') {
-                    this.input.placeholder = title;
-                }
-            };
-        }
-        this.randomService.startCycling(this.randomCallback, 500);
+        if (this.randomCallback) return;
+
+        this.randomCallback = (title: string) => {
+            // Only update placeholder if input is still empty and not focused
+            if (this.input.value.trim() === '' && document.activeElement !== this.input) {
+                this.input.placeholder = title;
+            }
+        };
+        cyclingService.registerPageCallback(this.randomCallback);
     }
 
     private stopRandomCycling(): void {
         if (this.randomCallback) {
-            this.randomService.removeCallback(this.randomCallback);
+            cyclingService.unregisterPageCallback(this.randomCallback);
+            this.randomCallback = null;
         }
         // Reset to default placeholder
         this.input.placeholder = this.options.placeholder;

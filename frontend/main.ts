@@ -562,7 +562,7 @@ class UIManager {
             },
             getExcludedModels: () => {
                 // Exclude player 2's selected model from player 1's options
-                const player2Model = this.player2Selector?.getValue();
+                const player2Model = this.player2Selector?.getSelectedModel();
                 return player2Model ? [player2Model] : [];
             }
         });
@@ -580,7 +580,7 @@ class UIManager {
             },
             getExcludedModels: () => {
                 // Exclude player 1's selected model from player 2's options
-                const player1Model = this.player1Selector?.getValue();
+                const player1Model = this.player1Selector?.getSelectedModel();
                 return player1Model ? [player1Model] : [];
             }
         });
