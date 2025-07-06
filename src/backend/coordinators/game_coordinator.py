@@ -9,6 +9,7 @@ from wiki_arena.models import GameConfig, GameState, GameStatus, Task, Page
 from wiki_arena.language_models import create_model
 from wiki_arena.tools import get_tools
 from wiki_arena.wikipedia import LiveWikiService
+from backend.exceptions import InvalidModelNameException
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,10 @@ class GameCoordinator:
         logger.info(f"Setting up game: {model_name} for task {task.start_page_title} -> {task.target_page_title}")
         
         # Create model configuration
-        language_model = create_model(model_name)
+        try:
+            language_model = create_model(model_name)
+        except ValueError as e:
+            raise InvalidModelNameException(str(e))
 
         # Create game configuration
         game_config = GameConfig(
@@ -66,7 +70,6 @@ class GameCoordinator:
             initial_state = game.state
         except Exception as e:
             logger.error(f"Failed to initialize game: {e}", exc_info=True)
-            # TODO(hunter): task coordinator should catch this and return an event
             raise ValueError(f"Game initialization failed: {e}")
 
         # Store active game

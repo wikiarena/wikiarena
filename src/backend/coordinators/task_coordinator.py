@@ -8,6 +8,7 @@ from wiki_arena.models import Task
 from backend.models.api_models import CreateTaskRequest, CreateTaskResponse
 from backend.coordinators.game_coordinator import GameCoordinator
 from backend.services.task_selector_service import task_selector_service
+from backend.exceptions import PageNotFoundException, WikiServiceUnavailableException
 
 logger = logging.getLogger(__name__)
 
@@ -60,9 +61,12 @@ class TaskCoordinator:
         # Fetch the start page once to be used by all games
         try:
             start_page = await self.game_coordinator.wiki_service.get_page(task.start_page_title)
-        except (ConnectionError, ValueError) as e:
-            logger.error(f"Failed to fetch common start page '{task.start_page_title}': {e}", exc_info=True)
-            raise ValueError(f"Failed to fetch common start page '{task.start_page_title}': {e}")
+        except ValueError as e:
+            # This occurs if the page title is invalid or the page does not exist.
+            raise PageNotFoundException(str(e))
+        except ConnectionError as e:
+            # This occurs if the Wikipedia API is unreachable.
+            raise WikiServiceUnavailableException(str(e))
         
         # Generate task ID
         task_id = self._generate_task_id(task.start_page_title, task.target_page_title)

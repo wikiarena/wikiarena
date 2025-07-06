@@ -139,7 +139,6 @@ class WikiArenaApp {
       
       if (response.ok) {
         const data = await response.json();
-        console.log('✅ Custom task created:', data);
         
         // Extract task info from response
         const { task_id, start_page, target_page, game_ids } = data;
@@ -173,8 +172,8 @@ class WikiArenaApp {
     } catch (error) {
       console.error('❌ Failed to start task:', error);
       this.loadingAnimation.hide();
-      // NOTE: We don't have a dedicated error UI in the new design yet
-      alert(`Failed to start new race: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      // Re-throw the error to be handled by the UI layer
+      throw error;
     }
   }
 
@@ -392,6 +391,7 @@ class UIManager {
     private targetPageAutocomplete: WikipediaAutocomplete | null = null;
     private startPageSlotBtn: HTMLButtonElement;
     private targetPageSlotBtn: HTMLButtonElement;
+    private errorMessageElement: HTMLElement;
     private pageValidationState = { start: false, target: false };
     private modelValidationState = { player1: false, player2: false };
     private app: WikiArenaApp | null = null;
@@ -407,6 +407,7 @@ class UIManager {
         this.targetPageInput = document.getElementById('target-page-input') as HTMLInputElement;
         this.startPageSlotBtn = document.getElementById('start-page-slot-btn') as HTMLButtonElement;
         this.targetPageSlotBtn = document.getElementById('target-page-slot-btn') as HTMLButtonElement;
+        this.errorMessageElement = document.getElementById('landing-error-message') as HTMLElement;
 
         this.initializeSidebar();
         this.initializeLandingModal();
@@ -439,7 +440,7 @@ class UIManager {
 
         // Configure new race - show landing modal
         configureBtn.addEventListener('click', () => {
-            this.showLandingModal();
+            this.showLanding();
         });
 
         // Quickstart - start random race
@@ -673,12 +674,26 @@ class UIManager {
         this.startRaceBtn.disabled = !isValid;
     }
 
-    private showLandingModal() {
+    private _showLandingModal() {
         this.landingModal.classList.remove('hidden');
     }
 
-    private hideLandingModal() {
+    private _hideLandingModal() {
         this.landingModal.classList.add('hidden');
+    }
+
+    private _displayError(message: string) {
+        if (this.errorMessageElement) {
+            this.errorMessageElement.textContent = message;
+            this.errorMessageElement.style.display = 'block';
+        }
+    }
+
+    private _clearError() {
+        if (this.errorMessageElement) {
+            this.errorMessageElement.textContent = '';
+            this.errorMessageElement.style.display = 'none';
+        }
     }
 
     private async startCustomRace() {
@@ -701,26 +716,47 @@ class UIManager {
         }
 
         try {
-            // Hide the landing modal first
-            this.hideLandingModal();
+            // At the start of the action, clear old errors and hide the modal.
+            this._clearError();
+            this._hideLandingModal();
             
             // Call the main app's method to start a custom race
             await this.app.handleStartCustomRace(startPage, targetPage, player1Model, player2Model);
             
         } catch (error) {
             console.error('Failed to start custom race:', error);
-            // Show the landing modal again if there was an error
-            this.showLandingModal();
+            
+            const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
+            
+            // Extract details from FastAPI's HTTP Exception if possible
+            let finalMessage = errorMessage;
+            // Example message: "Failed to create task: 422 - {"detail":"Invalid Page: Page 'NonExistentPage' not found."}"
+            if (errorMessage.includes("Failed to create task")) {
+                try {
+                    const jsonString = errorMessage.substring(errorMessage.indexOf('{'));
+                    const errorJson = JSON.parse(jsonString);
+                    if (errorJson.detail) {
+                        finalMessage = errorJson.detail;
+                    }
+                } catch (e) {
+                    // Ignore parsing error, use original message.
+                }
+            }
+            
+            // On failure, show the modal again and display the new error.
+            this._showLandingModal();
+            this._displayError(finalMessage);
         }
     }
 
     // Public methods for external access
     public showLanding() {
-        this.showLandingModal();
+        this._clearError();
+        this._showLandingModal();
     }
 
     public hideLanding() {
-        this.hideLandingModal();
+        this._hideLandingModal();
     }
 
     public destroy() {

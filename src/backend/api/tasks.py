@@ -9,6 +9,7 @@ from backend.models.api_models import (
 )
 from backend.coordinators.task_coordinator import TaskCoordinator
 from backend.dependencies import get_task_coordinator
+from backend.exceptions import PageNotFoundException, WikiServiceUnavailableException, InvalidModelNameException
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 logger = logging.getLogger(__name__)
@@ -21,6 +22,12 @@ async def create_task(request: CreateTaskRequest, coordinator: TaskCoordinatorDe
     try:
         logger.info(f"Creating task with {len(request.model_names)} games")
         return await coordinator.create_task(request)
+    except PageNotFoundException as e:
+        raise HTTPException(status_code=422, detail=f"Invalid Page: {e.message}")
+    except InvalidModelNameException as e:
+        raise HTTPException(status_code=422, detail=f"Invalid model name: {e.message}")
+    except WikiServiceUnavailableException as e:
+        raise HTTPException(status_code=503, detail=f"Wikipedia service is currently unavailable: {e.message}")
     except Exception as e:
         logger.error(f"Failed to create task: {e}", exc_info=True)
         raise HTTPException(
