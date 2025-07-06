@@ -219,9 +219,9 @@ class WikiArenaApp {
   private async createCustomTask(startPage: string | null, targetPage: string | null, player1Model: ModelOption | null, player2Model: ModelOption | null): Promise<Response> {
     const apiUrl = 'http://localhost:8000/api/tasks';
     
-    const model_selections = [
-        player1Model ? { model_provider: player1Model.provider, model_name: player1Model.id } : { model_provider: 'random', model_name: 'random' },
-        player2Model ? { model_provider: player2Model.provider, model_name: player2Model.id } : { model_provider: 'random', model_name: 'random' }
+    const model_names = [
+        player1Model ? player1Model.id : 'random',
+        player2Model ? player2Model.id : 'random'
     ];
     
     const taskRequest = {
@@ -230,7 +230,7 @@ class WikiArenaApp {
         start_page: startPage,
         target_page: targetPage
       },
-      model_selections: model_selections,
+      model_names: model_names,
       max_steps: 30
     };
     

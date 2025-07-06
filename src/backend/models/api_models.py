@@ -1,4 +1,4 @@
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, Literal
 from pydantic import BaseModel, Field, field_validator
 from enum import Enum
 
@@ -60,16 +60,10 @@ TaskStrategy = Union[
 ]
 
 # Game Configuration Models
-class ModelSelection(BaseModel):
-    """Configuration for a single game within a task."""
-    model_provider: str = Field("random", description="Model provider (anthropic, openai, random)")
-    model_name: str = Field("random", description="Specific model name")
-
-# Task API Models
 class CreateTaskRequest(BaseModel):
     """Request to create a new task with multiple competing games."""
     task_strategy: TaskStrategy = Field(..., description="How to select the start/target pages")
-    model_selections: List[ModelSelection] = Field(..., description="Configuration for each game in the task")
+    model_names: List[str] = Field(..., description="A list of model names to compete in the task")
     max_steps: int = Field(30, description="Maximum number of steps allowed per game")
 
 class CreateTaskResponse(BaseModel):

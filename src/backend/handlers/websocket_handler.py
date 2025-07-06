@@ -59,7 +59,7 @@ class WebSocketHandler:
         
         # Extract data from event
         move_data = event.data.get("move")
-        game_state_data = event.data.get("game_state")
+        game_state = event.data.get("game_state")
         
         # Create WebSocket message
         message = {
@@ -72,9 +72,9 @@ class WebSocketHandler:
                 "timestamp": None,  # Move model doesn't have timestamp (MoveMetrics does tho)
                 "model_response": move_data.model_response
             },
-            "current_page": game_state_data.current_page,
-            "steps": game_state_data.steps,
-            "status": game_state_data.status.value
+            "current_page": game_state.current_page,
+            "steps": game_state.steps,
+            "status": game_state.status.value
         }
         
         # Broadcast to all clients watching this game

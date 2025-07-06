@@ -4,12 +4,11 @@ from typing import Dict, Optional
 from datetime import datetime
 
 from wiki_arena import EventBus, GameEvent
-from wiki_arena.game.game_manager import GameManager
-from wiki_arena.models import GameConfig, GameState, GameStatus, Task
+from wiki_arena.game import Game
+from wiki_arena.models import GameConfig, GameState, GameStatus, Task, Page
 from wiki_arena.language_models import create_model
+from wiki_arena.tools import get_tools
 from wiki_arena.wikipedia import LiveWikiService
-
-from backend.models.api_models import ModelSelection
 
 logger = logging.getLogger(__name__)
 
@@ -33,47 +32,56 @@ class GameCoordinator:
     def __init__(self, event_bus: EventBus, wiki_service: LiveWikiService):
         self.event_bus = event_bus
         self.wiki_service = wiki_service
-        self.active_games: Dict[str, GameManager] = {} # { game_id: GameManager }
+        self.active_games: Dict[str, Game] = {} # { game_id: Game }
         # background was because we thought we would support an interactive mode (viewer can step through)
         # TODO(hunter): refactor this as everything is background now
         self.background_tasks: Dict[str, asyncio.Task] = {} # { game_id: asyncio.Task }
         
-    async def setup_game(self, task: Task, model_selection: ModelSelection, max_steps: int = 30) -> str:
+    async def setup_game(self, task: Task, model_name: str, start_page: Page, max_steps: int = 30) -> str:
         """Initialize a new game without starting execution. Returns game_id."""
-        logger.info(f"Setting up game: {model_selection.model_name} for task {task.start_page_title} -> {task.target_page_title}")
+        logger.info(f"Setting up game: {model_name} for task {task.start_page_title} -> {task.target_page_title}")
         
         # Create model configuration
-        model = create_model(model_selection.model_name)
+        language_model = create_model(model_name)
 
         # Create game configuration
         game_config = GameConfig(
             start_page_title=task.start_page_title,
             target_page_title=task.target_page_title,
             max_steps=max_steps,
-            model=model.model_config
+            model=language_model.model_config
         )
         
-        # Create GameManager with event bus
-        # TODO(hunter): we could pass the language model and config to the constructor?
-        game_manager = GameManager(self.wiki_service, event_bus=self.event_bus) 
-        initial_state = await game_manager.initialize_game(game_config)
-        
-        if initial_state.status == GameStatus.ERROR:
-            logger.error(f"Failed to initialize game: {initial_state.error_message}")
-            raise ValueError(f"Game initialization failed: {initial_state.error_message}")
-        
+        tools = get_tools()
+
+        try:
+            game = Game(
+                config=game_config,
+                wiki_service=self.wiki_service,
+                language_model=language_model,
+                start_page=start_page,
+                tools=tools,
+                event_bus=self.event_bus,
+            )
+            initial_state = game.state
+        except Exception as e:
+            logger.error(f"Failed to initialize game: {e}", exc_info=True)
+            # TODO(hunter): task coordinator should catch this and return an event
+            raise ValueError(f"Game initialization failed: {e}")
+
         # Store active game
-        self.active_games[initial_state.game_id] = game_manager
+        self.active_games[game.id] = game
         
         # Emit game_started event
+        # TODO(hunter): nothing uses this event
         await self.event_bus.publish(GameEvent(
             type="game_started",
-            game_id=initial_state.game_id,
+            game_id=game.id,
             data={"game_state": initial_state}
         ))
         
-        logger.info(f"Game {initial_state.game_id} initialized successfully")
-        return initial_state.game_id
+        logger.info(f"Game {game.id} initialized successfully")
+        return game.id
     
     async def start_game_execution(self, game_id: str, background: bool = True) -> bool:
         """Start execution for an initialized game."""
@@ -101,26 +109,26 @@ class GameCoordinator:
     
     async def get_game_state(self, game_id: str) -> Optional[GameState]:
         """Get current state of a game."""
-        game_manager = self.active_games.get(game_id)
-        if not game_manager or not game_manager.state:
+        game = self.active_games.get(game_id)
+        if not game or not game.state:
             return None
         
-        return game_manager.state
+        return game.state
     
     async def play_turn(self, game_id: str) -> Optional[GameState]:
         """Play a single turn of the game."""
-        game_manager = self.active_games.get(game_id)
-        if not game_manager:
+        game = self.active_games.get(game_id)
+        if not game:
             return None
         
         # Execute turn (this will emit events via EventBus)
-        game_over = await game_manager.play_turn()
+        game_over = await game.play_turn()
         
         # Clean up if game is over
         if game_over:
             await self._cleanup_game(game_id)
         
-        return game_manager.state
+        return game.state
     
     async def terminate_game(self, game_id: str):
         """Forcibly terminate a game and clean up resources."""

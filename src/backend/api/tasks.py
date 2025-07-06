@@ -19,7 +19,7 @@ TaskCoordinatorDep = Annotated[TaskCoordinator, Depends(get_task_coordinator)]
 async def create_task(request: CreateTaskRequest, coordinator: TaskCoordinatorDep) -> CreateTaskResponse:
     """Create a new task with multiple competing games."""
     try:
-        logger.info(f"Creating task with {len(request.model_selections)} games")
+        logger.info(f"Creating task with {len(request.model_names)} games")
         return await coordinator.create_task(request)
     except Exception as e:
         logger.error(f"Failed to create task: {e}", exc_info=True)

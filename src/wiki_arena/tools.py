@@ -10,16 +10,16 @@ NAVIGATE_TOOL = {
     "inputSchema": {
         "type": "object",
         "properties": {
-            "page": {
+            "to_page_title": {
                 "type": "string",
                 "description": "Wikipedia page title to navigate to"
             }
         },
-        "required": ["page"]
+        "required": ["to_page_title"]
     }
 }
 
-def get_available_tools() -> List[Dict[str, Any]]:
+def get_tools() -> List[Dict[str, Any]]:
     """
     Get all tools available for the WikiArena game.
     
@@ -41,7 +41,7 @@ def get_tool_by_name(name: str) -> Dict[str, Any]:
     Raises:
         ValueError: If tool not found
     """
-    tools = get_available_tools()
+    tools = get_tools()
     for tool in tools:
         if tool["name"] == name:
             return tool

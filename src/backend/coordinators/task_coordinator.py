@@ -47,7 +47,8 @@ class TaskCoordinator:
     
     async def create_task(self, request: CreateTaskRequest) -> CreateTaskResponse:
         """Create a new task with multiple competing games."""
-        logger.info(f"Creating task with strategy: {request.task_strategy.type}, {len(request.model_selections)} games")
+        start_time = datetime.now()
+        logger.info(f"Creating task with strategy: {request.task_strategy.type}, {len(request.model_names)} games")
         
         # Select task using the specified strategy
         task = await task_selector_service.select_task(request.task_strategy)
@@ -56,24 +57,32 @@ class TaskCoordinator:
         
         logger.info(f"Selected task: {task.start_page_title} -> {task.target_page_title}")
         
+        # Fetch the start page once to be used by all games
+        try:
+            start_page = await self.game_coordinator.wiki_service.get_page(task.start_page_title)
+        except (ConnectionError, ValueError) as e:
+            logger.error(f"Failed to fetch common start page '{task.start_page_title}': {e}", exc_info=True)
+            raise ValueError(f"Failed to fetch common start page '{task.start_page_title}': {e}")
+        
         # Generate task ID
         task_id = self._generate_task_id(task.start_page_title, task.target_page_title)
         
         # setup games for this task (execution won't start until task_solved event)
         game_ids = []
-        for i, model_selection in enumerate(request.model_selections, start=1):
+        for i, model_name in enumerate(request.model_names, start=1):
             try:
                 game_id = await self.game_coordinator.setup_game(
                     task=task,
-                    model_selection=model_selection,
-                    max_steps=request.max_steps
+                    model_name=model_name,
+                    max_steps=request.max_steps,
+                    start_page=start_page
                 )
                 game_ids.append(game_id)
                 
                 # Track game-to-task mapping
                 self.game_to_task[game_id] = task_id
                 
-                logger.info(f"Setup game {i}/{len(request.model_selections)}: {game_id}")
+                logger.info(f"Setup game {i}/{len(request.model_names)}: {game_id}")
                 
             except Exception as e:
                 logger.error(f"Failed to setup game {i}: {e}")
@@ -101,7 +110,9 @@ class TaskCoordinator:
             }
         ))
         
-        logger.info(f"Task {task_id} created successfully with {len(game_ids)} games")
+        end_time = datetime.now()
+        duration = (end_time - start_time).total_seconds()
+        logger.info(f"Task {task_id} created successfully with {len(game_ids)} games in {duration:.2f}s")
         
         return CreateTaskResponse(
             task_id=task_id,

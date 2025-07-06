@@ -7,7 +7,8 @@ from datetime import datetime
 
 from wiki_arena.config import load_config
 from wiki_arena.wikipedia import LiveWikiService
-from wiki_arena.game.game_manager import GameManager
+from wiki_arena.game import Game
+from wiki_arena.tools import get_tools
 from wiki_arena.models import GameConfig, ModelConfig, GameResult
 from wiki_arena.models import GameStatus
 from wiki_arena.wikipedia.task_selector import get_random_task_async
@@ -56,19 +57,30 @@ async def main():
         storage_service = GameStorageService(storage_config)
         logging.info(f"Game storage configured: {storage_config.storage_path}")
 
+        # Fetch the start page and tools needed to initialize the game
+        start_page = await wiki_service.get_page(game_config.start_page_title)
+        tools = get_tools()
+
         # 6. Create and start game
-        game_manager = GameManager(wiki_service)
-        initial_state = await game_manager.initialize_game(game_config)
-        logging.info(f"Game started: {initial_state.game_id}")
+        game = Game(
+            config=game_config,
+            wiki_service=wiki_service,
+            language_model=model,
+            start_page=start_page,
+            tools=tools,
+            event_bus=None,
+        )
+        initial_state = game.state
+        logging.info(f"Game initialized: {initial_state.game_id}")
         logging.info(f"Current page: {initial_state.current_page.title}")
         logging.info(f"Available links: {len(initial_state.current_page.links)}")
 
         # 7. Play game loop
         while True:
-            game_over = await game_manager.play_turn()
+            game_over = await game.play_turn()
             if game_over:
                 # Game is over, access state directly for details
-                game_state = game_manager.state
+                game_state = game.state
                 logging.info(f"\nGame Over!")
                 logging.info(f"Status: {game_state.status.value}")
                 logging.info(f"Steps taken: {game_state.steps}")
@@ -116,8 +128,8 @@ async def main():
                 break
 
             # Game continues
-            current_page = game_manager.state.current_page
-            logging.info(f"Step {game_manager.state.steps}")
+            current_page = game.state.current_page
+            logging.info(f"Step {game.state.steps}")
             logging.info(f"Current page: {current_page.title}")
             logging.info(f"Available links: {len(current_page.links)}")
 
