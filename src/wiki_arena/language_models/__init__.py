@@ -3,7 +3,12 @@ import json
 import os
 from pathlib import Path
 from typing import Dict, Type, Any, Optional
-from .language_model import LanguageModel, ToolCall
+from .language_model import (
+    LanguageModel,
+    LLMProviderError,
+    LLMRateLimitError,
+    LLMTimeoutError,
+)
 from .random_model import RandomModel
 from .anthropic_model import AnthropicModel
 from .openai_model import OpenAIModel
@@ -102,7 +107,9 @@ def get_model_info(model_key: str) -> Dict[str, Any]:
 
 __all__ = [
     "LanguageModel",
-    "ToolCall", 
+    "LLMProviderError",
+    "LLMRateLimitError",
+    "LLMTimeoutError",
     "RandomModel",
     "AnthropicModel", 
     "OpenAIModel",
