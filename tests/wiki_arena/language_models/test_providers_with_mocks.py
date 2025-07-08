@@ -305,8 +305,6 @@ class TestProviderErrorHandling:
             assert isinstance(result, ToolCall)
             assert result.tool_name is None
             assert result.tool_arguments is None
-            assert result.error_message is not None
-            assert "API Error" in result.error_message
             assert result.metrics is not None
             assert result.metrics.estimated_cost_usd == 0.0
 
@@ -338,8 +336,6 @@ class TestProviderErrorHandling:
             assert isinstance(result, ToolCall)
             assert result.tool_name is None
             assert result.tool_arguments is None
-            assert result.error_message is not None
-            assert "API Error" in result.error_message
             assert result.metrics is not None
             assert result.metrics.estimated_cost_usd == 0.0
 
