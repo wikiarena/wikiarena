@@ -75,13 +75,13 @@ class GameCoordinator:
         # Store active game
         self.active_games[game.id] = game
         
-        # Emit game_started event
+        # Emit game_initialized event
         # TODO(hunter): nothing uses this event
-        await self.event_bus.publish(GameEvent(
-            type="game_started",
-            game_id=game.id,
-            data={"game_state": initial_state}
-        ))
+        # await self.event_bus.publish(GameEvent(
+        #     type="game_initialized",
+        #     game_id=game.id,
+        #     data={"game_state": initial_state}
+        # ))
         
         logger.info(f"Game {game.id} initialized successfully")
         return game.id
@@ -115,21 +115,6 @@ class GameCoordinator:
         game = self.active_games.get(game_id)
         if not game or not game.state:
             return None
-        
-        return game.state
-    
-    async def play_turn(self, game_id: str) -> Optional[GameState]:
-        """Play a single turn of the game."""
-        game = self.active_games.get(game_id)
-        if not game:
-            return None
-        
-        # Execute turn (this will emit events via EventBus)
-        game_over = await game.play_turn()
-        
-        # Clean up if game is over
-        if game_over:
-            await self._cleanup_game(game_id)
         
         return game.state
     
@@ -168,37 +153,33 @@ class GameCoordinator:
     
     async def _run_game_background(self, game_id: str):
         """Run a game in the background until completion."""
+        game = self.active_games.get(game_id)
+        if not game:
+            logger.warning(f"Attempted to run non-existent game: {game_id}")
+            return
+
         try:
             logger.info(f"Starting background execution for game {game_id}")
-            
-            while game_id in self.active_games:
-                game_state = await self.play_turn(game_id)
-                if not game_state or game_state.status.value not in ['in_progress', 'not_started']:
-                    logger.info(f"Background game {game_id} completed with status: {game_state.status.value if game_state else 'not_found'}")
-                    break
-                
-                # Small delay between moves
-                await asyncio.sleep(1.0)
+            await game.run()
+            logger.info(f"Background game {game_id} completed with status: {game.state.status.value if game.state else 'not_found'}")
                 
         except asyncio.CancelledError:
             logger.info(f"Background game {game_id} cancelled")
         except Exception as e:
             logger.error(f"Error in background game {game_id}: {e}", exc_info=True)
         finally:
-            # Clean up background task reference
+            # Game finished or errored, clean up
             self.background_tasks.pop(game_id, None)
+            self.active_games.pop(game_id, None)
+            logger.debug(f"Cleaned up game {game_id}")
     
     async def _cleanup_game(self, game_id: str):
         """Clean up a completed or terminated game."""
         # Cancel background task if running
         if game_id in self.background_tasks:
             self.background_tasks[game_id].cancel()
-            try:
-                await self.background_tasks[game_id]
-            except asyncio.CancelledError:
-                pass
-            del self.background_tasks[game_id]
-        
+            # No need to await here, cancellation is fire-and-forget from this context
+
         # Remove from active games
         if game_id in self.active_games:
             del self.active_games[game_id]

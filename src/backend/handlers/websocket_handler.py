@@ -70,7 +70,6 @@ class WebSocketHandler:
                 "from_page_title": move_data.from_page_title,
                 "to_page_title": move_data.to_page_title,
                 "timestamp": None,  # Move model doesn't have timestamp (MoveMetrics does tho)
-                "model_response": move_data.model_response
             },
             "current_page": game_state.current_page,
             "steps": game_state.steps,

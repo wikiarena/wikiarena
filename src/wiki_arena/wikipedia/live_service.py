@@ -76,7 +76,7 @@ class LiveWikiService:
             self.logger.debug(f"Error checking incoming links for '{page_title}': {e}")
             return False
 
-    async def get_page(self, page_title: str, include_all_namespaces: bool = True) -> Page:
+    async def get_page(self, page_title: str, include_all_namespaces: bool = False) -> Page:
         """
         Fetch a full Wikipedia page, including all its links using pagination.
         """
