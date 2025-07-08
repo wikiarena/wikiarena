@@ -1,4 +1,4 @@
-from typing import List, Dict, Any, Optional, Type
+from typing import List, Dict, Any, Optional, Type, Union
 from datetime import datetime
 from enum import Enum
 from pydantic import BaseModel, Field, field_validator, ValidationInfo
@@ -34,10 +34,63 @@ class ErrorType(Enum):
     APP_NAVIGATION_ERROR = "app_navigation_error"
     APP_UNKNOWN_ERROR = "app_unknown_error"
 
+# --- Context Models ---
+
+class ModelCallMetrics(BaseModel):
+    """Metrics for a single model call."""
+    input_tokens: Optional[int] = Field(default=None, description="Input tokens for this API call (uncached)")
+    output_tokens: Optional[int] = Field(default=None, description="Output tokens for this API call")
+    total_tokens: Optional[int] = Field(default=None, description="Total tokens for this API call (input + output)")
+    cache_creation_input_tokens: Optional[int] = Field(default=None, description="Input tokens used to create a cache entry")
+    cache_read_input_tokens: Optional[int] = Field(default=None, description="Input tokens read from a cache entry")
+    estimated_cost_usd: Optional[float] = Field(default=None, description="Estimated cost for this API call in USD")
+    response_time_ms: float = Field(default=0.0, description="API response time in milliseconds")
+    request_timestamp: datetime = Field(default_factory=datetime.now, description="When this API call was made")
+
+class MessageRole(str, Enum):
+    """Represents the role of the author of a message."""
+    SYSTEM = "system"
+    USER = "user"
+    ASSISTANT = "assistant"
+    TOOL = "tool"
+
+class AssistantToolCall(BaseModel):
+    """A tool call requested by the assistant."""
+    id: str = Field(..., description="A unique ID for this tool call, to be used in the tool response.")
+    name: str = Field(..., description="The name of the tool to call.")
+    arguments: Dict[str, Any] = Field(..., description="The arguments for the tool.")
+
+class ToolResultMessage(BaseModel):
+    """A message containing the result of a tool call."""
+    role: MessageRole = Field(MessageRole.TOOL, frozen=True)
+    tool_call_id: str = Field(..., description="The ID of the tool call this is a response to.")
+    content: str = Field(..., description="The string result of the tool execution.")
+    is_error: bool = Field(False, description="Whether the tool call resulted in an error.")
+
+class AssistantMessage(BaseModel):
+    """A message from the assistant, which can contain text and/or tool calls."""
+    role: MessageRole = Field(MessageRole.ASSISTANT, frozen=True)
+    content: Optional[str] = Field(None, description="The text content of the message.")
+    tool_calls: Optional[List[AssistantToolCall]] = Field(None, description="A list of tool calls requested by the assistant.")
+    metrics: Optional[ModelCallMetrics] = Field(None, description="Metrics for the API call that generated this message.")
+
+class UserMessage(BaseModel):
+    """A message from the user."""
+    role: MessageRole = Field(MessageRole.USER, frozen=True)
+    content: str
+
+class SystemMessage(BaseModel):
+    """A system message to set the context for the assistant."""
+    role: MessageRole = Field(MessageRole.SYSTEM, frozen=True)
+    content: str
+
+# A concrete message in the context.
+ContextMessage = Union[SystemMessage, UserMessage, AssistantMessage, ToolResultMessage]
+
 # --- Data Models ---
 
 class Task(BaseModel):
-    """A task is a single game that is played."""
+    """A task outlines the initial state and objective of a game."""
     start_page_title: str = Field(..., description="The title of the starting Wikipedia page.")
     target_page_title: str = Field(..., description="The title of the target Wikipedia page.")
 
@@ -60,15 +113,6 @@ class GameError(BaseModel):
     type: ErrorType = Field(..., description="The category of error that occurred.")
     message: str = Field(..., description="Human-readable error description.")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional context for analysis.")
-
-class MoveMetrics(BaseModel):
-    """Metrics for a single language model API call."""
-    input_tokens: int = Field(0, description="Input tokens for this API call")
-    output_tokens: int = Field(0, description="Output tokens for this API call") 
-    total_tokens: int = Field(0, description="Total tokens for this API call")
-    estimated_cost_usd: float = Field(0.0, description="Estimated cost for this API call in USD")
-    response_time_ms: float = Field(0.0, description="API response time in milliseconds")
-    request_timestamp: datetime = Field(default_factory=datetime.now, description="When this API call was made")
 
 DEFAULT_SYSTEM_PROMPT_TEMPLATE = (
     "You are in the Wiki Arena. Your goal is to navigate from the starting Wikipedia page to the target Wikipedia page "
@@ -112,16 +156,14 @@ class Move(BaseModel):
     step: int = Field(..., description="The sequential number of the step.")
     from_page_title: str = Field(..., description="The title of the page before this move.")
     to_page_title: Optional[str] = Field(None, description="The title of the page navigated to (if successful).")
-    model_response: Optional[str] = Field(None, description="The full text response received from the language model.")
-    tool_call_attempt: Optional[Dict[str, Any]] = Field(None, description="Details of the tool call attempted by the model.")
     error: Optional[GameError] = Field(None, description="Structured error information if an error occurred during this step.")
-    metrics: Optional[MoveMetrics] = Field(None, description="API call metrics for this move")
 
 class GameState(BaseModel):
     """Represents the dynamic state of a single ongoing or completed game."""
     config: GameConfig = Field(..., description="The configuration for this game.")
     current_page: Optional[Page] = Field(None, description="Details of the page the language model is currently on.")
     move_history: List[Move] = Field([], description="A chronological list of moves made in the game.")
+    context: List[ContextMessage] = Field([], description="A complete log of the conversation with the model.")
     steps: int = Field(0, description="The number of steps taken.")
     status: GameStatus = Field(GameStatus.NOT_STARTED, description="The current status of the game.")
     start_timestamp: datetime = Field(default_factory=datetime.now, description="The timestamp when the game started.")
@@ -172,7 +214,7 @@ class GameResult(BaseModel):
             # No moves made, just start page
             path_taken.append(game_state.config.start_page_title)
         
-        # Calculate aggregated API metrics
+        # Calculate aggregated API metrics by iterating through the context
         total_input_tokens = 0
         total_output_tokens = 0
         total_tokens = 0
@@ -180,13 +222,13 @@ class GameResult(BaseModel):
         total_api_time_ms = 0.0
         api_call_count = 0
         
-        for move in game_state.move_history:
-            if move.metrics:
-                total_input_tokens += move.metrics.input_tokens
-                total_output_tokens += move.metrics.output_tokens
-                total_tokens += move.metrics.total_tokens
-                total_estimated_cost_usd += move.metrics.estimated_cost_usd
-                total_api_time_ms += move.metrics.response_time_ms
+        for message in game_state.context:
+            if isinstance(message, AssistantMessage) and message.metrics:
+                total_input_tokens += message.metrics.input_tokens
+                total_output_tokens += message.metrics.output_tokens
+                total_tokens += message.metrics.total_tokens
+                total_estimated_cost_usd += message.metrics.estimated_cost_usd
+                total_api_time_ms += message.metrics.response_time_ms
                 api_call_count += 1
         
         average_response_time_ms = total_api_time_ms / api_call_count if api_call_count > 0 else 0.0
@@ -198,6 +240,7 @@ class GameResult(BaseModel):
             "links_on_final_page": len(game_state.current_page.links) if game_state.current_page else 0,
             "error_types": [move.error.type.value for move in game_state.move_history if move.error],
             "successful_moves": len([move for move in game_state.move_history if move.to_page_title]),
+            # TODO(hunter): we should calculate this from context to count attempts?
             "failed_moves": len([move for move in game_state.move_history if move.error]),
             "target_reached": game_state.status == GameStatus.WON,
             "start_page": game_state.config.start_page_title,

@@ -1,25 +1,29 @@
+import logging
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
-from mcp.types import Tool
 
-from pydantic import BaseModel, Field
+from wiki_arena.models import ContextMessage, ModelConfig, GameState, AssistantMessage
 
-from wiki_arena.models import GameState, GameConfig, MoveMetrics, ModelConfig
 
-class ToolCall(BaseModel):
-    """
-    Represents a tool call by an arbitrary language model.
-    """
-    model_text_response: Optional[str] = Field(None, description="The raw text response or thought process from the language model.")
-    tool_name: Optional[str] = Field(None, description="The name of the tool the model chose to call.")
-    tool_arguments: Optional[Dict[str, Any]] = Field(None, description="The arguments the model provided for the chosen tool.")
-    # TODO(hunter): see if we can remove this or other option
-    error_message: Optional[str] = Field(None, description="Any error message if the model failed to produce a valid action.")
-    metrics: Optional[MoveMetrics] = Field(None, description="API call metrics")
+logger = logging.getLogger(__name__)
+
+
+class LLMProviderError(Exception):
+    """Base exception for all language model provider errors."""
+    pass
+
+class LLMRateLimitError(LLMProviderError):
+    """Raised when a provider rate limit is exceeded."""
+    pass
+
+class LLMTimeoutError(LLMProviderError):
+    """Raised when a provider API call times out."""
+    pass
+
 
 class LanguageModel(ABC):
     """
-    Abstract base class for Language Model interactions.
+    Abstract base class for all language models.
     """
 
     def __init__(self, model_config: ModelConfig):
@@ -34,17 +38,19 @@ class LanguageModel(ABC):
         self.model_settings = model_config.settings
         super().__init__()
 
-    def _calculate_cost(self, input_tokens: int, output_tokens: int) -> float:
+    @abstractmethod
+    def _calculate_cost(
+        self,
+        input_tokens: int,
+        output_tokens: int,
+        cache_creation_tokens: int = 0,
+        cache_read_tokens: int = 0,
+    ) -> float:
         """Calculate cost based on model pricing and token usage."""
-        if not self.model_config.input_cost_per_1m_tokens or not self.model_config.output_cost_per_1m_tokens:
-            return 0.0
-            
-        input_cost = (input_tokens / 1_000_000) * self.model_config.input_cost_per_1m_tokens
-        output_cost = (output_tokens / 1_000_000) * self.model_config.output_cost_per_1m_tokens
-        return input_cost + output_cost
+        pass
 
     @abstractmethod
-    async def _format_tools_for_provider(
+    def _format_tools(
         self,
         mcp_tools: List[Dict[str, Any]],
     ) -> Any:
@@ -60,29 +66,35 @@ class LanguageModel(ABC):
         pass
 
     @abstractmethod
-    async def generate_response(
-        self,
-        tools: List[Dict[str, Any]],
-        game_state: GameState,
-    ) -> ToolCall:
+    def _format_context(self, context: List[ContextMessage]) -> Any:
         """
-        Given the current game state and available tools, let the language model choose a tool call.
-
-        This method should be implemented by concrete Language Model classes. It will
-        typically involve:
-        1. Converting tools from MCP format to provider format
-        2. Formatting a prompt based on the game state (current page, target, history, rules, available tools).
-        3. Sending the prompt to the Language Model provider.
-        4. Parsing the AI's response to extract a tool call (name and arguments) and any textual thoughts.
-        5. Returning a ToolCall object.
-
-        Args:
-            tools: List of available tools in MCP format
-            game_state: The current state of the game.
-
-        Returns:
-            A ToolCall object detailing the model's chosen tool call or an error.
+        Convert the generic `ContextMessage` list to the provider's format.
         """
         pass
 
-    
+    @abstractmethod
+    async def generate_response(
+        self,
+        tools: List[Dict[str, Any]],
+        context: List[ContextMessage],
+        game_state: GameState, # the random model NEEDS this, others not so much
+    ) -> AssistantMessage:
+        """
+        Given the current context and available tools, get the next assistant message.
+
+        This method should be implemented by concrete Language Model classes. It will
+        typically involve:
+        1. Converting the generic `ContextMessage` list to the provider's specific format.
+        2. Converting tools from MCP format to provider format
+        3. Sending the prompt to the Language Model provider.
+        4. Parsing the AI's response into a standard `AssistantMessage` object,
+           which may include text and/or tool call requests.
+
+        Args:
+            tools: List of available tools in MCP format
+            context: The full context so far.
+
+        Returns:
+            An `AssistantMessage` object from the model.
+        """
+        pass

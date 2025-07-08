@@ -1,10 +1,34 @@
-from typing import Any, Dict, List, Optional
+import json
 import logging
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
-from anthropic import Anthropic, AnthropicError
-from .language_model import LanguageModel, ToolCall
-from wiki_arena.models import GameState, MoveMetrics, ModelConfig
+from anthropic import (
+    Anthropic,
+    AnthropicError,
+    RateLimitError,
+    APITimeoutError,
+)
+from wiki_arena.models import (
+    AssistantMessage,
+    AssistantToolCall,
+    ContextMessage,
+    ModelCallMetrics,
+    ModelConfig,
+    GameState,
+    ToolResultMessage,
+    UserMessage,
+)
+from .language_model import (
+    LanguageModel,
+    LLMProviderError,
+    LLMRateLimitError,
+    LLMTimeoutError,
+)
+
+
+logger = logging.getLogger(__name__)
+
 
 class AnthropicModel(LanguageModel):
     """
@@ -14,30 +38,35 @@ class AnthropicModel(LanguageModel):
 
     def __init__(self, model_config: ModelConfig):
         super().__init__(model_config)
-        try:
-            self.client = Anthropic()  # API key is inferred from ANTHROPIC_API_KEY env var
-            self.model_name = model_config.model_name
-            self.max_tokens = model_config.settings.get("max_tokens", self.DEFAULT_MAX_TOKENS)
-        except AnthropicError as e:
-            logging.error(f"Failed to initialize Anthropic client: {e}")
-            # Depending on desired behavior, you might want to re-raise the error,
-            # set a 'failed' state, or handle it in another way.
-            # For now, re-raising to make the initialization failure explicit.
-            raise
+        self.client = Anthropic()  # API key is inferred from ANTHROPIC_API_KEY env var
+        self.model_name = model_config.model_name
+        self.max_tokens = model_config.settings.get("max_tokens", self.DEFAULT_MAX_TOKENS)
 
-    async def _format_tools_for_provider(
+    def _calculate_cost(
         self,
-        mcp_tools: List[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
-        """
-        Convert MCP tool definitions to Anthropic tool format.
-        
-        Args:
-            mcp_tools: List of tool definitions in MCP format
-            
-        Returns:
-            Tools formatted for Anthropic's API
-        """
+        input_tokens: int,
+        output_tokens: int,
+        cache_creation_tokens: int = 0,
+        cache_read_tokens: int = 0,
+    ) -> float:
+        """Calculate cost based on Anthropic's pricing and token usage, including caching."""
+        if not self.model_config.input_cost_per_1m_tokens or not self.model_config.output_cost_per_1m_tokens:
+            return 0.0
+
+        # Regular input and output tokens are priced at standard rates
+        input_cost = (input_tokens / 1_000_000) * self.model_config.input_cost_per_1m_tokens
+        output_cost = (output_tokens / 1_000_000) * self.model_config.output_cost_per_1m_tokens
+
+        # Cache token costs
+        # 5-minute cache write tokens are 1.25 times the base input tokens price
+        cache_creation_cost = (cache_creation_tokens / 1_000_000) * self.model_config.input_cost_per_1m_tokens * 1.25
+        # Cache read tokens are 0.1 times the base input tokens price
+        cache_read_cost = (cache_read_tokens / 1_000_000) * self.model_config.input_cost_per_1m_tokens * 0.1
+
+        return input_cost + output_cost + cache_creation_cost + cache_read_cost
+
+    def _format_tools(self, mcp_tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Convert MCP tool definitions to Anthropic tool format."""
         formatted_tools = []
         for mcp_tool in mcp_tools:
             formatted_tools.append({
@@ -47,114 +76,147 @@ class AnthropicModel(LanguageModel):
             })
         return formatted_tools
 
+    def _format_context(self, context: List[ContextMessage]) -> tuple[Optional[List[Dict[str, Any]]], List[Dict[str, Any]]]:
+        """Converts the universal context to Anthropic's format."""
+        system_prompt_blocks: Optional[List[Dict[str, Any]]] = None
+        messages: List[Dict[str, Any]] = []
+        
+        # Extract the system prompt first.
+        if context and context[0].role == "system":
+            system_prompt_blocks = [{"type": "text", "text": context[0].content}]
+            # Add cache control to the system prompt's content block.
+            system_prompt_blocks[0]["cache_control"] = {"type": "ephemeral"}
+            context = context[1:]
+
+        for turn in context:
+            if isinstance(turn, (UserMessage, ToolResultMessage)):
+                # Anthropic uses 'user' role for both user and tool result messages. 
+                # For simplicity here, we assume a back-and-forth conversation.
+                if isinstance(turn, ToolResultMessage):
+                    messages.append({
+                        "role": "user",
+                        "content": [{
+                            "type": "tool_result",
+                            "tool_use_id": turn.tool_call_id,
+                            "content": turn.content,
+                            "is_error": turn.is_error,
+                        }]
+                    })
+                else: # UserMessage
+                    content = turn.content
+                    if not isinstance(content, list):
+                        content = [{"type": "text", "text": content}]
+                    messages.append({"role": "user", "content": content})
+            elif isinstance(turn, AssistantMessage):
+                content = []
+                if turn.content:
+                    content.append({"type": "text", "text": turn.content})
+                if turn.tool_calls:
+                    for tool_call in turn.tool_calls:
+                        content.append({
+                            "type": "tool_use",
+                            "id": tool_call.id,
+                            "name": tool_call.name,
+                            "input": tool_call.arguments,
+                        })
+                messages.append({"role": "assistant", "content": content})
+        
+        # Add cache control to the last content block of the last message
+        if messages:
+            last_message_content = messages[-1]["content"]
+            if last_message_content:
+                last_message_content[-1]["cache_control"] = {"type": "ephemeral"}
+
+        return system_prompt_blocks, messages
+
     async def generate_response(
         self,
         tools: List[Dict[str, Any]],
+        context: List[ContextMessage],
         game_state: GameState,
-    ) -> ToolCall:
-        # TODO(hunter): error handling for game state
+    ) -> AssistantMessage:
         
-        start_time = datetime.now()
+        system_prompt_blocks, messages = self._format_context(context)
+        formatted_tools = self._format_tools(tools)
+        
+        logger.debug(f"Sending request to Anthropic with system prompt: {system_prompt_blocks}")
+        logger.debug(f"Sending request to Anthropic with messages: {json.dumps(messages, indent=2)}")
 
-        # TODO(hunter): should I cache the tools? lets not for now since they come every time
-        formatted_tools = await self._format_tools_for_provider(tools)
-        system_prompt = game_state.config.system_prompt_template.format(
-            start_page_title=game_state.config.start_page_title,
-            target_page_title=game_state.config.target_page_title,
-        )
-        # TODO(hunter): cache messages
-        messages = [
-            {"role": "user", "content": [
-                {"type": "text", "text": f"Current Page: {game_state.current_page.title}"},
-                {"type": "text", "text": f"Content: {"\n".join(game_state.current_page.links)}"},
-            ]},
-        ]
-        # logging.info(f"<system_prompt>\n{system_prompt}\n</system_prompt>")
-        
-        # # Logging the messages in a format simulating how a model might see them, with role tags.
-        # logging.info("--- BEGIN Formatted Messages for LLM (Simulated View) ---")
-        # for msg in messages:
-        #     role_name = msg['role']
-        #     logging.info(f"<{role_name}>") # Example: <user>
-            
-        #     # msg['content'] is expected to be a list of content blocks.
-        #     # For this model, it's typically: [{"type": "text", "text": "..."}]
-        #     for content_block in msg['content']: # Original 'content' var renamed to 'content_block' for clarity
-        #         logging.info(content_block['text'])
-
-        #     logging.info(f"</{role_name}>") # Example: </user>
-        #     # This separator helps distinguish between multiple messages if `messages` list grows.
-        # logging.info("--- END Formatted Messages for LLM (Simulated View) ---")
-        
         try:
+            start_time = datetime.now()
             response = self.client.messages.create(
                 model=self.model_name,
                 max_tokens=self.max_tokens,
-                system=system_prompt,
+                system=system_prompt_blocks,
                 messages=messages,
                 tools=formatted_tools,
             )
             
-            end_time = datetime.now()
-            response_time_ms = (end_time - start_time).total_seconds() * 1000
-            
-            logging.debug(f"AnthropicModel: API response received: {response}")
+            # Calculate metrics for logging
+            usage = response.usage
+            input_tokens = usage.input_tokens
+            output_tokens = usage.output_tokens
+            cache_creation_tokens = getattr(usage, 'cache_creation_input_tokens', 0) or 0
+            cache_read_tokens = getattr(usage, 'cache_read_input_tokens', 0) or 0
 
-            # TODO(hunter): add parse model response to tool call function
-            model_text_response: Optional[str] = None
-            tool_name: Optional[str] = None
-            tool_arguments: Optional[Dict[str, Any]] = None
+            total_tokens = input_tokens + output_tokens
+            cost = self._calculate_cost(input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens)
+            duration_ms = (datetime.now() - start_time).total_seconds() * 1000
+
+            log_parts = [
+                f"Input: {input_tokens}",
+                f"Output: {output_tokens}",
+            ]
+            if cache_creation_tokens > 0:
+                log_parts.append(f"Cache Creation: {cache_creation_tokens}")
+            if cache_read_tokens > 0:
+                log_parts.append(f"Cache Read: {cache_read_tokens}")
+            
+            log_parts.extend([
+                f"Total: {total_tokens}",
+                f"Cost: ${cost:.4f}",
+                f"Duration: {duration_ms:.1f}ms"
+            ])
+            logger.info(f"Response Tokens: {' | '.join(log_parts)}")
+
+            metrics = ModelCallMetrics(
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                total_tokens=total_tokens,
+                cache_creation_input_tokens=cache_creation_tokens,
+                cache_read_input_tokens=cache_read_tokens,
+                estimated_cost_usd=cost,
+                response_time_ms=duration_ms,
+                request_timestamp=start_time
+            )
+
+            model_text_response = None
+            tool_calls = []
             
             for content_block in response.content:
                 if content_block.type == "text":
                     model_text_response = (model_text_response or "") + content_block.text
                 elif content_block.type == "tool_use":
-                    tool_name = content_block.name
-                    tool_arguments = content_block.input
+                    tool_calls.append(
+                        AssistantToolCall(
+                            id=content_block.id,
+                            name=content_block.name,
+                            arguments=content_block.input,
+                        )
+                    )
 
-            # Create metrics
-            input_tokens = response.usage.input_tokens
-            output_tokens = response.usage.output_tokens
-            total_tokens = input_tokens + output_tokens
-            estimated_cost = self._calculate_cost(input_tokens, output_tokens)
-            
-            metrics = MoveMetrics(
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                total_tokens=total_tokens,
-                estimated_cost_usd=estimated_cost,
-                response_time_ms=response_time_ms,
-                request_timestamp=start_time
-            )
-
-            # TODO(hunter) append model result to messages
-            return ToolCall(
-                model_text_response=model_text_response,
-                tool_name=tool_name,
-                tool_arguments=tool_arguments,
+            return AssistantMessage(
+                content=model_text_response,
+                tool_calls=tool_calls if tool_calls else None,
                 metrics=metrics
             )
             
+        except RateLimitError as e:
+            logger.error(f"Anthropic API rate limit exceeded: {e}", exc_info=True)
+            raise LLMRateLimitError from e
+        except APITimeoutError as e:
+            logger.error(f"Anthropic API call timed out: {e}", exc_info=True)
+            raise LLMTimeoutError from e
         except AnthropicError as e:
-            end_time = datetime.now()
-            response_time_ms = (end_time - start_time).total_seconds() * 1000
-            logging.error(f"Anthropic API call failed: {e}")
-            
-            # Create metrics for failed call (no tokens, but record timing)
-            metrics = MoveMetrics(
-                input_tokens=0,
-                output_tokens=0,
-                total_tokens=0,
-                estimated_cost_usd=0.0,
-                response_time_ms=response_time_ms,
-                request_timestamp=start_time
-            )
-            
-            return ToolCall(
-                error_message=f"Anthropic API call failed: {e}",
-                metrics=metrics
-            )
-
-
-
-        
+            logger.error(f"Anthropic API call failed: {e}", exc_info=True)
+            raise LLMProviderError from e

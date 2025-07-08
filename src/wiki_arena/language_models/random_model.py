@@ -1,11 +1,22 @@
-import random
 import asyncio
+import random
 import time
-from typing import Any, Dict, List, Optional
+import uuid
+import ast
+import re
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
-from wiki_arena.models import GameState, MoveMetrics, ModelConfig
-from .language_model import LanguageModel, ToolCall
+from wiki_arena.models import (
+    AssistantMessage,
+    AssistantToolCall,
+    ContextMessage,
+    ModelCallMetrics,
+    ModelConfig,
+    GameState,
+)
+from .language_model import LanguageModel
+
 
 class RandomModel(LanguageModel):
     """
@@ -14,51 +25,46 @@ class RandomModel(LanguageModel):
 
     def __init__(self, model_config: ModelConfig):
         super().__init__(model_config)
-        # No specific settings needed for RandomModel yet
 
-    async def _format_tools_for_provider(
+    def _calculate_cost(
         self,
-        mcp_tools: List[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
-        """
-        RandomModel doesn't need to format tools - just return them as-is.
-        
-        Args:
-            mcp_tools: List of tool definitions in MCP format
-            
-        Returns:
-            Tools in MCP format (unchanged)
-        """
+        input_tokens: int,
+        output_tokens: int,
+        cache_creation_tokens: int = 0,
+        cache_read_tokens: int = 0,
+    ) -> float:
+        """RandomModel has no cost."""
+        return 0.0
+
+    def _format_tools(self, mcp_tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """No-op for RandomModel."""
         return mcp_tools
 
+    def _format_context(self, context: List[ContextMessage]) -> Any:
+        """No-op for RandomModel."""
+        return None
+
+    # TODO(hunter): I completely broke this haha. we should probably just pass in game state too so I can can cheap out on context
     async def generate_response(
         self,
         tools: List[Dict[str, Any]],
+        context: List[ContextMessage],
         game_state: GameState,
-    ) -> ToolCall:
-        """
-        Generates a response by randomly selecting a link.
-        """
-
+    ) -> AssistantMessage:
+        """Generates a response by randomly selecting a link from the context."""
         start_time = time.time()
-        # await asyncio.sleep(1.0)
-        end_time = time.time()
+        await asyncio.sleep(1.0)
 
-        # Create zero metrics since this is not a real API call
-        metrics = MoveMetrics(
-            input_tokens=0,
-            output_tokens=0,
-            total_tokens=0,
-            estimated_cost_usd=0.0,
-            response_time_ms=end_time - start_time,
+        # 2. Create zero-cost metrics since this is not a real API call
+        metrics = ModelCallMetrics(
+            response_time_ms=(time.time() - start_time) * 1000,
             request_timestamp=datetime.now()
         )
 
+        # 3. If no links are available, return a message with no tool call
         if not game_state.current_page.links:
-            return ToolCall(
-                model_text_response="No links available on the current page.",
-                tool_name=None,
-                tool_arguments=None,
+            return AssistantMessage(
+                content="No links available on the current page to choose from.",
                 metrics=metrics
             )
 
@@ -70,19 +76,21 @@ class RandomModel(LanguageModel):
                 break
         
         if not navigate_tool:
-            return ToolCall(
-                model_text_response="No navigate tool available.",
-                tool_name=None,
-                tool_arguments=None,
+            return AssistantMessage(
+                content="No navigate tool available.",
                 metrics=metrics
             )
-
-        selected_link = random.choice(game_state.current_page.links)
         
-        # Use the correct parameter name from the tool definition
-        return ToolCall(
-            model_text_response=f"Randomly selected link: {selected_link}",
-            tool_name=navigate_tool["name"],
-            tool_arguments={"page": selected_link},  # Using "page" as defined in tool schema
+        # 4. Randomly select a link and create a tool call
+        selected_link = random.choice(game_state.current_page.links)
+        tool_call = AssistantToolCall(
+            id=f"tool_{uuid.uuid4().hex[:10]}",
+            name="navigate",
+            arguments={"to_page_title": selected_link}
+        )
+        # 5. Return the AssistantMessage
+        return AssistantMessage(
+            content=f"Randomly selected link: {selected_link}",
+            tool_calls=[tool_call],
             metrics=metrics
         )
