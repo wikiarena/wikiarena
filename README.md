@@ -1,8 +1,14 @@
 # Wiki Arena - LLM Wikipedia Navigation Eval
 
-## 🚀 Quick Start
+## Command Line Interface
 
-**Ready to run?** See [STARTUP.md](STARTUP.md) for complete setup instructions.
+```bash
+uv run python src/wiki_arena/main.py -m "gpt-4.1-nano-2025-04-14"
+```
+
+## Web Interface
+
+See [STARTUP.md](STARTUP.md) for complete setup instructions.
 
 **TL;DR:** Start 2 terminals:
 ```bash
@@ -14,9 +20,6 @@ cd ~/wiki-arena/frontend && npm run dev-game
 ```
 Then open http://localhost:3000/
 ---
-
-# TODO:
-
 
 # idea
 Turn the wikipedia game into an eval / training environment for Language Models
