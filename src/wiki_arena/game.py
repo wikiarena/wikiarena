@@ -15,10 +15,18 @@ from wiki_arena.models import (
     GameError,
     ErrorType,
     ModelConfig,
+    SystemMessage,
+    UserMessage,
+    ToolResultMessage,
+    AssistantToolCall,
 )
 from wiki_arena.events import EventBus, GameEvent
 from wiki_arena.wikipedia import LiveWikiService
-from wiki_arena.language_models import LanguageModel, ToolCall
+from wiki_arena.language_models import LanguageModel, LLMProviderError
+from wiki_arena.tools import get_tool_by_name
+
+
+logger = logging.getLogger(__name__)
 
 
 class Game:
@@ -44,201 +52,206 @@ class Game:
             game_id=self.id,
             config=config,
             status=GameStatus.NOT_STARTED,
-            error_message=None,
             current_page=start_page,
             steps=0,
         )
 
-        logging.info(
+        self._initialize_context()
+
+        logger.info(
             f"Game {self.id} initialized. Start: '{config.start_page_title}', Target: '{config.target_page_title}'"
         )
-        logging.info(f"Player: {config.model.model_name} ({config.model.provider})")
-        logging.info(f"Loaded {len(self.tools)} tools.")
-
-        # The game is initialized but not yet started, so we set the status accordingly
-        self.state.status = GameStatus.IN_PROGRESS  # TODO(hunter): this should update state to NOT_STARTED from INITIALIZING
+        logger.info(f"Player: {config.model.model_name} ({config.model.provider})")
+        logger.info(f"Loaded {len(self.tools)} tools.")
 
     def _generate_game_id(self, model_config: ModelConfig) -> str:
         """Generate descriptive game ID with model info."""
         timestamp = datetime.now()
         date_str = timestamp.strftime("%Y%m%d_%H%M%S")
-        uuid_short = str(uuid.uuid4())[:4]
+        uuid_short = uuid.uuid4().hex[:4]
         model_key = model_config.model_name
 
         return f"{model_key}_{date_str}_{uuid_short}"
 
-    async def play_turn(self) -> bool:
-        """Play a single turn of the game. Returns True if game is over, False otherwise."""
-        if not self.state:
-            logging.error("play_turn called but game state is None. Game cannot proceed.")
-            return True
+    def _initialize_context(self):
+        """Sets up the initial system and user messages in the context."""
+        # System Prompt
+        system_prompt = self.state.config.system_prompt_template.format(
+            start_page_title=self.state.config.start_page_title,
+            target_page_title=self.state.config.target_page_title,
+        )
+        self.state.context.append(SystemMessage(content=system_prompt))
 
+        # Initial User Message (contains the first page's content)
+        initial_user_message = (
+            f"You are currently on the page '{self.state.current_page.title}'.\n"
+            f"Here are the available links:\n{self.state.current_page.links}"
+        )
+        self.state.context.append(UserMessage(content=initial_user_message))
+
+    async def run(self):
+        """Run the game until completion."""
+
+        if self.state.status == GameStatus.NOT_STARTED:
+            self.state.status = GameStatus.IN_PROGRESS
+            logger.info(f"Game {self.id} started.")
+
+        while self.state.status == GameStatus.IN_PROGRESS:
+            # Small delay between moves to avoid overwhelming services and to allow for observation.
+            # await asyncio.sleep(1.0)
+            await self._play_turn()
+
+        logger.info(f"Game {self.id} completed with status: {self.state.status.value}")
+
+    async def _play_turn(self) -> None:
+        """Play a single turn of the game following a retry loop for recoverable errors."""
+        if not self.state:
+            logger.error("_play_turn called but game state is None. Game cannot proceed.")
+            return
+        
         if self.state.status != GameStatus.IN_PROGRESS:
-            logging.warning(f"play_turn called but game status is {self.state.status.value}. Game is already considered over.")
-            if not self.state.error_message and self.state.status not in [GameStatus.WON, GameStatus.NOT_STARTED]:
-                 self.state.error_message = f"Game ended: play_turn called when status was {self.state.status.value}"
-            return True
+            logger.warning(f"_play_turn called but game status is {self.state.status.value}. Game is already considered over.")
+            return
 
         current_step = self.state.steps + 1
         current_page_title = self.state.current_page.title
+        
+        MAX_ATTEMPTS = 3 # I am realizing that these cost money
+        last_error = None
 
-        # Early validation
-        if not self.language_model:
-            self.state.status = GameStatus.ERROR
-            self.state.error_message = "Language model not initialized"
-            logging.error(f"Game {self.id}: Critical error - Language model not initialized")
-            return True
-
-        try:
-            # Get model response
-            tool_call_request = await self._get_model_response()
-
-            # Validate and process the model response
-            validation_error = self._validate_model_response(tool_call_request)
-            if validation_error:
-                self._create_error_move(current_step, current_page_title, validation_error, tool_call_request)
-                self.state.status = GameStatus.LOST_INVALID_MOVE
-                await self._emit_game_ended_event()
-                return True
-
-            # Extract target page from tool call
-            target_page, extraction_error = self._extract_target_page(tool_call_request)
-            if extraction_error:
-                self._create_error_move(current_step, current_page_title, extraction_error, tool_call_request)
-                self.state.status = GameStatus.LOST_INVALID_MOVE
-                await self._emit_game_ended_event()
-                return True
-
-            # Validate the link exists on current page
-            link_error = self._validate_link(target_page, tool_call_request)
-            if link_error:
-                self._create_error_move(current_step, current_page_title, link_error, tool_call_request)
-                self.state.status = GameStatus.LOST_INVALID_MOVE
-                await self._emit_game_ended_event()
-                return True
-
-            # Attempt navigation
+        # TODO(hunter): this whole thing probably needs to be in a try catch block as to not kill the app
+        for attempt in range(MAX_ATTEMPTS):
+            # 1. Get model response
             try:
-                next_page = await self.wiki_service.get_page(target_page, include_all_namespaces=False)
-            except (ConnectionError, ValueError) as e:
-                nav_error = GameError(
-                    type=ErrorType.APP_NAVIGATION_ERROR,
-                    message=f"Navigation failed: {e}",
-                    metadata={"target_page": target_page, "nav_error": str(e)}
+                assistant_message = await self.language_model.generate_response(
+                    tools=self.tools,
+                        context=self.state.context,
+                        game_state=self.state,
+                    )
+                self.state.context.append(assistant_message)
+            except LLMProviderError as e:
+                logger.error(f"Attempt {attempt + 1}: Model provider error: {e}", exc_info=True)
+                last_error = GameError(type=ErrorType.PROVIDER_API_ERROR, message=str(e))
+                break # end game on api errors
+
+            # 2. Check for tool calls
+            if not assistant_message.tool_calls:
+                logger.warning(f"Attempt {attempt + 1}: Model did not call a tool.")
+                self.state.context.append(
+                    UserMessage(content="You must use a tool to navigate. Please choose one of the available tools.")
                 )
-                self._create_error_move(current_step, current_page_title, nav_error, tool_call_request)
-                self.state.status = GameStatus.ERROR
-                await self._emit_game_ended_event()
-                return True
+                last_error = GameError(type=ErrorType.MODEL_NO_TOOL_CALL, message="Model did not call a tool.")
+                continue
 
-            # Success! Create successful move and update game state
-            return await self._handle_successful_move(current_step, current_page_title, next_page, tool_call_request)
+            # For this game, we only handle the first tool call
+            tool_call = assistant_message.tool_calls[0]
 
-        except Exception as e:
-            return self._handle_unexpected_exception(e, current_step, current_page_title, locals().get('tool_call_request'))
+            # 3. Validate tool name
+            try:
+                tool_info = get_tool_by_name(tool_call.name)
+                tool_implementation = tool_info["implementation"]
+            except ValueError as e:
+                logger.warning(f"Attempt {attempt + 1}: Model called an invalid tool '{tool_call.name}'.")
+                error_message = f"Error: {str(e)}. You must use one of the available tools."
+                self.state.context.append(
+                    ToolResultMessage(
+                        tool_call_id=tool_call.id,
+                        content=error_message,
+                        is_error=True
+                    )
+                )
+                last_error = GameError(type=ErrorType.MODEL_INVALID_TOOL, message=str(e))
+                continue
 
-    async def _get_model_response(self):
-        """Get response from language model with proper error handling."""
-        try:
-            return await self.language_model.generate_response(
-                tools=self.tools,
-                game_state=self.state
-            )
-        except Exception as e:
-            # Re-raise with provider context for categorization
-            if "rate limit" in str(e).lower() or "429" in str(e):
-                raise Exception(f"PROVIDER_RATE_LIMIT: {e}")
-            elif "timeout" in str(e).lower() or "504" in str(e) or "502" in str(e):
-                raise Exception(f"PROVIDER_TIMEOUT: {e}")
-            elif any(code in str(e) for code in ["500", "503", "502", "504"]):
-                raise Exception(f"PROVIDER_API_ERROR: {e}")
-            else:
-                raise Exception(f"MODEL_GENERATION_ERROR: {e}")
+            # 4. Validate tool call argument schema
+            tool_schema = tool_info.get("schema", {})
+            input_schema = tool_schema.get("inputSchema", {})
+            required_params = input_schema.get("required", [])
+            provided_args = tool_call.arguments or {}
 
-    def _validate_model_response(self, tool_call_request) -> Optional[GameError]:
-        """Validate that the model provided a valid tool call."""
-        if not tool_call_request or not tool_call_request.tool_name:
-            return GameError(
-                type=ErrorType.MODEL_NO_TOOL_CALL,
-                message="Language model did not select a valid action",
-                metadata={
-                    "model_response": tool_call_request.model_text_response if tool_call_request else None,
-                    "has_tool_call": bool(tool_call_request and tool_call_request.tool_name)
-                }
-            )
+            missing_params = [p for p in required_params if p not in provided_args]
+            if missing_params:
+                error_message = f"Error: Missing required arguments for tool '{tool_call.name}'. Missing: {', '.join(missing_params)}"
+                logger.warning(f"Attempt {attempt + 1}: {error_message}")
+                self.state.context.append(
+                    ToolResultMessage(
+                        tool_call_id=tool_call.id,
+                        content=error_message,
+                        is_error=True
+                    )
+                )
+                last_error = GameError(
+                    type=ErrorType.MODEL_INVALID_TOOL,
+                    message="Missing required arguments for tool call.",
+                    metadata={"missing_params": missing_params}
+                )
+                continue
 
-        # Check if tool exists in available tools
-        tool_definition = next((t for t in self.tools if t["name"] == tool_call_request.tool_name), None)
-        if not tool_definition:
-            return GameError(
-                type=ErrorType.MODEL_INVALID_TOOL,
-                message=f"Model requested unavailable tool: {tool_call_request.tool_name}",
-                metadata={
-                    "requested_tool": tool_call_request.tool_name,
-                    "tools": [t["name"] for t in self.tools]
-                }
-            )
-
-        return None
-
-
-    # TODO(hunter): why are we allowing the model make an error here?
-    def _extract_target_page(self, tool_call_request: ToolCall) -> tuple[Optional[str], Optional[GameError]]:
-        """Extract target page title from tool call arguments."""
-        chosen_tool_args = tool_call_request.tool_arguments or {}
-
-        # Handle various navigation tool parameter formats
-        target_page_title = None
-        if "page_title" in chosen_tool_args:
-            target_page_title = chosen_tool_args.get("page_title")
-        elif "page" in chosen_tool_args:
-            target_page_title = chosen_tool_args.get("page")
-        elif "title" in chosen_tool_args:
-            target_page_title = chosen_tool_args.get("title")
-        else:
-            # Find first string argument as fallback
-            for arg_value in chosen_tool_args.values():
-                if isinstance(arg_value, str):
-                    target_page_title = arg_value
-                    break
-
-        if not target_page_title:
-            error = GameError(
-                type=ErrorType.MODEL_INVALID_TOOL,
-                message=f"Tool '{tool_call_request.tool_name}' called without page title argument",
-                metadata={
-                    "tool_name": tool_call_request.tool_name,
-                    "arguments": chosen_tool_args,
-                    "expected_params": ["page_title", "page", "title"]
-                }
-            )
-            return None, error
-
-        return target_page_title, None
-
-    def _validate_link(self, target_page: str, tool_call_request) -> Optional[GameError]:
-        """Validate that the target page is available as a link on the current page."""
-        if target_page not in self.state.current_page.links:
-            is_target_page = target_page == self.state.config.target_page_title
-
-            return GameError(
-                type=ErrorType.MODEL_INVALID_LINK,
-                message=f"Page '{target_page}' is not in available links of '{self.state.current_page.title}'",
-                metadata={
-                    "requested_page": target_page,
-                    "current_page": self.state.current_page.title,
-                    "is_target_page": is_target_page,
-                    "available_links_count": len(self.state.current_page.links),
-                    "tool_call": {
-                        "name": tool_call_request.tool_name,
-                        "arguments": tool_call_request.tool_arguments
+            to_page_title = tool_call.arguments["to_page_title"]
+            # 5. Validate link is on the current page
+            if to_page_title not in self.state.current_page.links:
+                is_target_page = to_page_title == self.state.config.target_page_title
+                logger.warning(f"Attempt {attempt + 1}: Model chose a link '{to_page_title}' that is not on the current page.")
+                error_message = f"Error: Page '{to_page_title}' is not in available links of '{self.state.current_page.title}'"
+                self.state.context.append(
+                    ToolResultMessage(
+                        tool_call_id=tool_call.id,
+                        content=error_message,
+                        is_error=True
+                    )
+                )
+                last_error = GameError(
+                    type=ErrorType.MODEL_INVALID_LINK,
+                    message=error_message,
+                    metadata={
+                        "current_page": self.state.current_page.title,
+                        "requested_page": to_page_title,
+                        "is_target_page": is_target_page,
+                        "available_links_count": len(self.state.current_page.links),
                     }
-                }
-            )
+                )
+                continue
 
-        return None
+            # 6. Execute tool and handle results
+            try:
+                # TODO(hunter): passing the wiki_service feels wrong here. guess we go back to mcp client
+                next_page = await tool_implementation(wiki_service=self.wiki_service, **tool_call.arguments)
+                # TODO(hunter): model needs to know if the link redirected so they don't get confused
+                tool_result_message = (
+                    f"Successfully navigated to '{next_page.title}'. "
+                    f"It has {len(next_page.links)} links."
+                )
+                self.state.context.append(
+                    ToolResultMessage(tool_call_id=tool_call.id, content=tool_result_message, is_error=False)
+                )
+                
+                await self._handle_successful_move(current_step, current_page_title, next_page)
+                return  # Success, exit the turn
 
-    async def _handle_successful_move(self, step: int, from_page: str, new_page: Page, tool_call_request) -> bool:
+            except (ConnectionError, ValueError) as e:
+                # Handle tool execution errors (e.g., page not found)
+                logger.warning(f"Attempt {attempt + 1}: Tool '{tool_call.name}' failed. Error: {e}")
+                self.state.context.append(
+                    ToolResultMessage(
+                        tool_call_id=tool_call.id,
+                        content=f"Error executing tool: {e}",
+                        is_error=True
+                    )
+                )
+                last_error = GameError(type=ErrorType.APP_NAVIGATION_ERROR, message=f"Navigation failed: {e}")
+                continue
+            except Exception as e:
+                # Handle unexpected errors by ending the game
+                await self._handle_unexpected_exception(e, current_step, current_page_title, tool_call)
+                return
+
+        # If the loop finishes, all attempts have failed.
+        logger.error(f"Game lost after {MAX_ATTEMPTS} failed attempts to make a move.")
+        self._create_error_move(current_step, current_page_title, last_error)
+        self.state.status = GameStatus.LOST_INVALID_MOVE
+        await self._emit_game_ended_event()
+    
+    async def _handle_successful_move(self, step: int, from_page: str, new_page: Page) -> None:
         """Handle a successful move and update game state."""
         # Update current page
         self.state.current_page = new_page
@@ -248,34 +261,35 @@ class Game:
             step=step,
             from_page_title=from_page,
             to_page_title=new_page.title,
-            model_response=tool_call_request.model_text_response,
-            tool_call_attempt={
-                "tool_name": tool_call_request.tool_name,
-                "arguments": tool_call_request.tool_arguments
-            },
-            error=None,
-            metrics=tool_call_request.metrics
+            error=None
         )
 
         self.state.move_history.append(move)
         self.state.steps += 1
 
-        logging.info(f"Game {self.id} Step {step}: '{from_page}' -> '{new_page.title}'")
+        logger.info(f"Game {self.id} Step {step}: '{from_page}' -> '{new_page.title}'")
 
         # Check win condition
+        game_over = False
         if new_page.title == self.state.config.target_page_title:
             self.state.status = GameStatus.WON
-            self.state.error_message = "Target page reached!"
-            logging.info(f"Game {self.id}: Won! Reached target '{new_page.title}' in {self.state.steps} steps.")
+            logger.info(f"Game {self.id}: Won! Reached target '{new_page.title}' in {self.state.steps} steps.")
             game_over = True
         # Check max steps
         elif self.state.steps >= self.state.config.max_steps:
             self.state.status = GameStatus.LOST_MAX_STEPS
             self.state.error_message = "Maximum turns reached"
-            logging.info(f"Game {self.id}: Lost - Max turns ({self.state.config.max_steps}) reached.")
+            logger.info(f"Game {self.id}: Lost - Max turns ({self.state.config.max_steps}) reached.")
             game_over = True
-        else:
-            game_over = False
+
+        # Provide the context for the next turn if the game is still in progress
+        # TODO(hunter): I am pretty sure this is redundant with tool call result. we need one or the other
+        if not game_over:
+            new_user_message = (
+                f"You are now on the page '{self.state.current_page.title}'.\n"
+                f"Here are the available links:\n{self.state.current_page.links}"
+            )
+            self.state.context.append(UserMessage(content=new_user_message))
 
         # Emit event if event bus is available
         if self.event_bus:
@@ -293,8 +307,6 @@ class Game:
             if game_over:
                 await self._emit_game_ended_event()
 
-        return game_over
-
     async def _emit_game_ended_event(self):
         """Helper method to emit game_ended event."""
         if self.event_bus:
@@ -304,27 +316,21 @@ class Game:
                 data={"game_state": self.state}
             ))
 
-    def _create_error_move(self, step: int, from_page: str, error: GameError, tool_call_request):
+    def _create_error_move(self, step: int, from_page: str, error: GameError):
         """Create a move record for an error case."""
         move = Move(
             step=step,
             from_page_title=from_page,
             to_page_title=None,  # No successful navigation
-            model_response=tool_call_request.model_text_response if tool_call_request else None,
-            tool_call_attempt={
-                "tool_name": tool_call_request.tool_name,
-                "arguments": tool_call_request.tool_arguments
-            } if tool_call_request else None,
-            error=error,
-            metrics=tool_call_request.metrics if tool_call_request else None
+            error=error
         )
 
         self.state.move_history.append(move)
         self.state.error_message = error.message
 
-        logging.warning(f"Game {self.id} Step {step}: Error - {error.message}")
+        logger.warning(f"Game {self.id} Step {step}: Error - {error.message}")
 
-    def _handle_unexpected_exception(self, exception: Exception, step: int, from_page: str, tool_call_request) -> bool:
+    async def _handle_unexpected_exception(self, exception: Exception, step: int, from_page: str, tool_call: Optional[AssistantToolCall]) -> None:
         """Handle unexpected exceptions with proper categorization."""
         error = GameError(
             type=ErrorType.APP_UNKNOWN_ERROR,
@@ -332,20 +338,25 @@ class Game:
             metadata={
                 "exception_type": type(exception).__name__,
                 "step": step,
-                "has_tool_call_request": bool(tool_call_request)
+                "has_tool_call_request": bool(tool_call)
             }
         )
 
-        if tool_call_request:
-            self._create_error_move(step, from_page, error, tool_call_request)
+        if tool_call:
+            self._create_error_move(step, from_page, error)
         else:
             self.state.error_message = error.message
+            # If there's no tool call, we might still have metrics from the failed model response
+            # So we create a move to record the error and the API call cost
+            move = Move(
+                step=step,
+                from_page_title=from_page,
+                to_page_title=None,
+                error=error
+            )
+            self.state.move_history.append(move)
+
 
         self.state.status = GameStatus.ERROR
-        logging.error(f"Game {self.id}: {error.message}", exc_info=True)
-
-        # Emit game_ended event if event bus is available
-        if self.event_bus:
-            asyncio.create_task(self._emit_game_ended_event())
-
-        return True
+        logger.error(f"Game {self.id}: {error.message}", exc_info=True)
+        await self._emit_game_ended_event() 

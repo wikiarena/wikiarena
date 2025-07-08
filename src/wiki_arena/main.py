@@ -1,61 +1,81 @@
 import asyncio
-import sys
 import json
 import logging
-from rich.logging import RichHandler
 from datetime import datetime
+from typing import Optional
 
-from wiki_arena.config import load_config
-from wiki_arena.wikipedia import LiveWikiService
+import typer
+
 from wiki_arena.game import Game
-from wiki_arena.tools import get_tools
-from wiki_arena.models import GameConfig, ModelConfig, GameResult
-from wiki_arena.models import GameStatus
-from wiki_arena.wikipedia.task_selector import get_random_task_async
+from wiki_arena.models import GameConfig, GameResult
 from wiki_arena.storage import GameStorageService, StorageConfig
+from wiki_arena.tools import get_tools
 from wiki_arena.language_models import create_model
+from wiki_arena.wikipedia import LiveWikiService
+from wiki_arena.wikipedia.task_selector import get_random_task_async
 
-async def main():
 
+app = typer.Typer()
+
+
+@app.command()
+def main(
+    model_key: str = typer.Option(
+        "random",
+        "--model-key",
+        "-m",
+        help="The model key to use for the game.",
+    ),
+    max_steps: int = typer.Option(
+        30,
+        "--max-steps",
+        "-s",
+        help="The maximum number of steps allowed in the game.",
+    ),
+):
+    """
+    Run a Wiki Arena game from the command line.
+    """
+    asyncio.run(run_game_async(model_key=model_key, max_steps=max_steps))
+
+
+async def run_game_async(model_key: str, max_steps: int):
     # Configure unified logging
     from wiki_arena.logging_config import setup_logging
-    setup_logging(level="DEBUG")
-    logging.debug("Unified logging configured.")
+
+    setup_logging(level="INFO")
+    logger = logging.getLogger(__name__)
 
     # 2. Instantiate the wiki service
     wiki_service = LiveWikiService()
-    logging.info("LiveWikiService created.")
+    logger.info("LiveWikiService created.")
 
     try:
         # 4. Select a random task
         task = await get_random_task_async()
         if not task:
-            print("Could not retrieve a valid task. Exiting.")
+            logger.error("Could not retrieve a valid task. Exiting.")
             return
 
         # 5. Create game configuration from the task
-        model_key = "random"                   # Random baseline
-        
         # Create model using simplified system (no config needed!)
         model = create_model(model_key)
-        
-        # You can also override settings if needed:
-        # model = create_model(model_key, max_tokens=2048, temperature=0.1)
-        
-        logging.info(f"Using model: {model.model_config.model_name} ({model.model_config.provider})")
-        logging.info(f"Model pricing: ${model.model_config.input_cost_per_1m_tokens}/1M input, ${model.model_config.output_cost_per_1m_tokens}/1M output tokens")
+
+        logger.info(
+            f"Using model: {model.model_config.model_name} ({model.model_config.provider})"
+        )
 
         game_config = GameConfig(
             start_page_title=task.start_page_title,
             target_page_title=task.target_page_title,
-            max_steps=30,
-            model=model.model_config  # Use the model config
+            max_steps=max_steps,
+            model=model.model_config,  # Use the model config
         )
 
         # 5.5. Initialize game storage service
         storage_config = StorageConfig()  # Use default configuration for now
         storage_service = GameStorageService(storage_config)
-        logging.info(f"Game storage configured: {storage_config.storage_path}")
+        logger.info(f"Game storage configured: {storage_config.storage_path}")
 
         # Fetch the start page and tools needed to initialize the game
         start_page = await wiki_service.get_page(game_config.start_page_title)
@@ -71,74 +91,56 @@ async def main():
             event_bus=None,
         )
         initial_state = game.state
-        logging.info(f"Game initialized: {initial_state.game_id}")
-        logging.info(f"Current page: {initial_state.current_page.title}")
-        logging.info(f"Available links: {len(initial_state.current_page.links)}")
+        logger.info(f"Game initialized: {initial_state.game_id}")
+        logger.info(f"Current page: {initial_state.current_page.title}")
+        logger.info(f"Available links: {len(initial_state.current_page.links)}")
 
-        # 7. Play game loop
-        while True:
-            game_over = await game.play_turn()
-            if game_over:
-                # Game is over, access state directly for details
-                game_state = game.state
-                logging.info(f"\nGame Over!")
-                logging.info(f"Status: {game_state.status.value}")
-                logging.info(f"Steps taken: {game_state.steps}")
-                
-                # Simplified path construction
-                path_taken = []
-                if not game_state.move_history:
-                    # Game ended on the start page (e.g., 0-step win, or error before first move)
-                    path_taken.append(game_state.config.start_page_title)
-                else:
-                    for move in game_state.move_history:
-                        path_taken.append(move.from_page_title)
-                    
-                    # If the game was won, the final page in the path is the target page.
-                    if game_state.status == GameStatus.WON:
-                        path_taken.append(game_state.config.target_page_title)
+        # Run the game until it's over
+        logger.info("Starting game...")
+        await game.run()
+        final_state = game.state
+        # Store game result
+        try:
+            game_result = GameResult.from_game_state(final_state)
+            storage_success = storage_service.store_game(game_result)
 
-                logging.info(f"Path: {' -> '.join(path_taken)}")
+            if storage_success:
+                logger.info(f"Game result stored successfully")
+            else:
+                logger.warning(f"Failed to store game result")
+        except Exception as e:
+            logger.error(f"Error storing game result: {e}", exc_info=True)
 
-                # Calculate duration
-                end_time = datetime.now()
-                duration = (end_time - game_state.start_timestamp).total_seconds()
-                logging.info(f"Duration: {duration:.2f}s")
-                
-                if game_state.error_message:
-                    # Error_message now directly stores outcome or error
-                    if game_state.status == GameStatus.ERROR or game_state.status == GameStatus.LOST_INVALID_MOVE or game_state.status == GameStatus.LOST_MAX_STEPS:
-                        logging.error(f"Outcome: {game_state.error_message}")
-                    else: # e.g. WON status, error_message contains success message
-                        logging.info(f"Outcome: {game_state.error_message}")
-                
-                # 7.5. Store game result
-                try:
-                    game_result = GameResult.from_game_state(game_state)
-                    storage_success = storage_service.store_game(game_result)
-                    
-                    if storage_success:
-                        logging.info(f"Game result stored successfully")
-                    else:
-                        logging.warning(f"Failed to store game result")
-                        
-                except Exception as e:
-                    logging.error(f"Error storing game result: {e}", exc_info=True)
-                
-                break
+        logger.info(json.dumps([msg.model_dump(mode="json") for msg in game.state.context], indent=2))
 
-            # Game continues
-            current_page = game.state.current_page
-            logging.info(f"Step {game.state.steps}")
-            logging.info(f"Current page: {current_page.title}")
-            logging.info(f"Available links: {len(current_page.links)}")
+        # Print results
+        logger.info("Game finished.")
+        logger.info(f"Status: {final_state.status.value}")
+        logger.info(f"Message: {final_state.error_message}")
+        logger.info(f"Steps: {final_state.steps}")
+
+        # Simplified path construction
+        path = " -> ".join(
+            [move.from_page_title for move in final_state.move_history]
+            + [final_state.current_page.title]
+        )
+        logger.info(f"Path: {path}")
+
+        # Calculate duration
+        end_time = datetime.now()
+        duration = (end_time - final_state.start_timestamp).total_seconds()
+        logger.info(f"Duration: {duration:.2f}s")
 
     except Exception as e:
-        logging.critical(f"An unexpected error occurred during application runtime: {e}", exc_info=True)
+        logger.critical(
+            f"An unexpected error occurred during application runtime: {e}",
+            exc_info=True,
+        )
 
     finally:
         # 8. Application shutdown
-        logging.info("Application shutting down.")
+        logger.info("Application shutting down.")
+
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    app() 

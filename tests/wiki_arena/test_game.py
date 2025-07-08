@@ -17,6 +17,7 @@ from wiki_arena.language_models import LanguageModel
 from wiki_arena.language_models.random_model import RandomModel
 from wiki_arena.tools import get_tools
 from wiki_arena import EventBus
+from wiki_arena.models import ToolCall
 
 
 @pytest.fixture
@@ -88,7 +89,7 @@ class TestGameIntegration:
             event_bus=event_bus,
         )
             
-        result = await game.play_turn()
+        result = await game.run()
         
         assert not result, "Game should not be over after one turn"
         assert len(game.state.move_history) == 1, "Should create a move even for same-page navigation"
@@ -109,7 +110,7 @@ class TestGameIntegration:
             event_bus=event_bus,
         )
         
-        result = await game.play_turn()
+        result = await game.run()
         
         assert result is True, "Game should end when model cannot make a tool call"
         assert game.state.status == GameStatus.LOST_INVALID_MOVE
@@ -131,7 +132,7 @@ class TestGameIntegration:
             event_bus=event_bus,
         )
         
-        result = await game.play_turn()
+        result = await game.run()
         
         assert result is True, "Game should end on navigation failure"
         assert game.state.status == GameStatus.ERROR
@@ -157,7 +158,7 @@ class TestGameIntegration:
             event_bus=event_bus,
         )
         
-        result = await game.play_turn()
+        result = await game.run()
 
         assert not result, "Game should not be over after a redirect"
         assert game.state.current_page.title == final_page_name
@@ -179,6 +180,9 @@ class TestGameIntegration:
         
         start_page = await wiki_service.get_page(start_page_title)
         
+        # Mock successful navigation
+        game.wiki_service.get_page.return_value = start_page
+
         # Patch random choice to force a win
         with patch('random.choice', return_value=target_page_title):
             game = Game(
@@ -190,9 +194,63 @@ class TestGameIntegration:
                 event_bus=event_bus,
             )
         
-            result = await game.play_turn()
+            result = await game.run()
         
             assert result is True, "Game should be over"
             assert game.state.status == GameStatus.WON
             assert game.state.steps == 1
             assert game.state.current_page.title == target_page_title 
+
+
+@pytest.mark.asyncio
+async def test_model_with_invalid_tool_call(game: Game):
+    """Test game behavior when the model makes an invalid tool call."""
+    # Mock the model to make an invalid move (select a non-existent link)
+    game.language_model.generate_response.return_value = ToolCall(tool_name="navigate_to_page", tool_arguments={"page_title": "Invalid Link"})
+
+    # Act
+    await game.run()
+
+    # Assert
+    assert game.state.status == GameStatus.LOST_INVALID_MOVE
+
+
+@pytest.mark.asyncio
+async def test_game_max_steps(game: Game):
+    """Test game behavior when max steps is reached."""
+    game.config.max_steps = 1
+    game.language_model.generate_response.return_value = ToolCall(tool_name="navigate_to_page", tool_arguments={"page_title": "Another Page"})
+    game.wiki_service.get_page.return_value = Page(title="Another Page", text="...", links=[])
+
+    # Act
+    await game.run()
+
+    # Assert
+    assert game.state.status == GameStatus.LOST_MAX_STEPS
+
+
+@pytest.mark.asyncio
+async def test_model_with_no_tool_call(game: Game):
+    """Test game behavior when the model makes no tool call."""
+    # Mock the language model to return no tool call
+    game.language_model.generate_response.return_value = ToolCall(tool_name=None, tool_arguments=None)
+
+    # Act
+    await game.run()
+
+    # Assert
+    assert game.state.status == GameStatus.LOST_INVALID_MOVE
+
+
+@pytest.mark.asyncio
+async def test_model_with_invalid_tool_name(game: Game):
+    """Test game behavior when the model makes an invalid tool name."""
+    # Mock the language model to return an invalid tool name
+    game.language_model.generate_response.return_value = ToolCall(tool_name="invalid_tool", tool_arguments={"page_title": "Target"})
+
+    # Act
+    await game.run()
+
+    # Assert
+    assert game.state.status == GameStatus.LOST_INVALID_MOVE
+    assert "unavailable tool" in game.state.error_message 
