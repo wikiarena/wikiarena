@@ -80,7 +80,7 @@ class CustomTaskSelector(TaskSelector):
     async def _validate_page_exists(self, page_title: str) -> bool:
         """Validate that a page exists on Wikipedia."""
         try:
-            await self.wiki.get_page(page_title, include_all_namespaces=True)
+            await self.wiki.get_page(page_title)
             return True
         except ValueError:
             # Page doesn't exist

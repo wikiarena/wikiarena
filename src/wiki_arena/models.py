@@ -38,13 +38,13 @@ class ErrorType(Enum):
 
 class ModelCallMetrics(BaseModel):
     """Metrics for a single model call."""
-    input_tokens: Optional[int] = Field(default=None, description="Input tokens for this API call (uncached)")
-    output_tokens: Optional[int] = Field(default=None, description="Output tokens for this API call")
-    total_tokens: Optional[int] = Field(default=None, description="Total tokens for this API call (input + output)")
-    cache_creation_input_tokens: Optional[int] = Field(default=None, description="Input tokens used to create a cache entry")
-    cache_read_input_tokens: Optional[int] = Field(default=None, description="Input tokens read from a cache entry")
-    estimated_cost_usd: Optional[float] = Field(default=None, description="Estimated cost for this API call in USD")
-    response_time_ms: float = Field(default=0.0, description="API response time in milliseconds")
+    input_tokens: Optional[int] = Field(0, description="Input tokens for this API call (uncached)")
+    output_tokens: Optional[int] = Field(0, description="Output tokens for this API call")
+    total_tokens: Optional[int] = Field(0, description="Total tokens for this API call (input + output)")
+    cache_creation_input_tokens: Optional[int] = Field(0, description="Input tokens used to create a cache entry")
+    cache_read_input_tokens: Optional[int] = Field(0, description="Input tokens read from a cache entry")
+    estimated_cost_usd: Optional[float] = Field(0.0, description="Estimated cost for this API call in USD")
+    response_time_ms: float = Field(0.0, description="API response time in milliseconds")
     request_timestamp: datetime = Field(default_factory=datetime.now, description="When this API call was made")
 
 class MessageRole(str, Enum):
