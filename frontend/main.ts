@@ -99,7 +99,8 @@ class WikiArenaApp {
 
   private setupUIHandlers(): void {
     this.raceHUDController.setupEventListeners({
-      onStepToMove: (moveIndex: number) => this.handleStepToMove(moveIndex)
+      onStepToMove: (moveIndex: number) => this.handleStepToMove(moveIndex),
+      onEnterLiveMode: () => this.handleEnterLiveMode()
     });
     
     // Setup window resize handler

@@ -62,10 +62,10 @@ class TaskCoordinator:
         try:
             start_page = await self.game_coordinator.wiki_service.get_page(task.start_page_title)
         except ValueError as e:
-            # This occurs if the page title is invalid or the page does not exist.
+            # occurs if the page title is invalid or the page does not exist.
             raise PageNotFoundException(str(e))
         except ConnectionError as e:
-            # This occurs if the Wikipedia API is unreachable.
+            # occurs if the Wikipedia API is unreachable.
             raise WikiServiceUnavailableException(str(e))
         
         # Generate task ID
@@ -155,6 +155,8 @@ class TaskCoordinator:
             for task_id, task_data in self.active_tasks.items()
         }
     
+    # TODO(hunter): don' start game until all games are initialized
+    # should we wait for websocket connection? and task solve?
     async def handle_task_solved(self, event: GameEvent):
         """Handle task_solved events to start execution of all games in the task."""
         task_id = event.data.get("task_id")

@@ -24,7 +24,11 @@ export class RaceHUDController {
       'progress-bars-container',
       // Page step slider
       'page-step-slider-container',
-      'page-step-slider'
+      'page-step-slider',
+      // Player dropdowns
+      'player-dropdowns-container',
+      'player1-dropdown',
+      'player2-dropdown'
     ];
 
     elementIds.forEach(id => {
@@ -55,6 +59,9 @@ export class RaceHUDController {
 
     // Update page step slider
     this.updatePageStepSlider(task, steppingInfo);
+
+    // Update player dropdowns
+    this.updatePlayerDropdowns(task, steppingInfo);
   }
 
   private updateProgressBars(task: Task, steppingInfo?: {
@@ -313,17 +320,201 @@ export class RaceHUDController {
   }
 
   // =============================================================================
+  // Player Dropdowns
+  // =============================================================================
+
+  private updatePlayerDropdowns(task: Task, steppingInfo?: {
+    currentPageIndex: number;
+    viewingPageIndex: number;
+    renderingMode: RenderingMode;
+    canStepForward: boolean;
+    canStepBackward: boolean;
+  }): void {
+    const container = this.elements.get('player-dropdowns-container');
+    if (!container) return;
+
+    if (task.games.size === 0) {
+      container.style.display = 'none';
+      return;
+    }
+
+    container.style.display = 'flex';
+
+    // Convert games map to array and assign to player dropdowns
+    const gameArray = Array.from(task.games.entries());
+    
+    // Calculate max steps across all games for synchronization
+    const maxSteps = Math.max(...gameArray.map(([, gameSequence]) => gameSequence.pageStates.length));
+    
+    // Update player 1 dropdown (first game)
+    if (gameArray.length > 0) {
+      const [gameId, gameSequence] = gameArray[0];
+      this.updatePlayerDropdown('player1-dropdown', gameId, gameSequence, steppingInfo, maxSteps);
+    }
+
+    // Update player 2 dropdown (second game)
+    if (gameArray.length > 1) {
+      const [gameId, gameSequence] = gameArray[1];
+      this.updatePlayerDropdown('player2-dropdown', gameId, gameSequence, steppingInfo, maxSteps);
+    }
+
+    // Auto-scroll both dropdowns to keep current items visible (if expanded)
+    this.autoScrollToCurrentItems();
+  }
+
+  private updatePlayerDropdown(
+    dropdownId: string,
+    gameId: string,
+    gameSequence: GameSequence,
+    steppingInfo?: {
+      currentPageIndex: number;
+      viewingPageIndex: number;
+      renderingMode: RenderingMode;
+      canStepForward: boolean;
+      canStepBackward: boolean;
+    },
+    maxSteps?: number
+  ): void {
+    const dropdown = this.elements.get(dropdownId);
+    if (!dropdown) return;
+
+    // Set the game ID attribute
+    dropdown.setAttribute('data-game-id', gameId);
+
+    // Get display name and icon from player color service
+    const displayName = playerColorService.getDisplayName(gameId);
+    const iconSrc = playerColorService.getIconForGame(gameId);
+
+    // Update header elements
+    const logoElement = dropdown.querySelector('.player-dropdown-logo') as HTMLImageElement;
+    const nameElement = dropdown.querySelector('.player-dropdown-name') as HTMLElement;
+    const statusElement = dropdown.querySelector('.player-dropdown-status') as HTMLElement;
+    
+    if (logoElement) {
+      logoElement.src = iconSrc;
+      logoElement.alt = `${displayName} logo`;
+    }
+
+    if (nameElement) {
+      nameElement.textContent = displayName;
+    }
+
+    if (statusElement) {
+      statusElement.textContent = gameSequence.status;
+      statusElement.className = `player-dropdown-status ${gameSequence.status}`;
+    }
+
+    // Update dropdown list
+    this.updatePlayerDropdownList(dropdown, gameSequence, steppingInfo, maxSteps);
+  }
+
+  private updatePlayerDropdownList(
+    dropdown: HTMLElement,
+    gameSequence: GameSequence,
+    steppingInfo?: {
+      currentPageIndex: number;
+      viewingPageIndex: number;
+      renderingMode: RenderingMode;
+      canStepForward: boolean;
+      canStepBackward: boolean;
+    },
+    maxSteps?: number
+  ): void {
+    const listElement = dropdown.querySelector('.player-dropdown-list') as HTMLElement;
+    if (!listElement) return;
+
+    // Clear existing items
+    listElement.innerHTML = '';
+
+    // Determine current viewing step
+    let currentStep = 0;
+    if (steppingInfo && steppingInfo.renderingMode === 'stepping') {
+      currentStep = Math.min(steppingInfo.viewingPageIndex, gameSequence.pageStates.length - 1);
+    } else {
+      currentStep = gameSequence.pageStates.length - 1;
+    }
+
+    // Add items for each step (up to maxSteps, or just this game's steps if not provided)
+    const totalSteps = maxSteps || gameSequence.pageStates.length;
+    
+    for (let index = 0; index < totalSteps; index++) {
+      const item = document.createElement('div');
+      item.className = 'player-dropdown-item';
+      
+      if (index === currentStep) {
+        item.classList.add('current');
+      }
+
+      const pageState = gameSequence.pageStates[index];
+      
+      if (pageState) {
+        // Add click handler to jump to this step (don't close dropdown)
+        item.addEventListener('click', (event) => {
+          event.stopPropagation(); // Prevent dropdown from closing
+          if (this.onStepToMove) {
+            this.onStepToMove(index);
+          }
+        });
+
+        // Set border color based on distance change
+        const borderColor = this.getDistanceChangeColor(pageState.distanceChange);
+        item.style.borderRightColor = borderColor;
+
+        // Create content for actual page state
+        const distance = pageState.distanceToTarget !== undefined ? pageState.distanceToTarget.toString() : '?';
+        item.innerHTML = `
+          <span class="player-dropdown-item-index">${index}</span>
+          <span class="player-dropdown-item-title">${pageState.pageTitle}</span>
+          <span class="player-dropdown-item-distance">${distance}</span>
+        `;
+      } else {
+        // Create empty placeholder for missing steps
+        item.classList.add('empty');
+        item.style.borderRightColor = 'transparent';
+        item.innerHTML = `
+          <span class="player-dropdown-item-index">${index}</span>
+          <span class="player-dropdown-item-title" style="color: #6b7280; font-style: italic;">—</span>
+          <span class="player-dropdown-item-distance">—</span>
+        `;
+      }
+
+      listElement.appendChild(item);
+    }
+  }
+
+  private getDistanceChangeColor(distanceChange?: number): string {
+    if (distanceChange === undefined) {
+      return '#64748b'; // Gray - unknown
+    }
+    
+    if (distanceChange > 0) {
+      return '#10b981'; // Green - got closer to target
+    } else if (distanceChange === 0) {
+      return '#eab308'; // Yellow - stayed same distance
+    } else if (distanceChange === -1) {
+      return '#ef4444'; // Red - got further from target
+    } else {
+      return '#dc2626'; // Dark red - got much further from target
+    }
+  }
+
+  // =============================================================================
   // Event Listener Setup
   // =============================================================================
 
   setupEventListeners(handlers: {
     onStepToMove?: (moveIndex: number) => void;
+    onEnterLiveMode?: () => void;
   }): void {
     // Store the handlers
     this.onStepToMove = handlers.onStepToMove;
+    this.onEnterLiveMode = handlers.onEnterLiveMode;
     
     // Setup slider event listeners
     this.setupSliderEventListeners();
+
+    // Setup player dropdown event listeners
+    this.setupPlayerDropdownEventListeners();
 
     console.log('✅ UI event listeners setup');
   }
@@ -407,6 +598,124 @@ export class RaceHUDController {
     });
   }
 
+  private setupPlayerDropdownEventListeners(): void {
+    const player1Dropdown = this.elements.get('player1-dropdown');
+    const player2Dropdown = this.elements.get('player2-dropdown');
+
+    if (player1Dropdown && player2Dropdown) {
+      this.setupSynchronizedDropdowns(player1Dropdown, player2Dropdown);
+    }
+  }
+
+  private setupSynchronizedDropdowns(dropdown1: HTMLElement, dropdown2: HTMLElement): void {
+    const header1 = dropdown1.querySelector('.player-dropdown-header');
+    const header2 = dropdown2.querySelector('.player-dropdown-header');
+    const content1 = dropdown1.querySelector('.player-dropdown-content') as HTMLElement;
+    const content2 = dropdown2.querySelector('.player-dropdown-content') as HTMLElement;
+
+    if (!header1 || !header2 || !content1 || !content2) return;
+
+    // Synchronized expansion/collapse
+    const toggleBoth = (clickedDropdown: HTMLElement, otherDropdown: HTMLElement) => {
+      const wasExpanded = clickedDropdown.classList.contains('expanded');
+      
+      // Toggle both dropdowns
+      clickedDropdown.classList.toggle('expanded');
+      otherDropdown.classList.toggle('expanded');
+      
+      // If opening, scroll both to selected items
+      if (!wasExpanded && clickedDropdown.classList.contains('expanded')) {
+        setTimeout(() => {
+          this.scrollToSelectedItem(clickedDropdown);
+          this.scrollToSelectedItem(otherDropdown);
+        }, 100);
+      }
+    };
+
+    // Make headers clickable
+    header1.addEventListener('click', (event) => {
+      event.stopPropagation();
+      toggleBoth(dropdown1, dropdown2);
+    });
+
+    header2.addEventListener('click', (event) => {
+      event.stopPropagation();
+      toggleBoth(dropdown2, dropdown1);
+    });
+
+    // Synchronized scrolling
+    let isScrolling1 = false;
+    let isScrolling2 = false;
+
+    content1.addEventListener('scroll', () => {
+      if (isScrolling2) return; // Prevent infinite loop
+      isScrolling1 = true;
+      content2.scrollTop = content1.scrollTop;
+      setTimeout(() => { isScrolling1 = false; }, 10);
+    });
+
+    content2.addEventListener('scroll', () => {
+      if (isScrolling1) return; // Prevent infinite loop
+      isScrolling2 = true;
+      content1.scrollTop = content2.scrollTop;
+      setTimeout(() => { isScrolling2 = false; }, 10);
+    });
+
+    // Close both dropdowns when clicking outside
+    document.addEventListener('click', (event) => {
+      if (!dropdown1.contains(event.target as Node) && !dropdown2.contains(event.target as Node)) {
+        dropdown1.classList.remove('expanded');
+        dropdown2.classList.remove('expanded');
+      }
+    });
+  }
+
+  private scrollToSelectedItem(dropdown: HTMLElement): void {
+    const content = dropdown.querySelector('.player-dropdown-content') as HTMLElement;
+    const selectedItem = dropdown.querySelector('.player-dropdown-item.current') as HTMLElement;
+    
+    if (!content || !selectedItem) return;
+
+    // Calculate if selected item is visible
+    const contentRect = content.getBoundingClientRect();
+    const selectedRect = selectedItem.getBoundingClientRect();
+    
+    // Check if item is fully visible within the content area
+    const isVisible = selectedRect.top >= contentRect.top && 
+                     selectedRect.bottom <= contentRect.bottom;
+    
+    if (!isVisible) {
+      // Scroll to center the selected item
+      const selectedOffsetTop = selectedItem.offsetTop;
+      const contentHeight = content.clientHeight;
+      const selectedHeight = selectedItem.offsetHeight;
+      
+      const targetScrollTop = selectedOffsetTop - (contentHeight / 2) + (selectedHeight / 2);
+      content.scrollTop = Math.max(0, targetScrollTop);
+    }
+  }
+
+  private autoScrollToCurrentItems(): void {
+    const player1Dropdown = this.elements.get('player1-dropdown');
+    const player2Dropdown = this.elements.get('player2-dropdown');
+    
+    // Only auto-scroll if at least one dropdown is expanded
+    const player1Expanded = player1Dropdown?.classList.contains('expanded');
+    const player2Expanded = player2Dropdown?.classList.contains('expanded');
+    
+    if (player1Expanded || player2Expanded) {
+      // Small delay to ensure DOM updates are complete
+      setTimeout(() => {
+        if (player1Dropdown && player1Expanded) {
+          this.scrollToSelectedItem(player1Dropdown);
+        }
+        if (player2Dropdown && player2Expanded) {
+          this.scrollToSelectedItem(player2Dropdown);
+        }
+      }, 50);
+    }
+  }
+
   private handleSliderChange(pageIndex: number, isFinal: boolean): void {
     // Get current max page index to determine if we're at the end
     const slider = this.elements.get('page-step-slider') as HTMLInputElement;
@@ -438,6 +747,12 @@ export class RaceHUDController {
     if (progressContainer) {
       progressContainer.style.display = 'none';
       progressContainer.innerHTML = '';
+    }
+
+    // Hide player dropdowns
+    const dropdownsContainer = this.elements.get('player-dropdowns-container');
+    if (dropdownsContainer) {
+      dropdownsContainer.style.display = 'none';
     }
   }
 

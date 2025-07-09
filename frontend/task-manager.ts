@@ -6,10 +6,10 @@ import {
   PageNode,
   NavigationEdge,
   GameEvent,
-  GameStartedEvent,
   GameMoveCompletedEvent,
   OptimalPathsUpdatedEvent,
   GameEndedEvent,
+  TaskEndedEvent,
   ConnectionEstablishedEvent,
 } from './types.js';
 import { playerColorService } from './player-color-service.js';
@@ -88,9 +88,6 @@ export class TaskManager {
       case 'CONNECTION_ESTABLISHED':
         this.handleConnectionEstablished(gameId, event as ConnectionEstablishedEvent);
         break;
-      case 'GAME_STARTED':
-        this.handleGameStarted(gameId, event as GameStartedEvent);
-        break;
       case 'GAME_MOVE_COMPLETED':
         this.handleMoveCompleted(gameId, event as GameMoveCompletedEvent);
         break;
@@ -99,6 +96,9 @@ export class TaskManager {
         break;
       case 'GAME_ENDED':
         this.handleGameEnded(gameId, event as GameEndedEvent);
+        break;
+      case 'TASK_ENDED':
+        this.handleTaskEnded(event as TaskEndedEvent);
         break;
       default:
         console.warn('⚠️ Unknown event type:', (event as any).type);
@@ -136,8 +136,7 @@ export class TaskManager {
       const gameData = completeState.game;
       
       // Update game sequence metadata
-      gameSequence.status = gameData.status === 'in_progress' ? 'in_progress' : 
-                           gameData.status === 'won' ? 'finished' : 'not_started';
+      gameSequence.status = gameData.status;
       
       // Set task-level properties if not already set (fallback to game data)
       if (!this.task.startPage) {
@@ -170,40 +169,11 @@ export class TaskManager {
     this.notifyListeners();
   }
 
-  private handleGameStarted(gameId: string, event: GameStartedEvent): void {
-    console.log('🎮 TaskManager: handling game started for game', gameId);
-    
-    const gameSequence = this.task.games.get(gameId)!;
-    gameSequence.status = 'in_progress';
-    
-    // Set task-level properties if not already set
-    if (!this.task.startPage) {
-      this.task.startPage = event.start_page.title;
-      this.task.targetPage = event.target_page.title;
-    }
-    
-    // Create initial page state for start page
-    const startPageState: PageState = {
-      gameId: gameId,
-      pageTitle: event.start_page.title,
-      moveIndex: 0,
-      optimalPaths: [],
-      isStartPage: true,
-      isTargetPage: event.start_page.title === event.target_page.title,
-      visitedFromPage: undefined
-    };
-    
-    gameSequence.pageStates = [startPageState];
-    
-    console.log(`🎮 Started game ${gameId} with start page: ${event.start_page.title}`);
-    this.updateTaskProgress();
-    this.notifyListeners();
-  }
-
   private handleMoveCompleted(gameId: string, event: GameMoveCompletedEvent): void {
     console.log('👟 TaskManager: handling move completed for game', gameId);
     
     const gameSequence = this.task.games.get(gameId)!;
+    gameSequence.status = event.status;
     const move = event.move;
     
     // Create new page state for the destination page
@@ -254,21 +224,33 @@ export class TaskManager {
   }
 
   // TODO(hunter): when should we close websocket connection? (after all solves, or when next game starts?)
-  private handleGameEnded(gameId: string, _event: GameEndedEvent): void {
+  private handleGameEnded(gameId: string, event: GameEndedEvent): void {
     console.log('🏁 TaskManager: handling game finished for game', gameId);
     
+    // TODO(hunter): how should we display this to the user?
+    // show the errror_message as a message (but where?)
+    // maybe popup that can be minimized?
+    
+    // there also may be an error move
+
     const gameSequence = this.task.games.get(gameId)!;
-    gameSequence.status = 'finished';
+    gameSequence.status = event.state.status;
     
     this.updateTaskProgress();
     this.notifyListeners();
+  }
+
+  private handleTaskEnded(event: TaskEndedEvent): void {
+    console.log('🏁 TaskManager: handling task ended');
+    
+    // what to do here? 
+    // this.task.status = 'finished';
   }
 
   // =============================================================================
   // Page State Management
   // =============================================================================
 
-  // TODO(hunter): remove this after task init event refactor
   private buildPageStatesFromMoveHistory(gameId: string, moveHistory: any[], config: any): void {
     const gameSequence = this.task.games.get(gameId)!;
     gameSequence.pageStates = [];
@@ -339,7 +321,7 @@ export class TaskManager {
       if (currentState.distanceToTarget !== undefined && 
           previousState.distanceToTarget !== undefined) {
         currentState.distanceChange = previousState.distanceToTarget - currentState.distanceToTarget;
-        console.log(`📏 Updated distance change for ${currentState.pageTitle}: ${currentState.distanceChange}`);
+        // console.log(`📏 Updated distance change for ${currentState.pageTitle}: ${currentState.distanceChange}`);
       }
     }
   }
@@ -396,7 +378,10 @@ export class TaskManager {
       // this.addOptimalPathsToGraph(allPages, allEdges, gameSequence, this.task.currentPageIndex);
     });
     
-    return { pages: Array.from(allPages.values()), edges: allEdges };
+    // Extract game order from Map insertion order (preserves original order)
+    const gameOrder = Array.from(this.task.games.keys());
+    
+    return { pages: Array.from(allPages.values()), edges: allEdges, gameOrder };
   }
 
   private buildSteppingGraphData(globalPageIndex: number): PageGraphData {
@@ -418,7 +403,10 @@ export class TaskManager {
       // this.addOptimalPathsToGraph(allPages, allEdges, gameSequence, globalPageIndex);
     });
     
-    return { pages: Array.from(allPages.values()), edges: allEdges };
+    // Extract game order from Map insertion order (preserves original order)
+    const gameOrder = Array.from(this.task.games.keys());
+    
+    return { pages: Array.from(allPages.values()), edges: allEdges, gameOrder };
   }
 
   private initializeStartAndTargetPages(allPages: Map<string, PageNode>): void {

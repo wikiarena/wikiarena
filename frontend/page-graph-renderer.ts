@@ -964,21 +964,29 @@ export class PageGraphRenderer {
   // Game Side Assignment System
   // =============================================================================
 
+  private updateGameAssignments(gameOrder: string[]): void {
+    // Deterministically assign games based on provided order
+    // First game -> left, second game -> right, etc.
+    gameOrder.forEach((gameId, index) => {
+      const side = index % 2 === 0 ? 'left' : 'right';
+      if (!this.gameAssignments.has(gameId) || this.gameAssignments.get(gameId) !== side) {
+        this.gameAssignments.set(gameId, side);
+        console.log(`🎮 Assigned game ${gameId} to ${side} side (deterministic order: ${index})`);
+      }
+    });
+  }
+
   private assignGameToSide(gameId: string): 'left' | 'right' {
     if (this.gameAssignments.has(gameId)) {
       return this.gameAssignments.get(gameId)!;
     }
 
-    // Assign games to alternate sides
-    const existingGames = Array.from(this.gameAssignments.keys());
-    const leftGames = existingGames.filter(id => this.gameAssignments.get(id) === 'left');
-    const rightGames = existingGames.filter(id => this.gameAssignments.get(id) === 'right');
-
-    // Assign to the side with fewer games, or right if equal
-    const side = leftGames.length < rightGames.length ? 'left' : 'right';
+    // Fallback if game not in predefined assignments (shouldn't happen normally)
+    console.warn(`⚠️ Game ${gameId} not found in predefined assignments, using fallback`);
+    const side = this.gameAssignments.size % 2 === 0 ? 'left' : 'right';
     this.gameAssignments.set(gameId, side);
 
-    console.log(`🎮 Assigned game ${gameId} to ${side} side`);
+    console.log(`🎮 Assigned game ${gameId} to ${side} side (fallback)`);
     return side;
   }
 
@@ -1158,16 +1166,19 @@ export class PageGraphRenderer {
   // =============================================================================
 
   updateFromPageGraphData(pageGraphData: PageGraphData): void {
-    console.log('🗺️ Enhanced Page Graph: Updating visualization with interactive physics');
-    console.log('📊 Received pages:', pageGraphData.pages.map(p => {
-      const visitCount = p.visits?.length || (p.type === 'start' ? 2 : 1);
-      return `${p.pageTitle} (${p.type}, ${visitCount} visits)`;
-    }));
+    console.log('🗺️ Page Graph: Updating visualization');
+    // console.log('📊 Received pages:', pageGraphData.pages.map(p => {
+    //   const visitCount = p.visits?.length || (p.type === 'start' ? 2 : 1);
+    //   return `${p.pageTitle} (${p.type}, ${visitCount} visits)`;
+    // }));
     
     if (pageGraphData.pages.length === 0) {
       this.clear();
       return;
     }
+
+    // Store game order for deterministic side assignment
+    this.updateGameAssignments(pageGraphData.gameOrder);
 
     // Identify new nodes for smart positioning
     const newNodeIds = new Set<string>();

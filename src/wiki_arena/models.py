@@ -161,7 +161,7 @@ class Move(BaseModel):
 class GameState(BaseModel):
     """Represents the dynamic state of a single ongoing or completed game."""
     config: GameConfig = Field(..., description="The configuration for this game.")
-    current_page: Optional[Page] = Field(None, description="Details of the page the language model is currently on.")
+    current_page: Page = Field(..., description="Details of the page the language model is currently on.")
     move_history: List[Move] = Field([], description="A chronological list of moves made in the game.")
     context: List[ContextMessage] = Field([], description="A complete log of the conversation with the model.")
     steps: int = Field(0, description="The number of steps taken.")

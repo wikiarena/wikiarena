@@ -18,7 +18,7 @@ export interface Task {
 // Game sequence object per player
 export interface GameSequence {
   gameId: string; // for websocket connection
-  status: 'not_started' | 'in_progress' | 'finished';
+  status: string;
   pageStates: PageState[]; // sequence of page states
 }
 
@@ -34,8 +34,8 @@ export interface PageState {
   distanceChange?: number; // How this move affected distance to target
   
   // Navigation context
-  isStartPage: boolean;
-  isTargetPage: boolean;
+  isStartPage: boolean; // TODO(hunter): this is not used anywhere
+  isTargetPage: boolean; // this isn't really used either
   visitedFromPage?: string; // Previous page title (for move edge)
 }
 
@@ -46,7 +46,7 @@ export interface PageState {
 // Page node for graph visualization - represents a Wikipedia page
 export interface PageNode {
   pageTitle: string;
-  type: 'start' | 'target' | 'visited' | 'optimal_path';
+  type: 'start' | 'target' | 'visited' | 'optimal_path' | 'error'; // ‼️
   distanceToTarget?: number; // Same for all visits - property of the graph
   
   // Array of visits from games (only when node is visited during a game)
@@ -79,6 +79,7 @@ export interface NavigationEdge {
 export interface PageGraphData {
   pages: PageNode[];
   edges: NavigationEdge[];
+  gameOrder: string[]; // Game IDs in the order they should be assigned to left/right sides
 }
 
 // =============================================================================
@@ -123,16 +124,10 @@ export interface ConnectionEstablishedEvent extends BaseGameEvent {
   };
 }
 
-export interface GameStartedEvent extends BaseGameEvent {
-  type: 'GAME_STARTED';
-  start_page: Page;
-  target_page: Page;
-}
-
 export interface GameMoveCompletedEvent extends BaseGameEvent {
   type: 'GAME_MOVE_COMPLETED';
   move: Move;
-  current_page: Page;
+  status: string;
 }
 
 export interface OptimalPathsUpdatedEvent extends BaseGameEvent {
@@ -152,19 +147,28 @@ export interface GameEndedEvent extends BaseGameEvent {
       target_page_title: string;
       max_steps: number;
     };
-    status: string;
-    steps: number;
     current_page?: {
       title: string;
+      url: string;
+      text: string;
+      links: string[];
     };
+    status: string;
+    error_message?: string;
+    steps: number;
     move_history: Array<{
       step: number;
       from_page_title: string;
       to_page_title: string;
     }>;
+    context: Array<{
+      role: string;
+      content: string;
+    }>;
   };
 }
 
+// TODO(hunter): should this be a different event type since it is above game level? (has task_id)
 export interface TaskEndedEvent extends BaseGameEvent {
   type: 'TASK_ENDED';
   start_page: Page;
@@ -173,7 +177,6 @@ export interface TaskEndedEvent extends BaseGameEvent {
 
 export type GameEvent = 
   | ConnectionEstablishedEvent
-  | GameStartedEvent 
   | GameMoveCompletedEvent 
   | OptimalPathsUpdatedEvent 
   | GameEndedEvent
@@ -194,7 +197,6 @@ export interface Move {
   to_page_title: string;
   step: number;
   timestamp?: string | null;
-  model_response?: string;
   distanceChange?: number; // Positive = got closer, negative = got further, 0 = same, undefined = unknown
 }
 

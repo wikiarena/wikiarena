@@ -2,6 +2,7 @@ import logging
 from typing import Dict, Any
 
 from wiki_arena import GameEvent
+from wiki_arena.models import GameState, Move
 from backend.websockets.game_hub import websocket_manager
 
 logger = logging.getLogger(__name__)
@@ -58,17 +59,17 @@ class WebSocketHandler:
         logger.debug(f"Broadcasting move_completed for game {event.game_id}")
         
         # Extract data from event
-        move_data = event.data.get("move")
-        game_state = event.data.get("game_state")
+        move: Move = event.data.get("move")
+        game_state: GameState = event.data.get("game_state")
         
         # Create WebSocket message
         message = {
             "type": "GAME_MOVE_COMPLETED",
             "game_id": event.game_id,
             "move": {
-                "step": move_data.step,
-                "from_page_title": move_data.from_page_title,
-                "to_page_title": move_data.to_page_title,
+                "step": move.step,
+                "from_page_title": move.from_page_title,
+                "to_page_title": move.to_page_title,
                 "timestamp": None,  # Move model doesn't have timestamp (MoveMetrics does tho)
             },
             "current_page": game_state.current_page,
@@ -103,11 +104,12 @@ class WebSocketHandler:
         """Handle game_ended events by broadcasting final status to WebSocket clients."""
         logger.debug(f"Broadcasting game_ended for game {event.game_id}")
         
-        game_state_data = event.data.get("game_state")
+        game_state: GameState = event.data.get("game_state")
         
         message = {
             "type": "GAME_ENDED",
-            "state": game_state_data.model_dump()
+            "game_id": event.game_id,
+            "state": game_state.model_dump()
         }
         
         await websocket_manager.broadcast_to_game(event.game_id, message)

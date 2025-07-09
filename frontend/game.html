@@ -969,6 +969,190 @@
             cursor: pointer;
         }
 
+        /* Player Dropdowns Container */
+        .player-dropdowns-container {
+            position: absolute;
+            top: 60px; /* Moved below progress bars */
+            left: 20px;
+            right: 20px;
+            display: none; /* Will be shown when games are active */
+            justify-content: space-between;
+            align-items: flex-start;
+            z-index: 10;
+            pointer-events: none; /* Allow clicks to pass through container */
+        }
+        
+        .player-dropdowns-container > * {
+            pointer-events: auto; /* Re-enable clicks on dropdown children */
+        }
+
+        .player-dropdown {
+            background-color: rgba(22, 27, 34, 0.95);
+            border: 1px solid rgba(71, 85, 105, 0.6);
+            border-radius: 8px;
+            width: 320px; /* Fixed width for consistency */
+            backdrop-filter: blur(4px);
+            transition: all 0.2s ease;
+        }
+
+        .player-dropdown:hover {
+            border-color: rgba(71, 85, 105, 0.8);
+            background-color: rgba(22, 27, 34, 0.98);
+        }
+
+        .player-dropdown-header {
+            display: flex;
+            align-items: center;
+            padding: 8px 12px;
+            user-select: none;
+            min-height: 32px;
+            box-sizing: border-box;
+            gap: 8px;
+        }
+
+        .player-dropdown-header:hover {
+            background-color: rgba(30, 41, 59, 0.3);
+        }
+
+        .player-dropdown-logo {
+            width: 20px;
+            height: 20px;
+            flex-shrink: 0;
+            border-radius: 2px;
+        }
+
+        .player-dropdown-name {
+            font-size: 1rem;
+            color: #f0f6fc;
+            font-weight: 500;
+            flex: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            min-width: 0; /* Allow flex item to shrink below content size */
+        }
+
+        .player-dropdown-status {
+            font-size: 1rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.25px;
+            color: #8b949e;
+            white-space: nowrap;
+            margin-left: 12px; /* Fixed spacing instead of auto */
+        }
+
+        .player-dropdown-toggle {
+            width: 16px;
+            height: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            flex-shrink: 0;
+            margin-left: 8px;
+        }
+
+        .player-dropdown-arrow {
+            width: 0;
+            height: 0;
+            border-left: 4px solid transparent;
+            border-right: 4px solid transparent;
+            border-top: 6px solid #8b949e;
+            transition: transform 0.2s ease;
+            transform-origin: center center;
+        }
+
+        .player-dropdown.expanded .player-dropdown-arrow {
+            transform: rotate(180deg);
+        }
+
+        .player-dropdown-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+            border-top: 1px solid transparent;
+        }
+
+        .player-dropdown.expanded .player-dropdown-content {
+            max-height: 400px; /* Set a reasonable max height */
+            overflow-y: auto; /* Enable scrolling */
+            border-top-color: rgba(71, 85, 105, 0.3);
+            /* Hide scrollbar for webkit browsers */
+            scrollbar-width: none; /* Firefox */
+            -ms-overflow-style: none; /* IE and Edge */
+        }
+
+        .player-dropdown.expanded .player-dropdown-content::-webkit-scrollbar {
+            display: none; /* Hide scrollbar for Chrome, Safari and Opera */
+        }
+
+        .player-dropdown-list {
+            padding: 4px 0;
+        }
+
+        .player-dropdown-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 12px;
+            font-size: 0.85rem;
+            transition: background-color 0.15s ease, border-right-color 0.15s ease;
+            cursor: pointer;
+            border-right: 4px solid transparent; /* Base border for all items */
+        }
+
+        .player-dropdown-item:hover {
+            background-color: rgba(30, 41, 59, 0.4);
+        }
+
+        .player-dropdown-item.current {
+            background-color: rgba(59, 130, 246, 0.2);
+        }
+
+        .player-dropdown-item-index {
+            font-weight: 600;
+            color: #8b949e;
+            min-width: 15px; /* Reduced from 35px since max is 30 */
+            text-align: right; /* Right align the numbers for better visual alignment */
+        }
+
+        .player-dropdown-item-title {
+            color: #f0f6fc;
+            flex: 1;
+            margin-left: 8px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-right: 8px; /* Space before distance */
+        }
+
+        .player-dropdown-item-distance {
+            color: #8b949e;
+            font-size: 0.75rem;
+            font-weight: 500;
+            min-width: 10px;
+            text-align: right;
+            margin-right: 2px; /* Space before border */
+        }
+
+        .player-dropdown-item.current .player-dropdown-item-index {
+            color: #3b82f6;
+        }
+
+        .player-dropdown-item.current .player-dropdown-item-title {
+            color: #dbeafe;
+        }
+
+        .player-dropdown-item.empty {
+            opacity: 0.5;
+            cursor: default;
+        }
+
+        .player-dropdown-item.empty:hover {
+            background-color: transparent;
+        }
+
         /* Responsive design */
         @media (max-width: 768px) {
             .page-selectors,
@@ -1137,6 +1321,43 @@
             
             <!-- Loading Animation Container -->
             <div id="loading-container"></div>
+            
+            <!-- Player Dropdowns Container -->
+            <div class="player-dropdowns-container" id="player-dropdowns-container">
+                <!-- Player 1 Dropdown -->
+                <div class="player-dropdown" id="player1-dropdown" data-game-id="">
+                    <div class="player-dropdown-header">
+                        <img class="player-dropdown-logo" src="" alt="Model logo">
+                        <span class="player-dropdown-name">-</span>
+                        <span class="player-dropdown-status">-</span>
+                        <div class="player-dropdown-toggle">
+                            <div class="player-dropdown-arrow"></div>
+                        </div>
+                    </div>
+                    <div class="player-dropdown-content">
+                        <div class="player-dropdown-list">
+                            <!-- Page states will be populated here -->
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Player 2 Dropdown -->
+                <div class="player-dropdown" id="player2-dropdown" data-game-id="">
+                    <div class="player-dropdown-header">
+                        <img class="player-dropdown-logo" src="" alt="Model logo">
+                        <span class="player-dropdown-name">-</span>
+                        <span class="player-dropdown-status">-</span>
+                        <div class="player-dropdown-toggle">
+                            <div class="player-dropdown-arrow"></div>
+                        </div>
+                    </div>
+                    <div class="player-dropdown-content">
+                        <div class="player-dropdown-list">
+                            <!-- Page states will be populated here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
             
             <!-- Progress bars container -->
             <div class="horizontal-progress-container" id="progress-bars-container">
