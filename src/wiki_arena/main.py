@@ -68,8 +68,7 @@ async def run_game_async(model_key: str, max_steps: int):
         game_config = GameConfig(
             start_page_title=task.start_page_title,
             target_page_title=task.target_page_title,
-            max_steps=max_steps,
-            model=model.model_config,  # Use the model config
+            max_steps=max_steps
         )
 
         # 5.5. Initialize game storage service
@@ -101,7 +100,7 @@ async def run_game_async(model_key: str, max_steps: int):
         final_state = game.state
         # Store game result
         try:
-            game_result = GameResult.from_game_state(final_state)
+            game_result = GameResult.from_game_state(final_state, model.model_config)
             storage_success = storage_service.store_game(game_result)
 
             if storage_success:
@@ -121,7 +120,7 @@ async def run_game_async(model_key: str, max_steps: int):
 
         # Simplified path construction
         path = " -> ".join(
-            [move.from_page_title for move in final_state.move_history]
+            [move.from_page_title for move in final_state.moves]
             + [final_state.current_page.title]
         )
         logger.info(f"Path: {path}")

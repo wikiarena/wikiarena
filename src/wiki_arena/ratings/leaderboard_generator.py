@@ -47,8 +47,8 @@ class LeaderboardGenerator:
                     game_a = games_on_task[i]
                     game_b = games_on_task[j]
                     
-                    model_a_key = game_a.config.model.model_name
-                    model_b_key = game_b.config.model.model_name
+                    model_a_key = game_a.model.model_name
+                    model_b_key = game_b.model.model_name
                     
                     # Avoid comparing a model against itself if the same model_key 
                     # appears multiple times for a task due to multiple runs being stored.

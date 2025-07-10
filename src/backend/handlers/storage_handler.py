@@ -28,15 +28,19 @@ class StorageHandler:
             
         logger.debug(f"Processing game_ended event for storage: {event.game_id}")
         
-        # Extract game state from event
+        # Extract game state and model config from event
         game_state = event.data.get("game_state")
+        model_config = event.data.get("model_config")
         if not game_state:
             logger.error(f"No game_state found in game_ended event for game {event.game_id}")
+            return
+        if not model_config:
+            logger.error(f"No model_config found in game_ended event for game {event.game_id}")
             return
         
         try:
             # Convert GameState to GameResult
-            game_result = GameResult.from_game_state(game_state)
+            game_result = GameResult.from_game_state(game_state, model_config)
             
             # Store the game result
             success = self.storage_service.store_game(game_result)

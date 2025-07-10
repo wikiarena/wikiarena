@@ -52,8 +52,7 @@ class GameCoordinator:
         game_config = GameConfig(
             start_page_title=task.start_page_title,
             target_page_title=task.target_page_title,
-            max_steps=max_steps,
-            model=language_model.model_config
+            max_steps=max_steps
         )
         
         tools = get_tools()

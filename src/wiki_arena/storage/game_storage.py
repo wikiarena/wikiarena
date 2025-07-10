@@ -61,68 +61,68 @@ class GameStorageService:
             self.logger.error(f"Failed to store game {game_result.game_id} to JSONL: {e}")
             return False
     
-    def store_game_csv_summary(self, game_result: GameResult) -> bool:
-        """Store game summary as CSV row."""
-        if not self.config.enable_summary_csv:
-            return True
+    # def store_game_csv_summary(self, game_result: GameResult) -> bool:
+    #     """Store game summary as CSV row."""
+    #     if not self.config.enable_summary_csv:
+    #         return True
             
-        try:
-            self._ensure_storage_directory()
-            csv_path = self.config.csv_path
+    #     try:
+    #         self._ensure_storage_directory()
+    #         csv_path = self.config.csv_path
             
-            # Check if file exists to determine if we need headers
-            file_exists = csv_path.exists()
+    #         # Check if file exists to determine if we need headers
+    #         file_exists = csv_path.exists()
             
-            # Prepare summary data
-            summary_data = {
-                'game_id': game_result.game_id,
-                'start_timestamp': game_result.start_timestamp.isoformat(),
-                'end_timestamp': game_result.end_timestamp.isoformat(),
-                'status': game_result.status.value,
-                'steps': game_result.steps,
-                'model_provider': game_result.config.model.provider,
-                'model_name': game_result.config.model.model_name,
-                'start_page': game_result.config.start_page_title,
-                'target_page': game_result.config.target_page_title,
-                'max_steps': game_result.config.max_steps,
-                'path_length': len(game_result.path_taken),
-                'successful_moves': game_result.metadata.get('successful_moves', 0),
-                'failed_moves': game_result.metadata.get('failed_moves', 0),
-                'target_reached': game_result.metadata.get('target_reached', False),
-                'error_message': game_result.error_message or '',
-                'error_types': ','.join(game_result.metadata.get('error_types', [])),
-                'final_page_links': game_result.metadata.get('links_on_final_page', 0),
-                'path_taken': ' -> '.join(game_result.path_taken),
+    #         # Prepare summary data
+    #         summary_data = {
+    #             'game_id': game_result.game_id,
+    #             'start_timestamp': game_result.start_timestamp.isoformat(),
+    #             'end_timestamp': game_result.end_timestamp.isoformat(),
+    #             'status': game_result.status.value,
+    #             'steps': game_result.steps,
+    #             'model_provider': game_result.config.model.provider,
+    #             'model_name': game_result.config.model.model_name,
+    #             'start_page': game_result.config.start_page_title,
+    #             'target_page': game_result.config.target_page_title,
+    #             'max_steps': game_result.config.max_steps,
+    #             'path_length': len(game_result.path_taken),
+    #             'successful_moves': game_result.metadata.get('successful_moves', 0),
+    #             'failed_moves': game_result.metadata.get('failed_moves', 0),
+    #             'target_reached': game_result.metadata.get('target_reached', False),
+    #             'error_message': game_result.error_message or '',
+    #             'error_types': ','.join(game_result.metadata.get('error_types', [])),
+    #             'final_page_links': game_result.metadata.get('links_on_final_page', 0),
+    #             'path_taken': ' -> '.join(game_result.path_taken),
                 
-                # API metrics
-                'total_input_tokens': game_result.total_input_tokens,
-                'total_output_tokens': game_result.total_output_tokens,
-                'total_tokens': game_result.total_tokens,
-                'total_estimated_cost_usd': game_result.total_estimated_cost_usd,
-                'total_api_time_ms': game_result.total_api_time_ms,
-                'average_response_time_ms': game_result.average_response_time_ms,
-                'api_call_count': game_result.api_call_count,
+    #             # API metrics
+    #             'total_input_tokens': game_result.total_input_tokens,
+    #             'total_output_tokens': game_result.total_output_tokens,
+    #             'total_tokens': game_result.total_tokens,
+    #             'total_estimated_cost_usd': game_result.total_estimated_cost_usd,
+    #             'total_api_time_ms': game_result.total_api_time_ms,
+    #             'average_response_time_ms': game_result.average_response_time_ms,
+    #             'api_call_count': game_result.api_call_count,
                 
-                # Model pricing (for historical reference)
-                'input_cost_per_1m_tokens': game_result.config.model.input_cost_per_1m_tokens or 0,
-                'output_cost_per_1m_tokens': game_result.config.model.output_cost_per_1m_tokens or 0,
-            }
+    #             # Model pricing (for historical reference)
+    #             'input_cost_per_1m_tokens': game_result.config.model.input_cost_per_1m_tokens or 0,
+    #             'output_cost_per_1m_tokens': game_result.config.model.output_cost_per_1m_tokens or 0,
+    #         }
             
-            with open(csv_path, 'a', newline='', encoding='utf-8') as f:
-                writer = csv.DictWriter(f, fieldnames=summary_data.keys())
+    #         with open(csv_path, 'a', newline='', encoding='utf-8') as f:
+    #             writer = csv.DictWriter(f, fieldnames=summary_data.keys())
                 
-                # Write header if file is new
-                if not file_exists:
-                    writer.writeheader()
+    #             # Write header if file is new
+    #             if not file_exists:
+    #                 writer.writeheader()
                     
-                writer.writerow(summary_data)
+    #             writer.writerow(summary_data)
                 
-            self.logger.debug(f"Stored game {game_result.game_id} summary to CSV: {csv_path}")
-            return True
+    #         self.logger.debug(f"Stored game {game_result.game_id} summary to CSV: {csv_path}")
+    #         return True
             
-        except Exception as e:
-            self.logger.error(f"Failed to store game {game_result.game_id} summary to CSV: {e}")
-            return False
+    #     except Exception as e:
+    #         self.logger.error(f"Failed to store game {game_result.game_id} summary to CSV: {e}")
+    #         return False
     
     def store_game(self, game_result: GameResult) -> bool:
         """Store a game result using all enabled formats."""
@@ -131,9 +131,9 @@ class GameStorageService:
             return True
             
         jsonl_success = self.store_game_jsonl(game_result)
-        csv_success = self.store_game_csv_summary(game_result)
+        # csv_success = self.store_game_csv_summary(game_result)
         
-        success = jsonl_success and csv_success
+        success = jsonl_success # and csv_success
         
         if success:
             self.logger.info(f"Successfully stored game {game_result.game_id} ({game_result.status.value})")

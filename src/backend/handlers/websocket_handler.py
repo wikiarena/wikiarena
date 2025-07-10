@@ -2,7 +2,7 @@ import logging
 from typing import Dict, Any
 
 from wiki_arena import GameEvent
-from wiki_arena.models import GameState, Move
+from wiki_arena.models import GameState, Move, ModelConfig, GameResult
 from backend.websockets.game_hub import websocket_manager
 
 logger = logging.getLogger(__name__)
@@ -105,11 +105,12 @@ class WebSocketHandler:
         logger.debug(f"Broadcasting game_ended for game {event.game_id}")
         
         game_state: GameState = event.data.get("game_state")
+        model_config: ModelConfig = event.data.get("model_config")
         
         message = {
             "type": "GAME_ENDED",
             "game_id": event.game_id,
-            "state": game_state.model_dump()
+            "game_result": GameResult.from_game_state(game_state, model_config).model_dump(),
         }
         
         await websocket_manager.broadcast_to_game(event.game_id, message)
