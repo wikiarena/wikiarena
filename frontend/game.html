@@ -969,77 +969,310 @@
             cursor: pointer;
         }
 
-        /* Player Dropdowns Container */
+        /* Player Dropdowns */
         .player-dropdowns-container {
             position: absolute;
             top: 60px; /* Moved below progress bars */
             left: 20px;
             right: 20px;
-            display: none; /* Will be shown when games are active */
-            justify-content: space-between;
-            align-items: flex-start;
             z-index: 10;
-            pointer-events: none; /* Allow clicks to pass through container */
-        }
-        
-        .player-dropdowns-container > * {
-            pointer-events: auto; /* Re-enable clicks on dropdown children */
+            display: none;
+            justify-content: space-between;
+            pointer-events: none;
         }
 
-        .player-dropdown {
-            background-color: rgba(22, 27, 34, 0.95);
-            border: 1px solid rgba(71, 85, 105, 0.6);
+        /* Race Result HUD - positioned between player dropdowns */
+        .race-result-hud {
+            position: absolute;
+            top: 60px; /* Same as dropdowns */
+            left: 50%;
+            transform: translateX(-50%); /* Center horizontally */
+            z-index: 10;
+            background-color: #0d1117;
+            border: 1px solid #21262d;
             border-radius: 8px;
-            width: 320px; /* Fixed width for consistency */
-            backdrop-filter: blur(4px);
-            transition: all 0.2s ease;
+            min-width: 350px;
+            max-width: 500px;
+            pointer-events: all;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+            display: none; /* Hidden until task starts */
         }
 
-        .player-dropdown:hover {
-            border-color: rgba(71, 85, 105, 0.8);
-            background-color: rgba(22, 27, 34, 0.98);
+        .race-result-header {
+            display: grid;
+            grid-template-columns: auto 24px auto; /* Auto-size columns instead of equal 1fr */
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+            border-radius: 8px 8px 0 0;
+            min-height: 20px; /* Same as dropdown headers */
+            justify-content: center; /* Center the grid content */
+        }
+
+        .race-result-header:hover {
+            background-color: #161b22;
+        }
+
+        .race-result-start-page {
+            font-weight: 600;
+            color: #f0f6fc;
+            font-size: 0.85rem; /* Match dropdown item size */
+            text-align: right;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .race-result-arrow {
+            color: #8b949e;
+            font-size: 0.85rem; /* Match dropdown item size */
+            text-align: center;
+            flex-shrink: 0;
+        }
+
+        .race-result-target-page {
+            font-weight: 600;
+            color: #f0f6fc;
+            font-size: 0.85rem; /* Match dropdown item size */
+            text-align: left;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .race-result-content {
+            display: none;
+            border-top: 1px solid #21262d;
+            padding: 1rem;
+        }
+
+        .race-result-hud.expanded .race-result-content {
+            display: block;
+        }
+
+        .race-result-players {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-bottom: 1rem; /* Add space before buttons */
+        }
+
+        .race-result-player {
+            background-color: #161b22;
+            border: 1px solid #21262d;
+            border-radius: 6px;
+            padding: 0.75rem;
+        }
+
+        .race-result-player-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .race-result-player-logo {
+            width: 20px;
+            height: 20px;
+            border-radius: 2px;
+            flex-shrink: 0;
+        }
+
+        .race-result-player-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .race-result-player-name {
+            font-weight: 600;
+            color: #f0f6fc;
+            font-size: 0.85rem; /* Match dropdown item size */
+            line-height: 1.2;
+        }
+
+        .race-result-player-model {
+            font-size: 0.75rem; /* Match dropdown distance size */
+            color: #8b949e;
+            line-height: 1.2;
+        }
+
+        .race-result-player-status {
+            font-size: 0.75rem; /* Match dropdown distance size */
+            font-weight: 500;
+            padding: 0.25rem 0.5rem;
+            border-radius: 3px;
+            text-transform: uppercase;
+            margin-top: 0.5rem;
+            display: inline-block;
+        }
+
+        /* Status colors for race result HUD - matching backend statuses */
+        .race-result-player-status.won {
+            background-color: rgba(35, 134, 54, 0.15);
+            color: #3fb950;
+        }
+
+        .race-result-player-status.lost_max_steps {
+            background-color: rgba(187, 128, 9, 0.15);
+            color: #d29922;
+        }
+
+        .race-result-player-status.lost_invalid_move,
+        .race-result-player-status.error {
+            background-color: rgba(218, 54, 51, 0.15);
+            color: #f85149;
+        }
+
+        .race-result-player-stats {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            margin-top: 0.75rem;
+        }
+
+        .race-result-stat {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.75rem; /* Match dropdown distance size */
+        }
+
+        .race-result-stat-label {
+            color: #8b949e;
+            font-weight: 500;
+        }
+
+        .race-result-stat-value {
+            color: #f0f6fc;
+            font-weight: 600;
+        }
+
+        .race-result-error {
+            background-color: rgba(218, 54, 51, 0.05);
+            border: 1px solid rgba(218, 54, 51, 0.2);
+            border-radius: 4px;
+            padding: 0.75rem;
+            margin-bottom: 0.75rem;
+            font-size: 0.75rem; /* Match dropdown distance size */
+            color: #f85149;
+            line-height: 1.3;
+        }
+
+        /* Race result action buttons */
+        .race-result-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            margin-top: 1rem;
+        }
+
+        .race-result-action-button {
+            padding: 0.375rem 0.75rem;
+            border: 1px solid #21262d;
+            background-color: #0d1117;
+            color: #f0f6fc;
+            border-radius: 0.375rem;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            font-size: 0.875rem;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .race-result-action-button:hover {
+            background-color: #161b22;
+            color: #8b949e;
+            border-color: #30363d;
+        }
+
+        .race-result-action-button.primary {
+            background-color: #238636;
+            border-color: #238636;
+            color: #ffffff;
+        }
+
+        .race-result-action-button.primary:hover {
+            background-color: #2ea043;
+            border-color: #2ea043;
+            color: #ffffff;
+        }
+
+        /* Player Dropdowns */
+        .player-dropdown {
+            background-color: #0d1117;
+            border: 1px solid #21262d;
+            border-radius: 8px;
+            min-width: 250px;
+            max-width: 350px;
+            position: relative;
+            pointer-events: all;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
         }
 
         .player-dropdown-header {
             display: flex;
             align-items: center;
-            padding: 8px 12px;
-            user-select: none;
-            min-height: 32px;
-            box-sizing: border-box;
-            gap: 8px;
+            gap: 0.75rem;
+            padding: 0.75rem;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+            border-radius: 8px 8px 0 0;
         }
 
         .player-dropdown-header:hover {
-            background-color: rgba(30, 41, 59, 0.3);
+            background-color: #161b22;
         }
 
         .player-dropdown-logo {
-            width: 20px;
+            width: 20px;    
             height: 20px;
-            flex-shrink: 0;
             border-radius: 2px;
+            flex-shrink: 0;
         }
 
         .player-dropdown-name {
-            font-size: 1rem;
+            font-weight: 600;
             color: #f0f6fc;
-            font-weight: 500;
+            font-size: 0.875rem;
             flex: 1;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            min-width: 0; /* Allow flex item to shrink below content size */
         }
 
         .player-dropdown-status {
-            font-size: 1rem;
-            font-weight: 600;
+            font-size: 0.75rem;
+            font-weight: 500;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
             text-transform: uppercase;
-            letter-spacing: 0.25px;
+            flex-shrink: 0;
+        }
+
+        /* Status colors for dropdowns - matching backend statuses */
+        .player-dropdown-status.won {
+            background-color: rgba(35, 134, 54, 0.15);
+            color: #3fb950;
+        }
+
+        .player-dropdown-status.lost_max_steps {
+            background-color: rgba(187, 128, 9, 0.15);
+            color: #d29922;
+        }
+
+        .player-dropdown-status.lost_invalid_move,
+        .player-dropdown-status.error {
+            background-color: rgba(218, 54, 51, 0.15);
+            color: #f85149;
+        }
+
+        .player-dropdown-status.in_progress {
+            background-color: rgba(88, 166, 255, 0.15);
+            color: #58a6ff;
+        }
+
+        .player-dropdown-status.not_started {
+            background-color: rgba(139, 148, 158, 0.15);
             color: #8b949e;
-            white-space: nowrap;
-            margin-left: 12px; /* Fixed spacing instead of auto */
         }
 
         .player-dropdown-toggle {
@@ -1355,6 +1588,20 @@
                         <div class="player-dropdown-list">
                             <!-- Page states will be populated here -->
                         </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Race Result HUD - positioned between player dropdowns -->
+            <div class="race-result-hud" id="race-result-hud">
+                <div class="race-result-header" id="race-result-header">
+                    <div class="race-result-start-page" id="race-result-start-page">-</div>
+                    <div class="race-result-arrow">→</div>
+                    <div class="race-result-target-page" id="race-result-target-page">-</div>
+                </div>
+                <div class="race-result-content" id="race-result-content">
+                    <div class="race-result-players" id="race-result-players">
+                        <!-- Game results will be populated here -->
                     </div>
                 </div>
             </div>

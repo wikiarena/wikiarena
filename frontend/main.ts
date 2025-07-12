@@ -97,14 +97,20 @@ class WikiArenaApp {
     console.log('✅ Event flow setup complete (task-centric architecture)');
   }
 
+  // =============================================================================
+  // UI Event Handlers - Bridge between UI and business logic
+  // =============================================================================
+
   private setupUIHandlers(): void {
+    // Set up race HUD event handlers
     this.raceHUDController.setupEventListeners({
       onStepToMove: (moveIndex: number) => this.handleStepToMove(moveIndex),
-      onEnterLiveMode: () => this.handleEnterLiveMode()
+      onEnterLiveMode: () => this.handleEnterLiveMode(),
+      onConfigureNewRace: () => this.handleConfigureNewRace(),
+      onQuickstart: () => this.handleQuickstart()
     });
-    
-    // Setup window resize handler
-    this.setupWindowResize();
+
+    console.log('✅ UI handlers setup complete');
   }
   
   private setupWindowResize(): void {
@@ -198,8 +204,43 @@ class WikiArenaApp {
   }
 
   public handleStepToMove(moveIndex: number): void {
-    console.log(`🎯 User stepping to page ${moveIndex}`);
+    console.log(`👆 User stepped to move index: ${moveIndex}`);
     this.taskManager.setGlobalViewingPageIndex(moveIndex);
+  }
+
+  // Race result popup handlers
+  private handleConfigureNewRace(): void {
+    console.log('🕹️ User clicked Configure New Race');
+    // Use the same logic as the sidebar configure button
+    const uiManager = (window as any).uiManager;
+    if (uiManager) {
+      uiManager.showLanding();
+    } else {
+      console.warn('⚠️ UIManager not found, falling back to direct modal access');
+      // Fallback: show the landing modal directly
+      const landingModal = document.getElementById('landing-modal');
+      if (landingModal) {
+        landingModal.classList.remove('hidden');
+      }
+    }
+    
+    // Reset the current task
+    this.resetTaskManager();
+  }
+
+  private handleQuickstart(): void {
+    console.log('🎲 User clicked Quickstart');
+    // Use the same logic as the sidebar quickstart button
+    const uiManager = (window as any).uiManager;
+    if (uiManager) {
+      uiManager.startQuickstart();
+    } else {
+      console.warn('⚠️ UIManager not found, falling back to direct race start');
+      // Fallback: start race with null values (random selection)
+      this.handleStartCustomRace(null, null, null, null).catch(error => {
+        console.error('Failed to start quickstart:', error);
+      });
+    }
   }
 
   // =============================================================================
@@ -753,11 +794,60 @@ class UIManager {
     // Public methods for external access
     public showLanding() {
         this._clearError();
+        this.clearFormInputs();
         this._showLandingModal();
     }
 
     public hideLanding() {
         this._hideLandingModal();
+    }
+
+    private clearFormInputs() {
+        // Clear all form inputs: Wikipedia autocomplete and model selectors
+        if (this.startPageAutocomplete) {
+            this.startPageAutocomplete.clear();
+        }
+        
+        if (this.targetPageAutocomplete) {
+            this.targetPageAutocomplete.clear();
+        }
+        
+        // Clear the model selector inputs
+        if (this.player1Selector) {
+            this.player1Selector.clear();
+        }
+        
+        if (this.player2Selector) {
+            this.player2Selector.clear();
+        }
+    }
+
+    public startQuickstart() {
+        // Start a quickstart with random pages and models (bypassing form validation)
+        if (!this.app) {
+            console.error('WikiArenaApp not initialized yet');
+            return;
+        }
+
+        console.log('Starting quickstart with random selection...');
+        
+        try {
+            // Clear old errors and hide the modal
+            this._clearError();
+            this._hideLandingModal();
+            
+            // Start race with null values for random selection
+            this.app.handleStartCustomRace(null, null, null, null);
+            
+        } catch (error) {
+            console.error('Failed to start quickstart:', error);
+            
+            const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
+            
+            // On failure, show the modal again and display the error
+            this._showLandingModal();
+            this._displayError(errorMessage);
+        }
     }
 
     public destroy() {

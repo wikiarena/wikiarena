@@ -80,7 +80,7 @@ export class PlayerColorService {
    * Extract model key from game ID (game IDs start with model key)
    */
   private extractModelKeyFromGameId(gameId: string): string {
-    // Game IDs format: {model_key}_{timestamp}_{uuid}
+    // Game IDs format: {model_key}_{YYYYMMDD_HHmmss}_{uuid}
     // We need to find the longest matching model key
     const modelKeys = Object.keys(this.modelConfigs);
     

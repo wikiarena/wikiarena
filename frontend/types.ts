@@ -8,6 +8,7 @@ export interface Task {
   targetPage: string;
   shortestPathLength: number | undefined; // NOTE: will be undefined until initial shortest paths are found
   games: Map<string, GameSequence>; // keyed by game_id
+  gameResults?: Map<string, GameResult>; // empty until the game has ended
   
   // Viewing information
   renderingMode: 'live' | 'stepping';
@@ -109,7 +110,7 @@ export interface ConnectionEstablishedEvent extends BaseGameEvent {
         title: string;
         // TODO(hunter): add other content here later
       };
-      move_history: Array<{
+      moves: Array<{
         step: number;
         from_page_title: string;
         to_page_title: string;
@@ -140,31 +141,46 @@ export interface OptimalPathsUpdatedEvent extends BaseGameEvent {
 
 export interface GameEndedEvent extends BaseGameEvent {
   type: 'GAME_ENDED';
-  state: { // TODO(hunter): what do we actually need here?
+  game_result: {
     game_id: string;
     config: {
       start_page_title: string;
       target_page_title: string;
       max_steps: number;
+      system_prompt_template?: string;
     };
-    current_page?: {
-      title: string;
-      url: string;
-      text: string;
-      links: string[];
+    model: {
+      provider: string;
+      model_name: string;
+      settings: { [key: string]: any };
+      input_cost_per_1m_tokens?: number;
+      output_cost_per_1m_tokens?: number;
     };
     status: string;
-    error_message?: string;
     steps: number;
-    move_history: Array<{
+    moves: Array<{
       step: number;
       from_page_title: string;
       to_page_title: string;
+      // Additional move fields may be added by backend
     }>;
     context: Array<{
       role: string;
       content: string;
+      // Additional context fields may vary by message type
     }>;
+    start_timestamp: string; // ISO datetime string # TODO(hunter): wtf why are my timestamps datetimes
+    end_timestamp: string;   // ISO datetime string
+    error_message?: string;
+    
+    // Aggregated API metrics
+    total_input_tokens: number;
+    total_output_tokens: number;
+    total_tokens: number;
+    total_estimated_cost_usd: number;
+    total_api_time_ms: number;
+    average_response_time_ms: number;
+    api_call_count: number;
   };
 }
 
@@ -188,8 +204,9 @@ export type GameEvent =
 
 export interface Page {
   title: string;
-  links: string[];
-  content?: string;
+  url: string;
+  text?: string;
+  links?: string[];
 }
 
 export interface Move {
@@ -256,4 +273,38 @@ export interface ModelConfig {
   default_settings: {
     max_tokens: number;
   };
+}
+
+// Game result object for completed games
+export interface GameResult {
+  gameId: string;
+  model: {
+    provider: string;
+    modelName: string;
+    settings: { [key: string]: any };
+    inputCostPer1mTokens?: number;
+    outputCostPer1mTokens?: number;
+  };
+  config: {
+    startPageTitle: string;
+    targetPageTitle: string;
+    maxSteps: number;
+    systemPromptTemplate?: string;
+  };
+  status: string;
+  steps: number;
+  errorMessage?: string;
+  
+  // Performance metrics
+  totalEstimatedCostUsd: number;
+  totalApiTimeMs: number;
+  averageResponseTimeMs: number;
+  apiCallCount: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalTokens: number;
+  
+  // Timestamps
+  startTimestamp: string;
+  endTimestamp: string;
 }

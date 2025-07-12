@@ -1,6 +1,7 @@
 import { 
   Task,
   GameSequence,
+  GameResult,
   PageState,
   PageGraphData,
   PageNode,
@@ -34,8 +35,9 @@ export class TaskManager {
     return {
       startPage: '',
       targetPage: '',
-      shortestPathLength: 0,
-      games: new Map<string, GameSequence>(),
+      shortestPathLength: undefined,
+      games: new Map(),
+      gameResults: new Map(),
       renderingMode: 'live',
       viewingPageIndex: -1,
       currentPageIndex: -1
@@ -145,7 +147,7 @@ export class TaskManager {
       }
       
       // Build page states from move history (now with shortest path length available)
-      this.buildPageStatesFromMoveHistory(gameId, gameData.move_history, gameData.config);
+      this.buildPageStatesFromMoveHistory(gameId, gameData.moves, gameData.config);
       
       console.log(`📋 Initialized game ${gameId} with ${gameSequence.pageStates.length} page states`);
     }
@@ -226,15 +228,52 @@ export class TaskManager {
   // TODO(hunter): when should we close websocket connection? (after all solves, or when next game starts?)
   private handleGameEnded(gameId: string, event: GameEndedEvent): void {
     console.log('🏁 TaskManager: handling game finished for game', gameId);
+    console.log(`💾 Status: ${event.game_result.status} (${event.game_result.steps} steps)`);
     
-    // TODO(hunter): how should we display this to the user?
-    // show the errror_message as a message (but where?)
-    // maybe popup that can be minimized?
-    
-    // there also may be an error move
-
+    // Update game sequence status
     const gameSequence = this.task.games.get(gameId)!;
-    gameSequence.status = event.state.status;
+    gameSequence.status = event.game_result.status;
+    
+    // Store complete game result data
+    if (!this.task.gameResults) {
+      this.task.gameResults = new Map();
+    }
+    
+    const gameResult: GameResult = {
+      gameId: event.game_result.game_id,
+      model: {
+        provider: event.game_result.model.provider,
+        modelName: event.game_result.model.model_name,
+        settings: event.game_result.model.settings,
+        inputCostPer1mTokens: event.game_result.model.input_cost_per_1m_tokens,
+        outputCostPer1mTokens: event.game_result.model.output_cost_per_1m_tokens,
+      },
+      config: {
+        startPageTitle: event.game_result.config.start_page_title,
+        targetPageTitle: event.game_result.config.target_page_title,
+        maxSteps: event.game_result.config.max_steps,
+        systemPromptTemplate: event.game_result.config.system_prompt_template,
+      },
+      status: event.game_result.status,
+      steps: event.game_result.steps,
+      errorMessage: event.game_result.error_message,
+      totalEstimatedCostUsd: event.game_result.total_estimated_cost_usd,
+      totalApiTimeMs: event.game_result.total_api_time_ms,
+      averageResponseTimeMs: event.game_result.average_response_time_ms,
+      apiCallCount: event.game_result.api_call_count,
+      totalInputTokens: event.game_result.total_input_tokens,
+      totalOutputTokens: event.game_result.total_output_tokens,
+      totalTokens: event.game_result.total_tokens,
+      startTimestamp: event.game_result.start_timestamp,
+      endTimestamp: event.game_result.end_timestamp,
+    };
+    
+    this.task.gameResults.set(gameId, gameResult);
+    
+    // Check if task is complete (all games finished)
+    if (this.isTaskComplete()) {
+      console.log('🎉 Task completed! All games finished - race result popup should show');
+    }
     
     this.updateTaskProgress();
     this.notifyListeners();
@@ -243,8 +282,8 @@ export class TaskManager {
   private handleTaskEnded(event: TaskEndedEvent): void {
     console.log('🏁 TaskManager: handling task ended');
     
-    // what to do here? 
-    // this.task.status = 'finished';
+    // Task completion is now handled in handleGameEnded when we detect all games are done
+    // This event might be redundant, but we keep it for completeness
   }
 
   // =============================================================================
@@ -704,5 +743,31 @@ export class TaskManager {
         pageCount: gameSequence.pageStates.length
       }))
     });
+  }
+
+  private isTaskComplete(): boolean {
+    // Need at least one game to be considered for completion
+    if (this.task.games.size === 0) return false;
+    
+    // Check if all games have results (meaning they've finished)
+    if (!this.task.gameResults || this.task.gameResults.size !== this.task.games.size) {
+      return false;
+    }
+    
+    // Double-check that all game sequences have finished status
+    // Updated to include actual status values from backend
+    // const notFinishedStatuses = ['not_started', 'in_progress'];
+    // for (const [_gameId, gameSequence] of this.task.games) {
+    //   if (notFinishedStatuses.includes(gameSequence.status)) {
+    //     return false;
+    //   }
+    // }
+    
+    return true;
+  }
+
+  // Public method to check if task is complete (for UI components)
+  isCurrentTaskComplete(): boolean {
+    return this.isTaskComplete();
   }
 } 

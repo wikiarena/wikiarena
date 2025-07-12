@@ -9,6 +9,8 @@ export class RaceHUDController {
   private elements: Map<string, HTMLElement> = new Map();
   private onStepToMove?: (moveIndex: number) => void;
   private onEnterLiveMode?: () => void;
+  private onConfigureNewRace?: () => void;
+  private onQuickstart?: () => void;
 
   constructor() {
     this.initializeElements();
@@ -28,7 +30,14 @@ export class RaceHUDController {
       // Player dropdowns
       'player-dropdowns-container',
       'player1-dropdown',
-      'player2-dropdown'
+      'player2-dropdown',
+      // Race result HUD
+      'race-result-hud',
+      'race-result-header',
+      'race-result-start-page',
+      'race-result-target-page',
+      'race-result-content',
+      'race-result-players'
     ];
 
     elementIds.forEach(id => {
@@ -54,6 +63,14 @@ export class RaceHUDController {
     canStepForward: boolean;
     canStepBackward: boolean;
   }): void {
+    // Show task title if we have a task but haven't shown it yet
+    if (task.startPage && task.targetPage) {
+      const hud = this.elements.get('race-result-hud');
+      if (hud && hud.style.display === 'none') {
+        this.showTaskTitle(task);
+      }
+    }
+
     // Update progress bars for all games (pass stepping info)
     this.updateProgressBars(task, steppingInfo);
 
@@ -62,6 +79,9 @@ export class RaceHUDController {
 
     // Update player dropdowns
     this.updatePlayerDropdowns(task, steppingInfo);
+
+    // Check if task is complete and show race result popup
+    this.checkAndShowRaceResults(task);
   }
 
   private updateProgressBars(task: Task, steppingInfo?: {
@@ -499,16 +519,234 @@ export class RaceHUDController {
   }
 
   // =============================================================================
+  // Race Result HUD
+  // =============================================================================
+
+  private checkAndShowRaceResults(task: Task): void {
+    // Check if task is complete (all games have results)
+    if (!task.gameResults || task.gameResults.size === 0 || task.gameResults.size !== task.games.size) {
+      return;
+    }
+
+    // Check if all games are actually finished
+    let allGamesFinished = true;
+    // Updated to include actual status values from backend
+    const notFinishedStatuses = ['not_started', 'in_progress'];
+    for (const [gameId, gameSequence] of task.games) {
+      if (notFinishedStatuses.includes(gameSequence.status)) {
+        allGamesFinished = false;
+        break;
+      }
+    }
+
+    if (allGamesFinished) {
+      this.showRaceResultHUD(task);
+    }
+  }
+
+  private showRaceResultHUD(task: Task): void {
+    const hud = this.elements.get('race-result-hud');
+    const startPage = this.elements.get('race-result-start-page');
+    const targetPage = this.elements.get('race-result-target-page');
+    const content = this.elements.get('race-result-content');
+    const players = this.elements.get('race-result-players');
+
+    if (!hud || !startPage || !targetPage || !content || !players) {
+      console.warn('⚠️ Race result HUD elements not found');
+      return;
+    }
+
+    // Update title
+    startPage.textContent = task.startPage;
+    targetPage.textContent = task.targetPage;
+
+    // Remove the inline display style so CSS can control visibility
+    content.style.display = '';
+
+    // Set up click handler for expand/collapse
+    const header = this.elements.get('race-result-header');
+    if (header) {
+      header.onclick = () => {
+        hud.classList.toggle('expanded');
+      };
+    }
+
+    // Populate game results
+    this.updateRaceResultContent(task);
+
+    // Auto-expand to show results
+    hud.classList.add('expanded');
+
+    // Show the HUD
+    hud.style.display = 'block';
+  }
+
+  private updateRaceResultContent(task: Task): void {
+    if (!task.gameResults || !task.games) return;
+
+    // Use the same ordering logic as player dropdowns
+    // Convert games map to array to maintain consistent order
+    const gameArray = Array.from(task.games.entries());
+    
+    // Create ordered results array - Player 1 first, Player 2 second
+    const orderedResults: any[] = [];
+    
+    // Add Player 1 result (first game)
+    if (gameArray.length > 0) {
+      const [gameId] = gameArray[0];
+      const result = task.gameResults.get(gameId);
+      if (result) {
+        orderedResults.push(result);
+      }
+    }
+    
+    // Add Player 2 result (second game)
+    if (gameArray.length > 1) {
+      const [gameId] = gameArray[1];
+      const result = task.gameResults.get(gameId);
+      if (result) {
+        orderedResults.push(result);
+      }
+    }
+    
+    // Create players HTML using ordered results
+    const playersHTML = orderedResults.map((result, index) => this.createRaceResultPlayerHTML(result, index)).join('');
+    
+    // Create action buttons HTML
+    const actionsHTML = `
+      <div class="race-result-actions">
+        <button class="race-result-action-button" id="race-result-configure-btn">
+          🕹️ Configure New Race
+        </button>
+        <button class="race-result-action-button primary" id="race-result-quickstart-btn">
+          🎲 Quickstart
+        </button>
+      </div>
+    `;
+    
+    // Update the content element (parent of players) to include both players and actions
+    const content = this.elements.get('race-result-content');
+    if (content) {
+      content.innerHTML = `
+        <div class="race-result-players">
+          ${playersHTML}
+        </div>
+        ${actionsHTML}
+      `;
+      
+      // Add event listeners for the buttons
+      this.setupRaceResultButtonListeners();
+    }
+  }
+
+  private setupRaceResultButtonListeners(): void {
+    const configureBtn = document.getElementById('race-result-configure-btn');
+    const quickstartBtn = document.getElementById('race-result-quickstart-btn');
+    
+    if (configureBtn && this.onConfigureNewRace) {
+      configureBtn.addEventListener('click', () => {
+        if (this.onConfigureNewRace) {
+          this.onConfigureNewRace();
+        }
+      });
+    }
+    
+    if (quickstartBtn && this.onQuickstart) {
+      quickstartBtn.addEventListener('click', () => {
+        if (this.onQuickstart) {
+          this.onQuickstart();
+        }
+      });
+    }
+  }
+
+  private createRaceResultPlayerHTML(result: any, playerIndex: number): string {
+    const displayName = playerColorService.getDisplayName(result.gameId);
+    const iconSrc = playerColorService.getIconForGame(result.gameId);
+    
+    return `
+      <div class="race-result-player">
+        <div class="race-result-player-header">
+          <img class="race-result-player-logo" src="${iconSrc}" alt="${displayName} logo">
+          <div class="race-result-player-info">
+            <div class="race-result-player-name">${displayName}</div>
+            <div class="race-result-player-model">${result.model.modelName}</div>
+            <div class="race-result-player-status ${result.status}">${result.status}</div>
+          </div>
+        </div>
+        
+        ${result.errorMessage ? `<div class="race-result-error">${result.errorMessage}</div>` : ''}
+        
+        <div class="race-result-player-stats">
+          <div class="race-result-stat">
+            <span class="race-result-stat-label">Steps:</span>
+            <span class="race-result-stat-value">${result.steps}</span>
+          </div>
+          <div class="race-result-stat">
+            <span class="race-result-stat-label">Cost:</span>
+            <span class="race-result-stat-value">$${result.totalEstimatedCostUsd.toFixed(4)}</span>
+          </div>
+          <div class="race-result-stat">
+            <span class="race-result-stat-label">API Time:</span>
+            <span class="race-result-stat-value">${(result.totalApiTimeMs / 1000).toFixed(1)}s</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // Show task title when task starts (before results are ready)
+  showTaskTitle(task: Task): void {
+    const hud = this.elements.get('race-result-hud');
+    const startPage = this.elements.get('race-result-start-page');
+    const targetPage = this.elements.get('race-result-target-page');
+    const content = this.elements.get('race-result-content');
+
+    if (!hud || !startPage || !targetPage || !content) return;
+
+    // Update title
+    startPage.textContent = task.startPage;
+    targetPage.textContent = task.targetPage;
+
+    // Clear previous results content and hide it completely
+    content.innerHTML = `
+      <div class="race-result-players">
+        <!-- Game results will be populated here -->
+      </div>
+    `;
+    
+    // Force hide the content area until results are ready
+    content.style.display = 'none';
+
+    // Show the HUD (collapsed) - remove expanded class and force collapse
+    hud.style.display = 'block';
+    hud.classList.remove('expanded');
+  }
+
+  // Hide race result HUD
+  hideRaceResultHUD(): void {
+    const hud = this.elements.get('race-result-hud');
+    if (hud) {
+      hud.style.display = 'none';
+      hud.classList.remove('expanded');
+    }
+  }
+
+  // =============================================================================
   // Event Listener Setup
   // =============================================================================
 
   setupEventListeners(handlers: {
     onStepToMove?: (moveIndex: number) => void;
     onEnterLiveMode?: () => void;
+    onConfigureNewRace?: () => void;
+    onQuickstart?: () => void;
   }): void {
     // Store the handlers
     this.onStepToMove = handlers.onStepToMove;
     this.onEnterLiveMode = handlers.onEnterLiveMode;
+    this.onConfigureNewRace = handlers.onConfigureNewRace;
+    this.onQuickstart = handlers.onQuickstart;
     
     // Setup slider event listeners
     this.setupSliderEventListeners();
@@ -754,6 +992,9 @@ export class RaceHUDController {
     if (dropdownsContainer) {
       dropdownsContainer.style.display = 'none';
     }
+
+    // Hide race result HUD
+    this.hideRaceResultHUD();
   }
 
   // For debugging
