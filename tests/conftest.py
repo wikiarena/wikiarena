@@ -31,8 +31,7 @@ def sample_game_config() -> GameConfig:
     return GameConfig(
         start_page_title="Python (programming language)",
         target_page_title="JavaScript",
-        max_steps=10,
-        model=ModelConfig(provider="random", model_name="random")
+        max_steps=10
     )
 
 @pytest.fixture

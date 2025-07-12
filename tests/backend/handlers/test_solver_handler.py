@@ -127,8 +127,7 @@ class TestSolverHandler:
         test_config = GameConfig(
             start_page_title="NonExistentStartPage123456",
             target_page_title="NonExistentTargetPage123456",
-            max_steps=10,
-            model=ModelConfig(provider="random", model_name="random")
+            max_steps=10
         )
         
         invalid_page = Page(
@@ -206,8 +205,7 @@ class TestSolverHandler:
             config = GameConfig(
                 start_page_title=from_page,
                 target_page_title=to_page,
-                max_steps=10,
-                model=ModelConfig(provider="random", model_name="random")
+                max_steps=10
             )
             
             current_page = Page(

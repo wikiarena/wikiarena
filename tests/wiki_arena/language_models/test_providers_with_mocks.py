@@ -151,8 +151,7 @@ class TestProviderAPICallStructure:
                 game_id="test",
                 config=GameConfig(
                     start_page_title="Start",
-                    target_page_title="Target",
-                    model=model.model_config
+                    target_page_title="Target"
                 ),
                 current_page=Page(title="Test", url="http://test.com", links=["A", "B"])
             )
@@ -202,8 +201,7 @@ class TestProviderAPICallStructure:
                 game_id="test",
                 config=GameConfig(
                     start_page_title="Start",
-                    target_page_title="Target",
-                    model=model.model_config
+                    target_page_title="Target"
                 ),
                 current_page=Page(title="Test", url="http://test.com", links=["A", "B"])
             )
@@ -291,8 +289,7 @@ class TestProviderErrorHandling:
                 game_id="test",
                 config=GameConfig(
                     start_page_title="Start",
-                    target_page_title="Target",
-                    model=model.model_config
+                    target_page_title="Target"
                 ),
                 current_page=Page(title="Test", url="http://test.com", links=["A"])
             )
@@ -322,8 +319,7 @@ class TestProviderErrorHandling:
                 game_id="test",
                 config=GameConfig(
                     start_page_title="Start",
-                    target_page_title="Target",
-                    model=model.model_config
+                    target_page_title="Target"
                 ),
                 current_page=Page(title="Test", url="http://test.com", links=["A"])
             )
@@ -353,8 +349,7 @@ class TestEndToEndWorkflow:
         # 2. Create game state
         config = GameConfig(
             start_page_title="Start",
-            target_page_title="Target",
-            model=model.model_config
+            target_page_title="Target"
         )
         
         current_page = Page(

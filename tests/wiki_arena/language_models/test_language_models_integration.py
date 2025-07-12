@@ -279,14 +279,7 @@ class TestRandomModelIntegration:
         """Create a sample game state for testing."""
         config = GameConfig(
             start_page_title="Test Start",
-            target_page_title="Test Target",
-            model=ModelConfig(
-                provider="random",
-                model_name="random",
-                input_cost_per_1m_tokens=0.0,
-                output_cost_per_1m_tokens=0.0,
-                settings={}
-            )
+            target_page_title="Test Target"
         )
         
         current_page = Page(
@@ -355,8 +348,7 @@ class TestRandomModelIntegration:
         # Create game state with no links
         config = GameConfig(
             start_page_title="Test Start",
-            target_page_title="Test Target", 
-            model=ModelConfig(provider="random", model_name="random")
+            target_page_title="Test Target"
         )
         
         current_page = Page(

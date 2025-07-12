@@ -38,13 +38,14 @@ def create_mock_game_result(
     mock_game_config = GameConfig(
         start_page_title=start_page,
         target_page_title=target_page,
-        max_steps=30,
-        model=ModelConfig(
-            provider=model_provider,
-            model_name=model_name,
-            input_cost_per_1m_tokens=0.25, # Dummy value
-            output_cost_per_1m_tokens=1.25 # Dummy value
-        )
+        max_steps=30
+    )
+
+    mock_model_config = ModelConfig(
+        provider=model_provider,
+        model_name=model_name,
+        input_cost_per_1m_tokens=0.25, # Dummy value
+        output_cost_per_1m_tokens=1.25 # Dummy value
     )
 
     # Create a Task to verify its ID if needed for debugging, not directly stored in GameResult dict
@@ -54,6 +55,7 @@ def create_mock_game_result(
     result_dict = {
         "game_id": game_id,
         "config": mock_game_config.model_dump(mode='json'), # Serialize GameConfig
+        "model": mock_model_config.model_dump(mode='json'), # Serialize ModelConfig
         "status": status.value,
         "steps": steps,
         "path_taken": [start_page, "...", target_page if status == GameStatus.WON else "some_other_page"],

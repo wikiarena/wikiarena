@@ -17,7 +17,7 @@ from wiki_arena.language_models import LanguageModel
 from wiki_arena.language_models.random_model import RandomModel
 from wiki_arena.tools import get_tools
 from wiki_arena import EventBus
-from wiki_arena.models import ToolCall
+from wiki_arena.models import AssistantMessage, AssistantToolCall
 
 
 @pytest.fixture
@@ -46,11 +46,7 @@ def basic_game_config():
     return GameConfig(
         start_page_title="Python (programming language)",
         target_page_title="JavaScript",
-        max_steps=5,
-        model=ModelConfig(
-            provider="random",
-            model_name="random",
-        )
+        max_steps=5
     )
 
 @pytest.fixture
@@ -92,7 +88,7 @@ class TestGameIntegration:
         result = await game.run()
         
         assert not result, "Game should not be over after one turn"
-        assert len(game.state.move_history) == 1, "Should create a move even for same-page navigation"
+        assert len(game.state.moves) == 1, "Should create a move even for same-page navigation"
         assert game.state.current_page.title == recursion_page_title
         assert game.state.status == GameStatus.IN_PROGRESS
 
@@ -114,8 +110,8 @@ class TestGameIntegration:
         
         assert result is True, "Game should end when model cannot make a tool call"
         assert game.state.status == GameStatus.LOST_INVALID_MOVE
-        assert game.state.move_history[0].error is not None
-        assert game.state.move_history[0].error.type == ErrorType.MODEL_NO_TOOL_CALL
+        assert game.state.moves[0].error is not None
+        assert game.state.moves[0].error.type == ErrorType.MODEL_NO_TOOL_CALL
 
     @pytest.mark.asyncio
     async def test_navigation_service_fails_on_bad_page(self, basic_game_config, wiki_service, language_model, tools, event_bus):
@@ -136,8 +132,8 @@ class TestGameIntegration:
         
         assert result is True, "Game should end on navigation failure"
         assert game.state.status == GameStatus.ERROR
-        assert game.state.move_history[0].error is not None
-        assert game.state.move_history[0].error.type == ErrorType.APP_NAVIGATION_ERROR
+        assert game.state.moves[0].error is not None
+        assert game.state.moves[0].error.type == ErrorType.APP_NAVIGATION_ERROR
 
     @pytest.mark.asyncio
     async def test_navigation_handles_redirect(self, basic_game_config, wiki_service, language_model, tools, event_bus):
@@ -174,8 +170,7 @@ class TestGameIntegration:
         config = GameConfig(
             start_page_title=start_page_title,
             target_page_title=target_page_title, 
-            max_steps=5,
-            model=ModelConfig(provider="random", model_name="random")
+            max_steps=5
         )
         
         start_page = await wiki_service.get_page(start_page_title)
@@ -206,7 +201,15 @@ class TestGameIntegration:
 async def test_model_with_invalid_tool_call(game: Game):
     """Test game behavior when the model makes an invalid tool call."""
     # Mock the model to make an invalid move (select a non-existent link)
-    game.language_model.generate_response.return_value = ToolCall(tool_name="navigate_to_page", tool_arguments={"page_title": "Invalid Link"})
+    invalid_tool_call = AssistantToolCall(
+        id="test_call_1",
+        name="navigate_to_page", 
+        arguments={"page_title": "Invalid Link"}
+    )
+    game.language_model.generate_response.return_value = AssistantMessage(
+        content="Trying to navigate to invalid link",
+        tool_calls=[invalid_tool_call]
+    )
 
     # Act
     await game.run()
@@ -219,7 +222,15 @@ async def test_model_with_invalid_tool_call(game: Game):
 async def test_game_max_steps(game: Game):
     """Test game behavior when max steps is reached."""
     game.config.max_steps = 1
-    game.language_model.generate_response.return_value = ToolCall(tool_name="navigate_to_page", tool_arguments={"page_title": "Another Page"})
+    valid_tool_call = AssistantToolCall(
+        id="test_call_2",
+        name="navigate_to_page", 
+        arguments={"page_title": "Another Page"}
+    )
+    game.language_model.generate_response.return_value = AssistantMessage(
+        content="Navigating to another page",
+        tool_calls=[valid_tool_call]
+    )
     game.wiki_service.get_page.return_value = Page(title="Another Page", text="...", links=[])
 
     # Act
@@ -233,7 +244,10 @@ async def test_game_max_steps(game: Game):
 async def test_model_with_no_tool_call(game: Game):
     """Test game behavior when the model makes no tool call."""
     # Mock the language model to return no tool call
-    game.language_model.generate_response.return_value = ToolCall(tool_name=None, tool_arguments=None)
+    game.language_model.generate_response.return_value = AssistantMessage(
+        content="I'm not sure what to do",
+        tool_calls=None
+    )
 
     # Act
     await game.run()
@@ -246,7 +260,15 @@ async def test_model_with_no_tool_call(game: Game):
 async def test_model_with_invalid_tool_name(game: Game):
     """Test game behavior when the model makes an invalid tool name."""
     # Mock the language model to return an invalid tool name
-    game.language_model.generate_response.return_value = ToolCall(tool_name="invalid_tool", tool_arguments={"page_title": "Target"})
+    invalid_tool_call = AssistantToolCall(
+        id="test_call_4",
+        name="invalid_tool", 
+        arguments={"page_title": "Target"}
+    )
+    game.language_model.generate_response.return_value = AssistantMessage(
+        content="Trying to use invalid tool",
+        tool_calls=[invalid_tool_call]
+    )
 
     # Act
     await game.run()
