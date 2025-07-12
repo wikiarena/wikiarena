@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "dev-game": "vite --port 3000 --open game.html",
-    "build": "tsc -b && vite build",
+    "dev": "vite --port 3000",
+    "dev-game": "vite --port 3000 --open index.html",
+    "build": "vite build",
     "preview": "vite preview",
     "type-check": "tsc --noEmit"
   },

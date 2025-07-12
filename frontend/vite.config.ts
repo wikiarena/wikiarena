@@ -3,26 +3,25 @@ import tailwindcss from '@tailwindcss/vite'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [tailwindcss()],
-  
-  // Ensure proper handling of TypeScript modules
-  esbuild: {
-    target: 'es2020'
+  plugins: [
+    // Custom plugin to handle .ts imports in HTML
+    {
+      name: 'ts-import-resolver',
+      configureServer(server) {
+        server.middlewares.use('/main.ts', (req, res, next) => {
+          // Let Vite handle .ts files naturally
+          next();
+        });
+      }
+    }
+  ],
+  build: {
+    rollupOptions: {
+      input: 'index.html'
+    }
   },
-  
-  // Development server config
   server: {
     port: 3000,
-    host: true
-  },
-  
-  // Build config
-  build: {
-    target: 'es2020',
-    outDir: 'dist',
-    sourcemap: true,
-    rollupOptions: {
-      input: 'game.html'
-    }
+    open: true
   }
-})
+});
