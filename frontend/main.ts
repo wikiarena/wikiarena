@@ -6,6 +6,7 @@ import { PageGraphRenderer } from './page-graph-renderer.js';
 import { playerColorService } from './player-color-service.js';
 import { LoadingAnimation } from './loading-animation.js';
 import { type ModelOption } from './model-selector.js';
+import { WikipediaStatsService } from './wikipedia-stats.js';
 
 // =============================================================================
 // Main Application Class - Orchestrates all components
@@ -33,7 +34,7 @@ class WikiArenaApp {
     );
     this.raceHUDController = new RaceHUDController();
     this.pageGraphRenderer = new PageGraphRenderer('graph-canvas');
-    this.loadingAnimation = new LoadingAnimation('loading-container');
+    this.loadingAnimation = new LoadingAnimation('loading-container', 200, 300, 6, 300);
     
     this.setupEventFlow();
     this.setupUIHandlers();
@@ -417,11 +418,19 @@ export { WikiArenaApp };
 import { WikipediaAutocomplete } from './wikipedia-autocomplete.js';
 import { ModelSelector } from './model-selector.js';
 
+// View state management
+enum ViewState {
+    LANDING = 'landing',
+    ABOUT = 'about',
+    RACE = 'race'
+}
+
 // Basic UI functionality for the new design
 class UIManager {
     private sidebar: HTMLElement;
     private landingModal: HTMLElement;
     private raceView: HTMLElement;
+    private aboutPage: HTMLElement;
     private startRaceBtn: HTMLButtonElement;
     private player1Input: HTMLInputElement;
     private player2Input: HTMLInputElement;
@@ -437,11 +446,18 @@ class UIManager {
     private pageValidationState = { start: false, target: false };
     private modelValidationState = { player1: false, player2: false };
     private app: WikiArenaApp | null = null;
+    private aboutLeftAnimation: LoadingAnimation | null = null;
+    private aboutRightAnimation: LoadingAnimation | null = null;
+    private wikipediaStatsService: WikipediaStatsService;
+    
+    // View state tracking
+    private currentView: ViewState = ViewState.LANDING;
 
     constructor() {
         this.sidebar = document.getElementById('sidebar')!;
         this.landingModal = document.getElementById('landing-modal')!;
         this.raceView = document.getElementById('race-view')!;
+        this.aboutPage = document.getElementById('about-page')!;
         this.startRaceBtn = document.getElementById('start-race-btn') as HTMLButtonElement;
         this.player1Input = document.getElementById('player1-model') as HTMLInputElement;
         this.player2Input = document.getElementById('player2-model') as HTMLInputElement;
@@ -450,9 +466,11 @@ class UIManager {
         this.startPageSlotBtn = document.getElementById('start-page-slot-btn') as HTMLButtonElement;
         this.targetPageSlotBtn = document.getElementById('target-page-slot-btn') as HTMLButtonElement;
         this.errorMessageElement = document.getElementById('landing-error-message') as HTMLElement;
+        this.wikipediaStatsService = new WikipediaStatsService();
 
         this.initializeSidebar();
         this.initializeLandingModal();
+        this.initializeAboutPage();
         this.initializeAutocomplete();
         this.initializeSlotMachineButtons();
         this.initializeModelSelectors();
@@ -495,6 +513,12 @@ class UIManager {
             console.log('Leaderboard clicked');
             // TODO: Implement leaderboard
         });
+
+        // About
+        const aboutBtn = document.getElementById('about-btn')!;
+        aboutBtn.addEventListener('click', async () => {
+            await this.showAbout();
+        });
     }
 
     private initializeLandingModal() {
@@ -506,14 +530,25 @@ class UIManager {
             // TODO: Implement leaderboard modal
         });
 
-        aboutBtn.addEventListener('click', () => {
-            console.log('About modal clicked');
-            // TODO: Implement about modal
+        aboutBtn.addEventListener('click', async () => {
+            await this.showAbout();
         });
 
         this.startRaceBtn.addEventListener('click', () => {
             this.startCustomRace();
         });
+    }
+
+    private initializeAboutPage() {
+        // Initialize close button
+        const aboutCloseBtn = document.getElementById('about-close-btn')!;
+        aboutCloseBtn.addEventListener('click', () => {
+            this.showLanding();
+        });
+
+        // Initialize side loading animations with slower timing
+        this.aboutLeftAnimation = new LoadingAnimation('about-left-animation', 200, 600, 8, 800);
+        this.aboutRightAnimation = new LoadingAnimation('about-right-animation', 200, 600, 8, 800);
     }
 
     private initializeAutocomplete() {
@@ -716,12 +751,105 @@ class UIManager {
         this.startRaceBtn.disabled = !isValid;
     }
 
-    private _showLandingModal() {
-        this.landingModal.classList.remove('hidden');
+    // =============================================================================
+    // Centralized View Management System
+    // =============================================================================
+
+    private showView(targetView: ViewState): void {
+        if (this.currentView === targetView) {
+            return; // Already showing target view
+        }
+
+        console.log(`👁️ View transition: ${this.currentView} → ${targetView}`);
+
+        // Always hide all views first
+        this.hideAllViews();
+
+        // Show target view and handle specific initialization
+        switch (targetView) {
+            case ViewState.LANDING:
+                this.landingModal.classList.remove('hidden');
+                break;
+
+            case ViewState.ABOUT:
+                this.aboutPage.classList.add('visible');
+                // Start side animations
+                if (this.aboutLeftAnimation) {
+                    this.aboutLeftAnimation.show();
+                    this.aboutLeftAnimation.start();
+                }
+                if (this.aboutRightAnimation) {
+                    this.aboutRightAnimation.show();
+                    this.aboutRightAnimation.start();
+                }
+                break;
+
+            case ViewState.RACE:
+                this.raceView.style.display = 'block';
+                break;
+        }
+
+        this.currentView = targetView;
     }
 
-    private _hideLandingModal() {
+    private hideAllViews(): void {
+        // Hide landing modal
         this.landingModal.classList.add('hidden');
+
+        // Hide about page and stop animations
+        this.aboutPage.classList.remove('visible');
+        if (this.aboutLeftAnimation) {
+            this.aboutLeftAnimation.stop();
+            this.aboutLeftAnimation.hide();
+        }
+        if (this.aboutRightAnimation) {
+            this.aboutRightAnimation.stop();
+            this.aboutRightAnimation.hide();
+        }
+
+        // Hide race view
+        this.raceView.style.display = 'none';
+    }
+
+    // =============================================================================
+    // Public View Transition API
+    // =============================================================================
+
+    public showLanding(): void {
+        this._clearError();
+        this.clearFormInputs();
+        this.showView(ViewState.LANDING);
+    }
+
+    public async showAbout(): Promise<void> {
+        this.showView(ViewState.ABOUT);
+        await this.updateAboutPageStats();
+    }
+
+    private async updateAboutPageStats(): Promise<void> {
+        try {
+            const stats = await this.wikipediaStatsService.getFormattedStats();
+            
+            // Update only the dynamic numbers, labels stay in HTML
+            const articleStatNumber = document.querySelector('.about-stats .about-stat:first-child .about-stat-number');
+            const taskStatNumber = document.querySelector('.about-stats .about-stat:nth-child(2) .about-stat-number');
+            
+            if (articleStatNumber) {
+                articleStatNumber.textContent = stats.articles;
+            }
+            if (taskStatNumber) {
+                taskStatNumber.textContent = stats.tasks;
+            }
+            
+            console.log('About page statistics updated:', stats);
+        } catch (error) {
+            console.error('Failed to update about page statistics:', error);
+            // Fallback to placeholder values - they're already in the HTML
+        }
+    }
+
+    public showRace(): void {
+        this.showView(ViewState.RACE);
     }
 
     private _displayError(message: string) {
@@ -758,9 +886,9 @@ class UIManager {
         }
 
         try {
-            // At the start of the action, clear old errors and hide the modal.
+            // At the start of the action, clear old errors and show race view.
             this._clearError();
-            this._hideLandingModal();
+            this.showRace();
             
             // Call the main app's method to start a custom race
             await this.app.handleStartCustomRace(startPage, targetPage, player1Model, player2Model);
@@ -785,21 +913,16 @@ class UIManager {
                 }
             }
             
-            // On failure, show the modal again and display the new error.
-            this._showLandingModal();
+            // On failure, show the landing modal again and display the new error.
+            this.showLanding();
             this._displayError(finalMessage);
         }
     }
 
-    // Public methods for external access
-    public showLanding() {
-        this._clearError();
-        this.clearFormInputs();
-        this._showLandingModal();
-    }
-
+    // Legacy method - now handled by centralized view system
     public hideLanding() {
-        this._hideLandingModal();
+        // This method is kept for backwards compatibility but shouldn't be needed
+        this.showLanding();
     }
 
     private clearFormInputs() {
@@ -832,9 +955,9 @@ class UIManager {
         console.log('Starting quickstart with random selection...');
         
         try {
-            // Clear old errors and hide the modal
+            // Clear old errors and show race view
             this._clearError();
-            this._hideLandingModal();
+            this.showRace();
             
             // Start race with null values for random selection
             this.app.handleStartCustomRace(null, null, null, null);
@@ -844,11 +967,13 @@ class UIManager {
             
             const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
             
-            // On failure, show the modal again and display the error
-            this._showLandingModal();
+            // On failure, show the landing modal again and display the error
+            this.showLanding();
             this._displayError(errorMessage);
         }
     }
+
+
 
     public destroy() {
         // Clean up autocomplete instances
@@ -871,6 +996,17 @@ class UIManager {
         if (this.player2Selector) {
             this.player2Selector.destroy();
             this.player2Selector = null;
+        }
+
+        // Clean up about page animations
+        if (this.aboutLeftAnimation) {
+            this.aboutLeftAnimation.destroy();
+            this.aboutLeftAnimation = null;
+        }
+        
+        if (this.aboutRightAnimation) {
+            this.aboutRightAnimation.destroy();
+            this.aboutRightAnimation = null;
         }
     }
 }

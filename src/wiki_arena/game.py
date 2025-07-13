@@ -254,7 +254,6 @@ class Game:
             self.state.error_message = last_error.message
             if self.state.status != GameStatus.ERROR:
                 self.state.status = GameStatus.LOST_INVALID_MOVE
-            self._create_error_move(current_step, current_page_title, last_error)
             await self._emit_game_ended_event()
         
         # TODO(hunter): should we be raising some errors within this?
@@ -298,7 +297,6 @@ class Game:
             game_over = True
 
         # Provide the context for the next turn if the game is still in progress
-        # TODO(hunter): I am pretty sure this is redundant with tool call result. we need one or the other
         if not game_over:
             new_user_message = (
                 f"You are now on the page '{self.state.current_page.title}'.\n"
@@ -312,10 +310,9 @@ class Game:
                 type="move_completed",
                 game_id=self.id,
                 data={
-                    "move": move,
-                    "game_state": self.state,
-                    "from_page": from_page,
-                    "to_page": new_page.title
+                    # TODO(hunter): think about this event
+                    "move": move, # frontend only uses move
+                    "game_state": self.state, # solver only uses game_state
                 }
             ))
 
@@ -333,17 +330,3 @@ class Game:
                     "model_config": self.language_model.model_config
                 }
             ))
-
-    def _create_error_move(self, step: int, from_page: str, error: GameError):
-        """Create a move record for an error case."""
-        move = Move(
-            step=step,
-            from_page_title=from_page,
-            to_page_title=None,  # No successful navigation
-            error=error
-        )
-
-        self.state.moves.append(move)
-        self.state.error_message = error.message
-
-        logger.warning(f"Game {self.id} Step {step}: Error - {error.message}")

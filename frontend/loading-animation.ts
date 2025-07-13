@@ -22,18 +22,27 @@ export class LoadingAnimation {
   private isAnimating: boolean = false;
   private animationTimer: number | null = null;
   
-  private readonly ANIMATION_WIDTH = 200;
-  private readonly ANIMATION_HEIGHT = 300;
-  private readonly LEVELS = 6; // start(0) + 4 intermediate(1-4) + target(5)
-  private readonly LEVEL_HEIGHT = this.ANIMATION_HEIGHT / (this.LEVELS - 1);
+  private readonly ANIMATION_WIDTH: number;
+  private readonly ANIMATION_HEIGHT: number;
+  private readonly LEVELS: number;
+  private readonly LEVEL_HEIGHT: number;
   private readonly NODE_RADIUS = 12;
+  private readonly STEP_TIME: number;
+  private readonly MARKER_ID: string;
 
-  constructor(containerId: string) {
+  constructor(containerId: string, width: number = 200, height: number = 300, levels: number = 6, stepTime: number = 300) {
     const container = document.getElementById(containerId);
     if (!container) {
       throw new Error(`Container element with id '${containerId}' not found`);
     }
     this.container = container;
+    this.ANIMATION_WIDTH = width;
+    this.ANIMATION_HEIGHT = height;
+    this.LEVELS = levels;
+    this.LEVEL_HEIGHT = this.ANIMATION_HEIGHT / (this.LEVELS - 1);
+    this.STEP_TIME = stepTime;
+    // Create unique marker ID to avoid conflicts between multiple instances
+    this.MARKER_ID = `loading-arrowhead-${containerId}`;
     this.initializeAnimation();
   }
 
@@ -74,10 +83,10 @@ export class LoadingAnimation {
       left: 0;
     `;
 
-    // Create arrow marker
+    // Create arrow marker with unique ID to avoid conflicts between instances
     const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
     const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
-    marker.setAttribute('id', 'loading-arrowhead');
+    marker.setAttribute('id', this.MARKER_ID);
     marker.setAttribute('markerWidth', '8');
     marker.setAttribute('markerHeight', '6');
     marker.setAttribute('refX', '7');
@@ -105,8 +114,8 @@ export class LoadingAnimation {
     const svg = this.container.querySelector('svg') as SVGSVGElement;
     if (!svg) return;
 
-    // Remove all animation elements
-    const existingNodes = svg.querySelectorAll('.loading-node');
+    // Remove only intermediate nodes and edges, keep start and target nodes
+    const existingNodes = svg.querySelectorAll('.loading-node:not([data-node-id="start"]):not([data-node-id="target"])');
     const existingEdges = svg.querySelectorAll('.loading-edge');
     
     existingNodes.forEach(node => node.remove());
@@ -128,7 +137,7 @@ export class LoadingAnimation {
       id: 'target',
       x: this.ANIMATION_WIDTH / 2,
       y: this.ANIMATION_HEIGHT,
-      level: 5
+      level: this.LEVELS - 1
     };
 
     this.nodes = [startNode, targetNode];
@@ -221,7 +230,7 @@ export class LoadingAnimation {
       line.setAttribute('stroke', 'white');
       line.setAttribute('stroke-width', '2');
       line.setAttribute('stroke-linecap', 'round');
-      line.setAttribute('marker-end', 'url(#loading-arrowhead)');
+      line.setAttribute('marker-end', `url(#${this.MARKER_ID})`);
       line.style.opacity = '0';
       line.style.transition = 'opacity 0.5s ease';
 
@@ -235,9 +244,9 @@ export class LoadingAnimation {
   }
 
   private animateStep(): void {
-    if (this.currentStep >= 5) return;
+    if (this.currentStep >= this.LEVELS - 1) return;
 
-    if (this.currentStep < 4) {
+    if (this.currentStep < this.LEVELS - 2) {
       // Add intermediate node
       const newNode: LoadingNode = {
         id: `step-${this.currentStep + 1}`,
@@ -268,9 +277,9 @@ export class LoadingAnimation {
           ...edgePoints
         });
       }
-    } else if (this.currentStep === 4) {
+    } else if (this.currentStep === this.LEVELS - 2) {
       // Final edge from last intermediate node to target
-      const lastNode = this.nodes.find(n => n.level === 4)!;
+      const lastNode = this.nodes.find(n => n.level === this.LEVELS - 2)!;
       const targetNode = this.nodes.find(n => n.id === 'target')!;
       const edgePoints = this.calculateEdgePoints(lastNode, targetNode);
       
@@ -295,16 +304,16 @@ export class LoadingAnimation {
     this.isAnimating = true;
     
     const animate = () => {
-      if (this.isAnimating && this.currentStep < 5) {
+      if (this.isAnimating && this.currentStep < this.LEVELS - 1) {
         this.animateStep();
-        this.animationTimer = window.setTimeout(animate, 300); // step speed
-      } else if (this.currentStep >= 5) {
+        this.animationTimer = window.setTimeout(animate, this.STEP_TIME);
+      } else if (this.currentStep >= this.LEVELS - 1) {
         // Auto-restart after a brief pause for seamless looping
         this.animationTimer = window.setTimeout(() => {
           if (this.isAnimating) { // Only restart if still animating
             this.start();
           }
-        }, 500); // pause between loops
+        }, this.STEP_TIME * 1.5); // pause between loops
       }
     };
 
@@ -334,8 +343,9 @@ export class LoadingAnimation {
     }
     this.stop();
     
-    // Reset to initial state to prevent ghost frames when showing again
-    this.resetAnimation();
+    // Clear intermediate nodes but keep start and target nodes visible
+    this.clearAnimation();
+    this.currentStep = 0;
   }
 
   public destroy(): void {
