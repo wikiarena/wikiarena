@@ -1,8 +1,9 @@
 import logging
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
+from pydantic import BaseModel
 
-from wiki_arena.models import ContextMessage, ModelConfig, GameState, AssistantMessage
+from wiki_arena.models import ContextMessage, GameState, AssistantMessage
 
 
 logger = logging.getLogger(__name__)
@@ -26,23 +27,21 @@ class LanguageModel(ABC):
     Abstract base class for all language models.
     """
 
-    def __init__(self, model_config: ModelConfig):
+    def __init__(self, config: BaseModel):
         """
-        Initializes the Language Model with a structured ModelConfig.
+        Initializes the Language Model with a structured configuration.
 
         Args:
-            model_config: A ModelConfig object containing provider, model name, pricing, and settings.
+            config: A Pydantic model containing provider, model name, pricing, and settings.
         """
-        self.model_config = model_config
-        # Keep backward compatibility for now
-        self.model_settings = model_config.settings
+        self.config = config
         super().__init__()
 
     @abstractmethod
     def _calculate_cost(
         self,
-        input_tokens: int,
-        output_tokens: int,
+        prompt_tokens: int,
+        completion_tokens: int,
         cache_creation_tokens: int = 0,
         cache_read_tokens: int = 0,
     ) -> float:

@@ -28,20 +28,20 @@ from wiki_arena.models import (
 logger = logging.getLogger(__name__)
 
 class OpenAIModel(LanguageModel):
-    def __init__(self, model_config: ModelConfig):
-        super().__init__(model_config)
+    def __init__(self, config: ModelConfig):
+        super().__init__(config=config)
         self.client = OpenAI() # Assumes OPENAI_API_KEY is set in environment
 
     def _calculate_cost(
         self,
-        input_tokens: int,
-        output_tokens: int,
+        prompt_tokens: int,
+        completion_tokens: int,
         cache_creation_tokens: int = 0,
         cache_read_tokens: int = 0,
     ) -> float:
         """Calculate cost based on OpenAI's pricing and token usage, including caching."""
-        input_cost = (input_tokens / 1_000_000) * self.model_config.input_cost_per_1m_tokens
-        output_cost = (output_tokens / 1_000_000) * self.model_config.output_cost_per_1m_tokens
+        input_cost = (prompt_tokens / 1_000_000) * self.config.input_cost_per_1m_tokens
+        output_cost = (completion_tokens / 1_000_000) * self.config.output_cost_per_1m_tokens
         return input_cost + output_cost
 
     def _format_tools(self, mcp_tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -88,11 +88,11 @@ class OpenAIModel(LanguageModel):
             logger.debug(f"Sending request with messages: {messages}")
             start_time = datetime.now()
             response = self.client.chat.completions.create(
-                model=self.model_config.model_name,
+                model=self.config.model_name,
                 messages=messages,
                 tools=formatted_tools,
                 tool_choice="auto",
-                max_tokens=self.model_config.settings.get("max_tokens", 1024),
+                max_tokens=self.config.settings.get("max_tokens", 1024),
                 # TODO(hunter): cache control
                 # TODO(hunter): timeout
             )

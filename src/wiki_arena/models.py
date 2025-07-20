@@ -1,4 +1,4 @@
-from typing import List, Dict, Any, Optional, Type, Union
+from typing import List, Dict, Any, Optional, Union
 from datetime import datetime
 from enum import Enum
 from pydantic import BaseModel, Field, field_validator, ValidationInfo
@@ -171,7 +171,7 @@ class GameResult(BaseModel):
     game_id: str = Field(..., description="The unique identifier for the completed game session.")
     config: GameConfig = Field(..., description="The configuration used for this game.")
     # TIL: `model_config` is a reserved word in pydantic, so we use `model` instead
-    model: ModelConfig = Field(..., description="The model configuration used for this game.")
+    model_id: str = Field(..., description="The model ID used for this game.")
     status: GameStatus = Field(..., description="The final status of the game (WON, LOST, ERROR).")
     steps: int = Field(..., description="The total number of steps taken.")
     context: List[ContextMessage] = Field([], description="A complete log of the inputs and outputs during the game.")
@@ -192,7 +192,7 @@ class GameResult(BaseModel):
     api_call_count: int = Field(0, description="Number of successful API calls made during the game")
     
     @classmethod
-    def from_game_state(cls, game_state: GameState, model: ModelConfig) -> "GameResult":
+    def from_game_state(cls, game_state: GameState, model_id: str) -> "GameResult":
         """Convert GameState to GameResult for storage."""
         end_timestamp = datetime.now()
         
@@ -218,7 +218,7 @@ class GameResult(BaseModel):
         return cls(
             game_id=game_state.game_id,
             config=game_state.config,
-            model=model,
+            model_id=model_id,
             status=game_state.status, 
             steps=game_state.steps,
             context=game_state.context,

@@ -36,32 +36,32 @@ class AnthropicModel(LanguageModel):
     """
     DEFAULT_MAX_TOKENS = 1024
 
-    def __init__(self, model_config: ModelConfig):
-        super().__init__(model_config)
+    def __init__(self, config: ModelConfig):
+        super().__init__(config=config)
         self.client = Anthropic()  # API key is inferred from ANTHROPIC_API_KEY env var
-        self.model_name = model_config.model_name
-        self.max_tokens = model_config.settings.get("max_tokens", self.DEFAULT_MAX_TOKENS)
+        self.model_name = self.config.model_name
+        self.max_tokens = self.config.settings.get("max_tokens", self.DEFAULT_MAX_TOKENS)
 
     def _calculate_cost(
         self,
-        input_tokens: int,
-        output_tokens: int,
+        prompt_tokens: int,
+        completion_tokens: int,
         cache_creation_tokens: int = 0,
         cache_read_tokens: int = 0,
     ) -> float:
         """Calculate cost based on Anthropic's pricing and token usage, including caching."""
-        if not self.model_config.input_cost_per_1m_tokens or not self.model_config.output_cost_per_1m_tokens:
+        if not self.config.input_cost_per_1m_tokens or not self.config.output_cost_per_1m_tokens:
             return 0.0
 
         # Regular input and output tokens are priced at standard rates
-        input_cost = (input_tokens / 1_000_000) * self.model_config.input_cost_per_1m_tokens
-        output_cost = (output_tokens / 1_000_000) * self.model_config.output_cost_per_1m_tokens
+        input_cost = (prompt_tokens / 1_000_000) * self.config.input_cost_per_1m_tokens
+        output_cost = (completion_tokens / 1_000_000) * self.config.output_cost_per_1m_tokens
 
         # Cache token costs
         # 5-minute cache write tokens are 1.25 times the base input tokens price
-        cache_creation_cost = (cache_creation_tokens / 1_000_000) * self.model_config.input_cost_per_1m_tokens * 1.25
+        cache_creation_cost = (cache_creation_tokens / 1_000_000) * self.config.input_cost_per_1m_tokens * 1.25
         # Cache read tokens are 0.1 times the base input tokens price
-        cache_read_cost = (cache_read_tokens / 1_000_000) * self.model_config.input_cost_per_1m_tokens * 0.1
+        cache_read_cost = (cache_read_tokens / 1_000_000) * self.config.input_cost_per_1m_tokens * 0.1
 
         return input_cost + output_cost + cache_creation_cost + cache_read_cost
 

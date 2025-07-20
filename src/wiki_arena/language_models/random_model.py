@@ -12,9 +12,9 @@ from wiki_arena.models import (
     AssistantToolCall,
     ContextMessage,
     ModelCallMetrics,
-    ModelConfig,
     GameState,
 )
+from wiki_arena.openrouter.config import OpenRouterModelConfig
 from .language_model import LanguageModel
 
 
@@ -23,13 +23,13 @@ class RandomModel(LanguageModel):
     A language model that randomly selects a link from the current page.
     """
 
-    def __init__(self, model_config: ModelConfig):
-        super().__init__(model_config)
+    def __init__(self, config: OpenRouterModelConfig):
+        super().__init__(config=config)
 
     def _calculate_cost(
         self,
-        input_tokens: int,
-        output_tokens: int,
+        prompt_tokens: int,
+        completion_tokens: int,
         cache_creation_tokens: int = 0,
         cache_read_tokens: int = 0,
     ) -> float:
@@ -44,7 +44,6 @@ class RandomModel(LanguageModel):
         """No-op for RandomModel."""
         return None
 
-    # TODO(hunter): I completely broke this haha. we should probably just pass in game state too so I can can cheap out on context
     async def generate_response(
         self,
         tools: List[Dict[str, Any]],

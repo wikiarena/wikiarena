@@ -10,7 +10,7 @@ from wiki_arena.game import Game
 from wiki_arena.models import GameConfig, GameResult
 from wiki_arena.storage import GameStorageService, StorageConfig
 from wiki_arena.tools import get_tools
-from wiki_arena.language_models import create_model
+from wiki_arena.openrouter import create_openrouter_model as create_model
 from wiki_arena.wikipedia import LiveWikiService
 from wiki_arena.wikipedia.task_selector import get_random_task_async
 
@@ -20,9 +20,9 @@ app = typer.Typer()
 
 @app.command()
 def main(
-    model_key: str = typer.Option(
-        "random",
-        "--model-key",
+    model_id: str = typer.Option(
+        "wikiarena/random",
+        "--model-id",
         "-m",
         help="The model key to use for the game.",
     ),
@@ -36,10 +36,10 @@ def main(
     """
     Run a Wiki Arena game from the command line.
     """
-    asyncio.run(run_game_async(model_key=model_key, max_steps=max_steps))
+    asyncio.run(run_game_async(model_id=model_id, max_steps=max_steps))
 
 
-async def run_game_async(model_key: str, max_steps: int):
+async def run_game_async(model_id: str, max_steps: int):
     # Configure unified logging
     from wiki_arena.logging_config import setup_logging
 
@@ -59,10 +59,10 @@ async def run_game_async(model_key: str, max_steps: int):
 
         # 5. Create game configuration from the task
         # Create model using simplified system (no config needed!)
-        model = create_model(model_key)
+        model = create_model(model_id)
 
         logger.info(
-            f"Using model: {model.model_config.model_name} ({model.model_config.provider})"
+            f"Using model: {model.config.id}"
         )
 
         game_config = GameConfig(
@@ -100,7 +100,7 @@ async def run_game_async(model_key: str, max_steps: int):
         final_state = game.state
         # Store game result
         try:
-            game_result = GameResult.from_game_state(final_state, model.model_config)
+            game_result = GameResult.from_game_state(final_state, model.config.id)
             storage_success = storage_service.store_game(game_result)
 
             if storage_success:

@@ -14,7 +14,6 @@ from wiki_arena.models import (
     Move,
     GameError,
     ErrorType,
-    ModelConfig,
     SystemMessage,
     UserMessage,
     ToolResultMessage,
@@ -46,7 +45,7 @@ class Game:
         self.tools = tools
         self.event_bus = event_bus
 
-        self.id = self._generate_game_id(self.language_model.model_config)
+        self.id = self._generate_game_id()
 
         self.state = GameState(
             game_id=self.id,
@@ -61,17 +60,19 @@ class Game:
         logger.info(
             f"Game {self.id} initialized. Start: '{config.start_page_title}', Target: '{config.target_page_title}'"
         )
-        logger.info(f"Player: {self.language_model.model_config.model_name} ({self.language_model.model_config.provider})")
+        logger.info(f"Player: {self.language_model.config.id}")
         logger.info(f"Loaded {len(self.tools)} tools.")
 
-    def _generate_game_id(self, model_config: ModelConfig) -> str:
+    def _generate_game_id(self) -> str:
         """Generate descriptive game ID with model info."""
         timestamp = datetime.now()
         date_str = timestamp.strftime("%Y%m%d_%H%M%S")
         uuid_short = uuid.uuid4().hex[:4]
-        model_key = model_config.model_name
-
-        return f"{model_key}_{date_str}_{uuid_short}"
+        model_id = self.language_model.config.id.replace('/', '_')
+        # TODO(hunter): open router ids have `/` and `:` in them. \
+        # we have to replace `/` since it is in the websocket url 
+        # do we also need to replace `:`? 
+        return f"{model_id}_{date_str}_{uuid_short}"
 
     def _initialize_context(self):
         """Sets up the initial system and user messages in the context."""
@@ -327,6 +328,6 @@ class Game:
                 game_id=self.id,
                 data={
                     "game_state": self.state,
-                    "model_config": self.language_model.model_config
+                    "model_config": self.language_model.config
                 }
             ))
