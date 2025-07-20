@@ -18,6 +18,7 @@ dependencies = [
     "openai>=1.79.0",
     "psutil>=7.0.0",
     "pydantic>=2.11.4",
+    "python-dotenv>=0.21.0",
     "python-multipart>=0.0.20",
     "requests>=2.32.3",
     "tqdm>=4.66.0",
