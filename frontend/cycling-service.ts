@@ -1,65 +1,57 @@
+import { modelService, ModelData } from './model-service.js';
 import { WikipediaRandomService } from './wikipedia-random.js';
-import type { ModelOption, ModelInfo } from './model-selector.js';
 
 class CyclingService {
-    private randomService = new WikipediaRandomService();
-    private pageCallbacks: Array<(title: string) => void> = [];
-    private modelCallbacks: Array<(title: string) => void> = [];
+    private static instance: CyclingService;
+    private modelCallbacks: Array<(modelName: string) => void> = [];
+    private pageCallbacks: Array<(pageTitle: string) => void> = [];
     
+    private models: ModelData[] = [];
     private pageTitles: string[] = [];
-    private modelNames: string[] = [];
-    
-    private pageIndex = 0;
-    private modelIndex = 0;
-    
-    private cycleInterval: NodeJS.Timeout | null = null;
-    private isInitialized = false;
-    private readonly INTERVAL_MS = 500;
 
-    constructor() {
-        // Delay initialization to avoid blocking main thread
-        setTimeout(() => this.initialize(), 0);
+    private modelIndex: number = 0;
+    private pageIndex: number = 0;
+
+    private cycleInterval: number | null = null;
+    private isInitialized: boolean = false;
+    private readonly cycleTime: number = 1000; // ms
+    private randomService: WikipediaRandomService;
+
+
+    private constructor() {
+        this.randomService = new WikipediaRandomService();
+        this.initialize();
+    }
+
+    public static getInstance(): CyclingService {
+        if (!CyclingService.instance) {
+            CyclingService.instance = new CyclingService();
+        }
+        return CyclingService.instance;
     }
 
     private async initialize(): Promise<void> {
         if (this.isInitialized) return;
 
-        const [pages, models] = await Promise.all([
-            this.randomService.fetchRandomPages(),
-            this.fetchModels()
+        const [models, pages] = await Promise.all([
+            this.fetchModels(),
+            this.randomService.fetchRandomPages()
         ]);
-        
-        this.pageTitles = pages.sort(() => Math.random() - 0.5);
-        this.modelNames = models.map(m => m.id).sort(() => Math.random() - 0.5);
-        
-        if (this.pageTitles.length > 0) {
-            this.pageIndex = Math.floor(Math.random() * this.pageTitles.length);
-        }
-        if (this.modelNames.length > 0) {
-            this.modelIndex = Math.floor(Math.random() * this.modelNames.length);
-        }
+
+        this.models = models; // Data is now pre-sorted by the backend
+        this.pageTitles = pages.sort(() => Math.random() - 0.5); // Shuffle pages
 
         this.isInitialized = true;
         
-        // If callbacks were registered before initialization, start cycling
-        if (this.pageCallbacks.length > 0 || this.modelCallbacks.length > 0) {
+        if (this.models.length > 0 || this.pageTitles.length > 0) {
             this.startCycling();
         }
     }
 
-    private async fetchModels(): Promise<ModelOption[]> {
+    private async fetchModels(): Promise<ModelData[]> {
         try {
-            const response = await fetch('./models.json');
-            const modelsData: Record<string, ModelInfo> = await response.json();
-            
-            return Object.entries(modelsData).map(([id, info]) => ({
-                id,
-                provider: info.provider,
-                inputCost: info.input_cost_per_1m_tokens,
-                outputCost: info.output_cost_per_1m_tokens,
-                maxTokens: info.default_settings.max_tokens,
-                iconPath: '' // Not needed for cycling service
-            }));
+            // Use the singleton model service
+            return await modelService.getModels();
         } catch (error) {
             console.error('Failed to load models for cycling:', error);
             return [];
@@ -67,78 +59,94 @@ class CyclingService {
     }
 
     private startCycling(): void {
-        if (this.cycleInterval || !this.isInitialized) return;
+        if (this.cycleInterval !== null || !this.isInitialized) return;
 
-        this.cycleInterval = setInterval(() => {
-            this.broadcastUpdate();
-        }, this.INTERVAL_MS);
+        // Cycle through model names and page titles
+        this.cycleInterval = window.setInterval(() => {
+            // Calculate a dynamic step to ensure visible separation between placeholders
+            const modelStep = Math.max(1, Math.floor(this.models.length / (this.modelCallbacks.length + 1)));
+            const pageStep = Math.max(1, Math.floor(this.pageTitles.length / (this.pageCallbacks.length + 1)));
+
+            // Broadcast to model callbacks
+            if (this.modelCallbacks.length > 0 && this.models.length > 0) {
+                this.modelCallbacks.forEach((cb, i) => {
+                    const modelIndexForCallback = (this.modelIndex + i * modelStep) % this.models.length;
+                    const modelName = this.models[modelIndexForCallback].name;
+                    cb(modelName);
+                });
+            }
+
+            // Broadcast to page callbacks
+            if (this.pageCallbacks.length > 0 && this.pageTitles.length > 0) {
+                this.pageCallbacks.forEach((cb, i) => {
+                    const pageIndexForCallback = (this.pageIndex + i * pageStep) % this.pageTitles.length;
+                    const pageTitle = this.pageTitles[pageIndexForCallback];
+                    cb(pageTitle);
+                });
+            }
+
+            // Advance base indices for next tick, ensuring they loop correctly
+            if (this.models.length > 0) {
+                this.modelIndex = (this.modelIndex + 1) % this.models.length;
+            }
+            if (this.pageTitles.length > 0) {
+                this.pageIndex = (this.pageIndex + 1) % this.pageTitles.length;
+            }
+        }, this.cycleTime);
     }
-    
+
     private stopCycling(): void {
-        if (this.cycleInterval) {
-            clearInterval(this.cycleInterval);
+        if (this.cycleInterval !== null) {
+            window.clearInterval(this.cycleInterval);
             this.cycleInterval = null;
         }
     }
 
-    private broadcastUpdate(): void {
-        // Broadcast to page callbacks
-        if (this.pageCallbacks.length > 0 && this.pageTitles.length > 0) {
-            this.pageCallbacks.forEach((cb, i) => {
-                const pageIndexForCallback = (this.pageIndex + i) % this.pageTitles.length;
-                const pageTitle = this.pageTitles[pageIndexForCallback];
-                cb(pageTitle);
-            });
-        }
-        
-        // Broadcast to model callbacks
-        if (this.modelCallbacks.length > 0 && this.modelNames.length > 0) {
-            this.modelCallbacks.forEach((cb, i) => {
-                const modelIndexForCallback = (this.modelIndex + i) % this.modelNames.length;
-                const modelName = this.modelNames[modelIndexForCallback];
-                cb(modelName);
-            });
-        }
+    public registerModelCallback(callback: (modelName: string) => void): void {
+        if (this.modelCallbacks.includes(callback)) return;
 
-        // Advance base indices for next tick
-        this.pageIndex = (this.pageIndex + 1) % this.pageTitles.length;
-        this.modelIndex = (this.modelIndex + 1) % this.modelNames.length;
+        // Immediately provide an offset value
+        if (this.models.length > 0) {
+            const modelStep = Math.max(1, Math.floor(this.models.length / (this.modelCallbacks.length + 2)));
+            const nextIndex = (this.modelIndex + this.modelCallbacks.length * modelStep) % this.models.length;
+            callback(this.models[nextIndex].name);
+        }
+        this.modelCallbacks.push(callback);
+
+        if (this.modelCallbacks.length === 1 && this.pageCallbacks.length === 0) {
+            this.startCycling();
+        }
     }
 
-    public registerPageCallback(callback: (title: string) => void): void {
-        if (!this.pageCallbacks.includes(callback)) {
-            this.pageCallbacks.push(callback);
-        }
-        this.startCycling();
-    }
-
-    public unregisterPageCallback(callback: (title: string) => void): void {
-        this.pageCallbacks = this.pageCallbacks.filter(cb => cb !== callback);
-        this.checkAndStopCycling();
-    }
-
-    public registerModelCallback(callback: (title: string) => void): void {
-        if (!this.modelCallbacks.includes(callback)) {
-            this.modelCallbacks.push(callback);
-        }
-        this.startCycling();
-    }
-
-    public unregisterModelCallback(callback: (title: string) => void): void {
+    public unregisterModelCallback(callback: (modelName: string) => void): void {
         this.modelCallbacks = this.modelCallbacks.filter(cb => cb !== callback);
-        this.checkAndStopCycling();
+        if (this.modelCallbacks.length === 0 && this.pageCallbacks.length === 0) {
+            this.stopCycling();
+        }
     }
 
-    private checkAndStopCycling(): void {
-        if (this.pageCallbacks.length === 0 && this.modelCallbacks.length > 0) {
-            // If only model callbacks are left, we can just cycle models
-            // This case is simple, so we just check if both are empty
-        }
+    public registerPageCallback(callback: (pageTitle: string) => void): void {
+        if (this.pageCallbacks.includes(callback)) return;
 
-        if (this.pageCallbacks.length === 0 && this.modelCallbacks.length === 0) {
+        // Immediately provide an offset value
+        if (this.pageTitles.length > 0) {
+            const pageStep = Math.max(1, Math.floor(this.pageTitles.length / (this.pageCallbacks.length + 2)));
+            const nextIndex = (this.pageIndex + this.pageCallbacks.length * pageStep) % this.pageTitles.length;
+            callback(this.pageTitles[nextIndex]);
+        }
+        this.pageCallbacks.push(callback);
+
+        if (this.pageCallbacks.length === 1 && this.modelCallbacks.length === 0) {
+            this.startCycling();
+        }
+    }
+
+    public unregisterPageCallback(callback: (pageTitle: string) => void): void {
+        this.pageCallbacks = this.pageCallbacks.filter(cb => cb !== callback);
+        if (this.modelCallbacks.length === 0 && this.pageCallbacks.length === 0) {
             this.stopCycling();
         }
     }
 }
 
-export const cyclingService = new CyclingService(); 
+export const cyclingService = CyclingService.getInstance(); 

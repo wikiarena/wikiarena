@@ -1,41 +1,24 @@
 import { cyclingService } from './cycling-service.js';
-
-interface ModelInfo {
-    provider: string;
-    input_cost_per_1m_tokens: number;
-    output_cost_per_1m_tokens: number;
-    default_settings: {
-        max_tokens: number;
-    };
-}
-
-interface ModelOption {
-    id: string;
-    provider: string;
-    inputCost: number;
-    outputCost: number;
-    maxTokens: number;
-    iconPath: string;
-}
+import { modelService, ModelData } from './model-service.js';
 
 interface ModelSelectorOptions {
     placeholder?: string;
-    onSelect?: (model: ModelOption) => void;
+    onSelect?: (model: ModelData) => void;
     onValidationChange?: (isValid: boolean) => void;
-    getExcludedModels?: () => ModelOption[];
+    getExcludedModels?: () => ModelData[];
 }
 
 class ModelSelector {
     private input: HTMLInputElement;
     private container: HTMLElement;
     private dropdown: HTMLElement;
-    private models: ModelOption[] = [];
-    private filteredModels: ModelOption[] = [];
+    private models: ModelData[] = [];
+    private filteredModels: ModelData[] = [];
     private selectedIndex: number = -1;
     private isOpen: boolean = false;
     private options: Required<ModelSelectorOptions>;
     private currentQuery: string = '';
-    private selectedModel: ModelOption | null = null;
+    private selectedModel: ModelData | null = null;
     private otherSelectors: ModelSelector[] = [];
     private cycleCallback: ((title: string) => void) | null = null;
 
@@ -101,17 +84,12 @@ class ModelSelector {
 
     private async loadModels(): Promise<void> {
         try {
-            const response = await fetch('./models.json');
-            const modelsData: Record<string, ModelInfo> = await response.json();
+            const modelsData = await modelService.getModels();
             
-            this.models = Object.entries(modelsData).map(([id, info]) => ({
-                id,
-                provider: info.provider,
-                inputCost: info.input_cost_per_1m_tokens,
-                outputCost: info.output_cost_per_1m_tokens,
-                maxTokens: info.default_settings.max_tokens,
-                iconPath: this.getProviderIcon(info.provider)
-            }));
+            // The data from the service is already in the format we need.
+            // We just need to ensure it's mapped correctly if there are any differences.
+            // In this case, the new ModelData and our internal ModelData are compatible.
+            this.models = modelsData;
 
             this.filteredModels = [...this.models];
             this.startCycling();
@@ -120,17 +98,7 @@ class ModelSelector {
         }
     }
 
-    private getProviderIcon(provider: string): string {
-        const iconMap: Record<string, string> = {
-            'anthropic': './assets/icons/claude-color.svg',
-            'openai': './assets/icons/openai.svg',
-            'google': './assets/icons/gemini-color.svg',
-            'meta': './assets/icons/meta-color.svg',
-            'random': './assets/icons/dice.svg'
-        };
 
-        return iconMap[provider] || './assets/icons/question-mark.svg';
-    }
 
     private handleInput(openDropdown = true): void {
         const query = this.input.value;
@@ -294,8 +262,9 @@ class ModelSelector {
         
         this.filteredModels = this.models.filter(model => {
             // Check if model matches search query
-            const matchesQuery = model.id.toLowerCase().includes(lowercaseQuery) ||
-                                model.provider.toLowerCase().includes(lowercaseQuery);
+            const matchesQuery = model.name.toLowerCase().includes(lowercaseQuery) ||
+                                model.provider.toLowerCase().includes(lowercaseQuery) ||
+                                model.id.toLowerCase().includes(lowercaseQuery);
             
             // Check if model is not excluded by other selectors
             const notExcluded = !excludedModels.includes(model.id);
@@ -323,12 +292,15 @@ class ModelSelector {
                  role="option"
                  aria-selected="${index === this.selectedIndex}">
                 <div class="model-selector-item-icon">
-                    <img src="${model.iconPath}" alt="${model.provider}" />
+                    <img src="https://unpkg.com/@lobehub/icons-static-png@latest/dark/${model.icon_slug}-color.png"
+                         onerror="this.onerror=null; this.src='https://unpkg.com/@lobehub/icons-static-png@latest/dark/${model.icon_slug}.png'"
+                         alt="${model.provider}" />
                 </div>
                 <div class="model-selector-item-content">
-                    <div class="model-selector-item-name">${this.escapeHtml(model.id)}</div>
+                    <div class="model-selector-item-name">${this.escapeHtml(model.name)}</div>
                     <div class="model-selector-item-details">
-                        <span class="model-selector-cost">$${model.inputCost.toFixed(2)}/${model.outputCost.toFixed(2)} per 1M tokens</span>
+                        <!-- <span class="model-selector-cost">${this.escapeHtml(model.id)}</span> -->
+                        <span class="model-selector-cost">$${model.input_cost_per_1m_tokens.toFixed(2)} / $${model.output_cost_per_1m_tokens.toFixed(2)} per 1M</span>
                     </div>
                 </div>
             </div>
@@ -367,9 +339,9 @@ class ModelSelector {
         }
     }
 
-    private selectModel(model: ModelOption): void {
+    private selectModel(model: ModelData): void {
         this.selectedModel = model;
-        this.input.value = model.id;
+        this.input.value = model.name;
         this.currentQuery = ''; // Clear the search query so clicking again shows all models
         this.closeDropdown();
         
@@ -417,7 +389,7 @@ class ModelSelector {
         return this.selectedModel?.id || '';
     }
 
-    public getSelectedModel(): ModelOption | null {
+    public getSelectedModel(): ModelData | null {
         return this.selectedModel;
     }
 
@@ -506,4 +478,4 @@ class ModelSelector {
     }
 }
 
-export { ModelSelector, type ModelSelectorOptions, type ModelOption, type ModelInfo }; 
+export { ModelSelector, type ModelSelectorOptions, type ModelData }; 

@@ -3,9 +3,8 @@ import { TaskManager } from './task-manager.js';
 import { TaskConnectionManager } from './task-connection-manager.js';
 import { RaceHUDController } from './race-hud-controller.js';
 import { PageGraphRenderer } from './page-graph-renderer.js';
-import { playerColorService } from './player-color-service.js';
 import { LoadingAnimation } from './loading-animation.js';
-import { type ModelOption } from './model-selector.js';
+import { type ModelData } from './model-selector.js';
 import { WikipediaStatsService } from './wikipedia-stats.js';
 
 // =============================================================================
@@ -23,9 +22,6 @@ class WikiArenaApp {
 
   constructor() {
     console.log('🚀 Wiki Arena Frontend initializing (task-centric architecture)...');
-
-    // Initialize PlayerColorService first (async, but doesn't block initialization)
-    this.initializeColorService();
 
     // Initialize components
     this.taskManager = new TaskManager();
@@ -45,15 +41,6 @@ class WikiArenaApp {
     }, 100);
 
     console.log('✅ Wiki Arena Frontend ready');
-  }
-
-  private async initializeColorService(): Promise<void> {
-    try {
-      await playerColorService.initialize();
-      console.log('🎨 PlayerColorService initialized with provider-based colors');
-    } catch (error) {
-      console.warn('🎨 PlayerColorService initialization failed, using fallback colors:', error);
-    }
   }
 
   // =============================================================================
@@ -130,7 +117,7 @@ class WikiArenaApp {
   // User Action Handlers
   // =============================================================================
   
-  public async handleStartCustomRace(startPage: string | null, targetPage: string | null, player1Model: ModelOption | null, player2Model: ModelOption | null): Promise<void> {
+  public async handleStartCustomRace(startPage: string | null, targetPage: string | null, player1Model: ModelData | null, player2Model: ModelData | null): Promise<void> {
     console.log(`🎲 User requested custom task: ${startPage || '(empty)'} -> ${targetPage || '(empty)'}`);
 
     // Reset state for new race
@@ -148,31 +135,25 @@ class WikiArenaApp {
       if (response.ok) {
         const data = await response.json();
         
-        // Extract task info from response
-        const { task_id, start_page, target_page, game_ids } = data;
+        const { task_id, start_page, target_page, players } = data;
         
-        if (!task_id || !game_ids || game_ids.length === 0) {
-          throw new Error('Invalid task response: missing task_id or game_ids');
+        if (!task_id || !players || players.length === 0) {
+          throw new Error('Invalid task response: missing task_id or players');
         }
         
-        console.log(`🎯 Created custom task ${task_id} with ${game_ids.length} games: ${start_page} → ${target_page}`);
+        console.log(`🎯 Created custom task ${task_id} with ${players.length} players: ${start_page} → ${target_page}`);
         
         // Reset task manager for new task
         this.resetTaskManager();
         
-        // Create task with multiple games
-        const gameConfigs = game_ids.map((gameId: string) => ({
-          gameId: gameId,
-          startPage: start_page,
-          targetPage: target_page
-        }));
+        // Create task with multiple players
+        this.taskManager.createTask(players, start_page, target_page);
         
-        this.taskManager.createTask(gameConfigs);
-        
-        // Connect to all games in the task using connection manager
+        // Connect to all players in the task using connection manager
+        const game_ids = players.map((g: any) => g.game_id);
         await this.connectionManager.connectToTask(game_ids);
         
-        console.log(`🔌 Connected to custom task ${task_id} with ${game_ids.length} games`);
+        console.log(`🔌 Connected to custom task ${task_id} with ${players.length} players`);
       } else {
         const errorText = await response.text();
         throw new Error(`Failed to create task: ${response.status} - ${errorText}`);
@@ -258,12 +239,12 @@ class WikiArenaApp {
   // API Calls
   // =============================================================================
 
-  private async createCustomTask(startPage: string | null, targetPage: string | null, player1Model: ModelOption | null, player2Model: ModelOption | null): Promise<Response> {
+  private async createCustomTask(startPage: string | null, targetPage: string | null, player1Model: ModelData | null, player2Model: ModelData | null): Promise<Response> {
     const apiUrl = 'http://localhost:8000/api/tasks';
     
-    const model_names = [
-        player1Model ? player1Model.id : 'random',
-        player2Model ? player2Model.id : 'random'
+    const model_ids = [
+        player1Model ? player1Model.id : 'wikiarena/random',
+        player2Model ? player2Model.id : 'wikiarena/random'
     ];
     
     const taskRequest = {
@@ -272,7 +253,7 @@ class WikiArenaApp {
         start_page: startPage,
         target_page: targetPage
       },
-      model_names: model_names,
+      model_ids: model_ids,
       max_steps: 30
     };
     
@@ -370,12 +351,6 @@ function initializeApp(): void {
         if (app) {
           (app as any).connectionManager.debugConnections();
         }
-      },
-      debugColors: () => {
-        playerColorService.debugState();
-      },
-      getPlayerColors: () => {
-        return Array.from(playerColorService.getAllGameColors().entries());
       },
       simulateMultiVisit: () => {
         // Test function to simulate multi-visit nodes
@@ -876,8 +851,8 @@ class UIManager {
         console.log('Starting custom race:', {
             startPage,
             targetPage,
-            player1Model: player1Model?.id || 'random',
-            player2Model: player2Model?.id || 'random'
+            player1Model: player1Model?.id || 'wikiarena/random',
+            player2Model: player2Model?.id || 'wikiarena/random'
         });
 
         if (!this.app) {
