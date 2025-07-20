@@ -2,7 +2,8 @@ import logging
 from typing import Dict, Any
 
 from wiki_arena import GameEvent
-from wiki_arena.models import GameState, Move, ModelConfig, GameResult
+from wiki_arena.models import GameState, Move, GameResult
+from wiki_arena.openrouter import OpenRouterModelConfig
 from backend.websockets.game_hub import websocket_manager
 
 logger = logging.getLogger(__name__)
@@ -70,7 +71,7 @@ class WebSocketHandler:
                 "step": move.step,
                 "from_page_title": move.from_page_title,
                 "to_page_title": move.to_page_title,
-                "timestamp": None,  # Move model doesn't have timestamp (MoveMetrics does tho)
+                "error": move.error,
             },
             "current_page": game_state.current_page,
             "steps": game_state.steps,
@@ -105,12 +106,12 @@ class WebSocketHandler:
         logger.debug(f"Broadcasting game_ended for game {event.game_id}")
         
         game_state: GameState = event.data.get("game_state")
-        model_config: ModelConfig = event.data.get("model_config")
+        model_config: OpenRouterModelConfig = event.data.get("model_config")
         
         message = {
             "type": "GAME_ENDED",
             "game_id": event.game_id,
-            "game_result": GameResult.from_game_state(game_state, model_config).model_dump(),
+            "game_result": GameResult.from_game_state(game_state, model_config.id).model_dump(),
         }
         
         await websocket_manager.broadcast_to_game(event.game_id, message)

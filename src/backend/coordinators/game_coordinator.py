@@ -6,10 +6,10 @@ from datetime import datetime
 from wiki_arena import EventBus, GameEvent
 from wiki_arena.game import Game
 from wiki_arena.models import GameConfig, GameState, GameStatus, Task, Page
-from wiki_arena.language_models import create_model
+from wiki_arena.openrouter import create_openrouter_model
 from wiki_arena.tools import get_tools
 from wiki_arena.wikipedia import LiveWikiService
-from backend.exceptions import InvalidModelNameException
+from backend.exceptions import InvalidModelException
 
 logger = logging.getLogger(__name__)
 
@@ -38,15 +38,15 @@ class GameCoordinator:
         # TODO(hunter): refactor this as everything is background now
         self.background_tasks: Dict[str, asyncio.Task] = {} # { game_id: asyncio.Task }
         
-    async def setup_game(self, task: Task, model_name: str, start_page: Page, max_steps: int = 30) -> str:
+    async def setup_game(self, task: Task, model_id: str, start_page: Page, max_steps: int = 30) -> str:
         """Initialize a new game without starting execution. Returns game_id."""
-        logger.info(f"Setting up game: {model_name} for task {task.start_page_title} -> {task.target_page_title}")
+        logger.info(f"Setting up game: {model_id} for task {task.start_page_title} -> {task.target_page_title}")
         
         # Create model configuration
         try:
-            language_model = create_model(model_name)
+            language_model = create_openrouter_model(model_id)
         except ValueError as e:
-            raise InvalidModelNameException(str(e))
+            raise InvalidModelException(str(e))
 
         # Create game configuration
         game_config = GameConfig(

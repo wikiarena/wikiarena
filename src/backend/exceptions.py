@@ -12,7 +12,7 @@ class PageNotFoundException(WikiArenaException):
     """Raised when a specific Wikipedia page cannot be found."""
     pass
 
-class InvalidModelNameException(WikiArenaException):
+class InvalidModelException(WikiArenaException):
     """Raised when a requested model name is not available."""
     pass
 

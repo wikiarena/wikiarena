@@ -9,7 +9,7 @@ from backend.models.api_models import (
 )
 from backend.coordinators.task_coordinator import TaskCoordinator
 from backend.dependencies import get_task_coordinator
-from backend.exceptions import PageNotFoundException, WikiServiceUnavailableException, InvalidModelNameException
+from backend.exceptions import PageNotFoundException, WikiServiceUnavailableException, InvalidModelException
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 logger = logging.getLogger(__name__)
@@ -20,12 +20,12 @@ TaskCoordinatorDep = Annotated[TaskCoordinator, Depends(get_task_coordinator)]
 async def create_task(request: CreateTaskRequest, coordinator: TaskCoordinatorDep) -> CreateTaskResponse:
     """Create a new task with multiple competing games."""
     try:
-        logger.info(f"Creating task with {len(request.model_names)} games")
+        logger.info(f"Creating task with {len(request.model_ids)} games")
         return await coordinator.create_task(request)
     except PageNotFoundException as e:
         raise HTTPException(status_code=422, detail=f"Invalid Page: {e.message}")
-    except InvalidModelNameException as e:
-        raise HTTPException(status_code=422, detail=f"Invalid model name: {e.message}")
+    except InvalidModelException as e:
+        raise HTTPException(status_code=422, detail=f"Invalid model: {e.message}")
     except WikiServiceUnavailableException as e:
         raise HTTPException(status_code=503, detail=f"Wikipedia service is currently unavailable: {e.message}")
     except Exception as e:
@@ -50,11 +50,7 @@ async def get_task_info(task_id: str, coordinator: TaskCoordinatorDep) -> Dict[s
 async def list_active_tasks(coordinator: TaskCoordinatorDep) -> Dict[str, Any]:
     """List all active tasks."""
     try:
-        active_tasks = coordinator.get_active_tasks()
-        return {
-            "active_tasks": active_tasks,
-            "total_tasks": len(active_tasks)
-        }
+        return coordinator.get_active_tasks()
     except Exception as e:
         logger.error(f"Failed to list active tasks: {e}", exc_info=True)
         raise HTTPException(

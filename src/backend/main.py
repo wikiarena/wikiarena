@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from backend.config import config
 from backend.api.games import router as games_router
 from backend.api.tasks import router as tasks_router
+from backend.api.models import router as models_router
 from backend.websockets.game_hub import websocket_manager
 from backend.coordinators.game_coordinator import GameCoordinator
 from backend.coordinators.task_coordinator import TaskCoordinator
@@ -104,6 +105,7 @@ app = FastAPI(
 # Routers and Middleware
 app.include_router(games_router)
 app.include_router(tasks_router)
+app.include_router(models_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=config.cors_origins,
@@ -112,7 +114,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/")
+@app.get("/", tags=["root"])
 async def root():
     """Root endpoint with API information."""
     return {

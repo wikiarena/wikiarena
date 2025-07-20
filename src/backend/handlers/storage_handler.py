@@ -3,6 +3,7 @@ from typing import Optional
 
 from wiki_arena import GameEvent
 from wiki_arena.models import GameResult, GameState
+from wiki_arena.openrouter import OpenRouterModelConfig
 from wiki_arena.storage import GameStorageService, StorageConfig
 
 logger = logging.getLogger(__name__)
@@ -29,8 +30,8 @@ class StorageHandler:
         logger.debug(f"Processing game_ended event for storage: {event.game_id}")
         
         # Extract game state and model config from event
-        game_state = event.data.get("game_state")
-        model_config = event.data.get("model_config")
+        game_state: GameState = event.data.get("game_state")
+        model_config: OpenRouterModelConfig = event.data.get("model_config")
         if not game_state:
             logger.error(f"No game_state found in game_ended event for game {event.game_id}")
             return
@@ -40,7 +41,7 @@ class StorageHandler:
         
         try:
             # Convert GameState to GameResult
-            game_result = GameResult.from_game_state(game_state, model_config)
+            game_result = GameResult.from_game_state(game_state, model_config.id)
             
             # Store the game result
             success = self.storage_service.store_game(game_result)

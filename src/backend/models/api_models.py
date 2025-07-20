@@ -63,18 +63,32 @@ TaskStrategy = Union[
 class CreateTaskRequest(BaseModel):
     """Request to create a new task with multiple competing games."""
     task_strategy: TaskStrategy = Field(..., description="How to select the start/target pages")
-    model_names: List[str] = Field(..., description="A list of model names to compete in the task")
+    model_ids: List[str] = Field(..., description="An ordered list of model IDs to compete in the task")
     max_steps: int = Field(30, description="Maximum number of steps allowed per game")
 
+class ModelInfoResponse(BaseModel):
+    """A slimmed-down model definition for the frontend."""
+    id: str = Field(..., description="The unique identifier for the model, e.g., 'anthropic/claude-3-opus-20240229'")
+    name: str = Field(..., description="The human-readable name of the model, e.g., 'Claude 3 Opus'")
+    provider: str = Field(..., description="The name of the provider, e.g., 'Anthropic'")
+    icon_slug: str = Field(..., description="The LobeHub icon slug for the model provider, e.g., 'claude'.")
+    created: int = Field(..., description="The unix timestamp when the model was added to OpenRouter.")
+    input_cost_per_1m_tokens: float = Field(..., description="Cost per 1M input tokens in USD.")
+    output_cost_per_1m_tokens: float = Field(..., description="Cost per 1M output tokens in USD.")
+
+# TODO(hunter): rename to PlayerResponse?
+class Player(BaseModel):
+    """Information about a single game created within a task."""
+    game_id: str
+    model: ModelInfoResponse
+
 class CreateTaskResponse(BaseModel):
-    """Response when creating a new task."""
+    """Response for a successful task creation."""
     task_id: str
     start_page: str
     target_page: str
-    game_ids: List[str]
+    players: List[Player]
 
 class ErrorResponse(BaseModel):
-    """Standard error response."""
-    error: str
-    detail: Optional[str] = None
-    game_id: Optional[str] = None
+    """Standard error response format."""
+    detail: str
