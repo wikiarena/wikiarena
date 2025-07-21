@@ -1,5 +1,4 @@
-import { Task, GameSequence, ConnectionStatus, RenderingMode } from './types.js';
-import { playerColorService } from './player-color-service.js';
+import { Task, GameSequence, ConnectionStatus, RenderingMode, Player } from './types.js';
 
 // =============================================================================
 // UI Controller - Handles all DOM updates and user interactions
@@ -94,7 +93,7 @@ export class RaceHUDController {
     const container = this.elements.get('progress-bars-container');
     if (!container) return;
 
-    if (task.games.size === 0 || !task.shortestPathLength) {
+    if (task.players.length === 0 || !task.shortestPathLength) {
       container.style.display = 'none';
       return;
     }
@@ -110,28 +109,24 @@ export class RaceHUDController {
       }
     });
 
-    // Update or create progress bars for each game
-    task.games.forEach((gameSequence, gameId) => {
-      const existingBar = existingBars.get(gameId);
+    // Update or create progress bars for each player
+    task.players.forEach(player => {
+      const existingBar = existingBars.get(player.gameId);
       
       if (existingBar) {
         // Update existing progress bar (this enables smooth transitions)
         this.updateHorizontalProgressBar(
           existingBar,
-          gameSequence, 
+          player,
           task.shortestPathLength!, 
-          gameId,
           steppingInfo
         );
-        existingBars.delete(gameId); // Mark as processed
+        existingBars.delete(player.gameId); // Mark as processed
       } else {
         // Create new progress bar
-        const playerColor = playerColorService.getColorForGame(gameId);
         const progressBar = this.createHorizontalProgressBar(
-          gameSequence, 
+          player,
           task.shortestPathLength!, 
-          playerColor,
-          gameId,
           steppingInfo
         );
         container.appendChild(progressBar);
@@ -158,10 +153,8 @@ export class RaceHUDController {
   }
 
   private createHorizontalProgressBar(
-    gameSequence: GameSequence, 
+    player: Player,
     initialDistance: number, 
-    color: string, 
-    gameId: string,
     steppingInfo?: {
       currentPageIndex: number;
       viewingPageIndex: number;
@@ -172,7 +165,8 @@ export class RaceHUDController {
   ): HTMLElement {
     const progressBarContainer = document.createElement('div');
     progressBarContainer.className = 'horizontal-progress-bar';
-    progressBarContainer.setAttribute('data-game-id', gameId);
+    progressBarContainer.setAttribute('data-game-id', player.gameId);
+    const gameSequence = player.gameSequence;
 
     // Determine which page state to use based on stepping mode
     let targetPageStateIndex: number;
@@ -230,7 +224,7 @@ export class RaceHUDController {
       var indicatorPosition = Math.max(baselinePercent, progressPercent);
     }
     
-    progressFill.style.background = color;
+    progressFill.style.background = player.color;
 
     // Create player indicator (provider icon at current progress)
     const playerIndicator = document.createElement('div');
@@ -238,8 +232,12 @@ export class RaceHUDController {
     
     // Create and set the provider icon
     const iconImg = document.createElement('img');
-    iconImg.src = playerColorService.getIconForGame(gameId);
-    iconImg.alt = `${playerColorService.getDisplayName(gameId)} icon`;
+    iconImg.src = `https://unpkg.com/@lobehub/icons-static-png@latest/dark/${player.model.icon_slug}-color.png`;
+    iconImg.onerror = function() {
+        (this as HTMLImageElement).onerror = null;
+        (this as HTMLImageElement).src = `https://unpkg.com/@lobehub/icons-static-png@latest/dark/${player.model.icon_slug}.png`;
+    };
+    iconImg.alt = `${player.model.provider} icon`;
     iconImg.style.width = '20px';
     iconImg.style.height = '20px';
     iconImg.style.display = 'block';
@@ -263,9 +261,8 @@ export class RaceHUDController {
 
   private updateHorizontalProgressBar(
     progressBarContainer: HTMLElement,
-    gameSequence: GameSequence, 
+    player: Player,
     initialDistance: number, 
-    gameId: string,
     steppingInfo?: {
       currentPageIndex: number;
       viewingPageIndex: number;
@@ -281,6 +278,7 @@ export class RaceHUDController {
     if (!progressFill || !playerIndicator) {
       return;
     }
+    const gameSequence = player.gameSequence;
 
     // Determine which page state to use based on stepping mode (same logic as create)
     let targetPageStateIndex: number;
@@ -312,7 +310,7 @@ export class RaceHUDController {
     const progressPercent = baselinePercent + (progressRatio * (100 - baselinePercent));
 
     // Get player color
-    const color = playerColorService.getColorForGame(gameId);
+    const color = player.color;
 
     // Update progress fill with smooth transition
     if (progressRatio < 0) {
@@ -353,29 +351,24 @@ export class RaceHUDController {
     const container = this.elements.get('player-dropdowns-container');
     if (!container) return;
 
-    if (task.games.size === 0) {
+    if (task.players.length === 0) {
       container.style.display = 'none';
       return;
     }
 
     container.style.display = 'flex';
 
-    // Convert games map to array and assign to player dropdowns
-    const gameArray = Array.from(task.games.entries());
-    
-    // Calculate max steps across all games for synchronization
-    const maxSteps = Math.max(...gameArray.map(([, gameSequence]) => gameSequence.pageStates.length));
+    // Assign players to dropdowns
+    const maxSteps = Math.max(...task.players.map(p => p.gameSequence.pageStates.length));
     
     // Update player 1 dropdown (first game)
-    if (gameArray.length > 0) {
-      const [gameId, gameSequence] = gameArray[0];
-      this.updatePlayerDropdown('player1-dropdown', gameId, gameSequence, steppingInfo, maxSteps);
+    if (task.players.length > 0) {
+      this.updatePlayerDropdown('player1-dropdown', task.players[0], steppingInfo, maxSteps);
     }
 
     // Update player 2 dropdown (second game)
-    if (gameArray.length > 1) {
-      const [gameId, gameSequence] = gameArray[1];
-      this.updatePlayerDropdown('player2-dropdown', gameId, gameSequence, steppingInfo, maxSteps);
+    if (task.players.length > 1) {
+      this.updatePlayerDropdown('player2-dropdown', task.players[1], steppingInfo, maxSteps);
     }
 
     // Auto-scroll both dropdowns to keep current items visible (if expanded)
@@ -384,8 +377,7 @@ export class RaceHUDController {
 
   private updatePlayerDropdown(
     dropdownId: string,
-    gameId: string,
-    gameSequence: GameSequence,
+    player: Player,
     steppingInfo?: {
       currentPageIndex: number;
       viewingPageIndex: number;
@@ -399,11 +391,11 @@ export class RaceHUDController {
     if (!dropdown) return;
 
     // Set the game ID attribute
-    dropdown.setAttribute('data-game-id', gameId);
+    dropdown.setAttribute('data-game-id', player.gameId);
 
-    // Get display name and icon from player color service
-    const displayName = playerColorService.getDisplayName(gameId);
-    const iconSrc = playerColorService.getIconForGame(gameId);
+    // Get display name and icon from player object
+    const displayName = player.model.name;
+    const iconSlug = player.model.icon_slug;
 
     // Update header elements
     const logoElement = dropdown.querySelector('.player-dropdown-logo') as HTMLImageElement;
@@ -411,7 +403,11 @@ export class RaceHUDController {
     const statusElement = dropdown.querySelector('.player-dropdown-status') as HTMLElement;
     
     if (logoElement) {
-      logoElement.src = iconSrc;
+        logoElement.src = `https://unpkg.com/@lobehub/icons-static-png@latest/dark/${iconSlug}-color.png`;
+        logoElement.onerror = function() {
+            (this as HTMLImageElement).onerror = null;
+            (this as HTMLImageElement).src = `https://unpkg.com/@lobehub/icons-static-png@latest/dark/${iconSlug}.png`;
+        };
       logoElement.alt = `${displayName} logo`;
     }
 
@@ -420,12 +416,12 @@ export class RaceHUDController {
     }
 
     if (statusElement) {
-      statusElement.textContent = gameSequence.status;
-      statusElement.className = `player-dropdown-status ${gameSequence.status}`;
+      statusElement.textContent = player.gameSequence.status;
+      statusElement.className = `player-dropdown-status ${player.gameSequence.status}`;
     }
 
     // Update dropdown list
-    this.updatePlayerDropdownList(dropdown, gameSequence, steppingInfo, maxSteps);
+    this.updatePlayerDropdownList(dropdown, player.gameSequence, steppingInfo, maxSteps);
   }
 
   private updatePlayerDropdownList(
@@ -524,23 +520,8 @@ export class RaceHUDController {
 
   private checkAndShowRaceResults(task: Task): void {
     // Check if task is complete (all games have results)
-    if (!task.gameResults || task.gameResults.size === 0 || task.gameResults.size !== task.games.size) {
-      return;
-    }
-
-    // Check if all games are actually finished
-    let allGamesFinished = true;
-    // Updated to include actual status values from backend
-    const notFinishedStatuses = ['not_started', 'in_progress'];
-    for (const [gameId, gameSequence] of task.games) {
-      if (notFinishedStatuses.includes(gameSequence.status)) {
-        allGamesFinished = false;
-        break;
-      }
-    }
-
-    if (allGamesFinished) {
-      this.showRaceResultHUD(task);
+    if (task.players.every(p => p.gameResult)) {
+        this.showRaceResultHUD(task);
     }
   }
 
@@ -582,35 +563,8 @@ export class RaceHUDController {
   }
 
   private updateRaceResultContent(task: Task): void {
-    if (!task.gameResults || !task.games) return;
-
-    // Use the same ordering logic as player dropdowns
-    // Convert games map to array to maintain consistent order
-    const gameArray = Array.from(task.games.entries());
-    
-    // Create ordered results array - Player 1 first, Player 2 second
-    const orderedResults: any[] = [];
-    
-    // Add Player 1 result (first game)
-    if (gameArray.length > 0) {
-      const [gameId] = gameArray[0];
-      const result = task.gameResults.get(gameId);
-      if (result) {
-        orderedResults.push(result);
-      }
-    }
-    
-    // Add Player 2 result (second game)
-    if (gameArray.length > 1) {
-      const [gameId] = gameArray[1];
-      const result = task.gameResults.get(gameId);
-      if (result) {
-        orderedResults.push(result);
-      }
-    }
-    
     // Create players HTML using ordered results
-    const playersHTML = orderedResults.map((result, index) => this.createRaceResultPlayerHTML(result, index)).join('');
+    const playersHTML = task.players.map(player => this.createRaceResultPlayerHTML(player)).join('');
     
     // Create action buttons HTML
     const actionsHTML = `
@@ -660,17 +614,20 @@ export class RaceHUDController {
     }
   }
 
-  private createRaceResultPlayerHTML(result: any, playerIndex: number): string {
-    const displayName = playerColorService.getDisplayName(result.gameId);
-    const iconSrc = playerColorService.getIconForGame(result.gameId);
-    
+  private createRaceResultPlayerHTML(player: Player): string {
+    const result = player.gameResult;
+    if (!result) return '';
+
     return `
       <div class="race-result-player">
         <div class="race-result-player-header">
-          <img class="race-result-player-logo" src="${iconSrc}" alt="${displayName} logo">
+          <img class="race-result-player-logo" 
+               src="https://unpkg.com/@lobehub/icons-static-png@latest/dark/${player.model.icon_slug}-color.png" 
+               onerror="this.onerror=null; this.src='https://unpkg.com/@lobehub/icons-static-png@latest/dark/${player.model.icon_slug}.png'"
+               alt="${player.model.name} logo">
           <div class="race-result-player-info">
-            <div class="race-result-player-name">${displayName}</div>
-            <div class="race-result-player-model">${result.model.modelName}</div>
+            <div class="race-result-player-name">${player.model.name}</div>
+            <div class="race-result-player-model">${result.modelId}</div>
             <div class="race-result-player-status ${result.status}">${result.status}</div>
           </div>
         </div>
@@ -774,7 +731,7 @@ export class RaceHUDController {
     if (!sliderContainer || !slider) return;
 
     // Show/hide slider based on game state
-    if (task.games.size === 0 || task.currentPageIndex < 0) {
+    if (task.players.length === 0 || task.currentPageIndex < 0) {
       sliderContainer.style.display = 'none';
       return;
     }

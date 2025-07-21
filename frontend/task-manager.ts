@@ -12,8 +12,10 @@ import {
   GameEndedEvent,
   TaskEndedEvent,
   ConnectionEstablishedEvent,
+  Player,
 } from './types.js';
-import { playerColorService } from './player-color-service.js';
+import { ModelData } from './model-service.js';
+import { getPlayerColor } from './player-colors.js';
 
 // =============================================================================
 // Task Manager - Task-Centric Data Orchestration and Business Logic
@@ -36,39 +38,38 @@ export class TaskManager {
       startPage: '',
       targetPage: '',
       shortestPathLength: undefined,
-      games: new Map(),
-      gameResults: new Map(),
+      players: [],
       renderingMode: 'live',
       viewingPageIndex: -1,
       currentPageIndex: -1
     };
   }
-
-  createTask(gameConfigs: Array<{gameId: string, startPage: string, targetPage: string}>): Task {
+  
+  createTask(gamesInfo: Array<{ game_id: string; model: ModelData }>, startPage: string, targetPage: string): Task {
     // Reset for new task
     this.task = this.createEmptyTask();
+
+    this.task.startPage = startPage;
+    this.task.targetPage = targetPage;
     
-    // Set task-level properties from first game (all games in task have same start/target)
-    if (gameConfigs.length > 0) {
-      this.task.startPage = gameConfigs[0].startPage;
-      this.task.targetPage = gameConfigs[0].targetPage;
-    }
-    
-    // Assign colors to players for this task
-    const gameIds = gameConfigs.map(config => config.gameId);
-    playerColorService.assignColorsForTask(gameIds);
-    
-    // Initialize game sequences
-    gameConfigs.forEach(config => {
-      const gameSequence: GameSequence = {
-        gameId: config.gameId,
-        status: 'not_started',
-        pageStates: []
+    // Initialize players
+    this.task.players = gamesInfo.map((info, index) => {
+      const player: Player = {
+        playerIndex: index,
+        color: getPlayerColor(index),
+        gameId: info.game_id,
+        model: info.model,
+        gameSequence: {
+          gameId: info.game_id,
+          status: 'not_started',
+          pageStates: []
+        },
+        gameResult: undefined
       };
-      this.task.games.set(config.gameId, gameSequence);
+      return player;
     });
     
-    console.log(`📋 Created task: ${this.task.startPage} → ${this.task.targetPage} with ${gameConfigs.length} games`);
+    console.log(`📋 Created task: ${this.task.startPage} → ${this.task.targetPage} with ${this.task.players.length} players`);
     this.notifyListeners();
     return this.task;
   }
@@ -80,24 +81,24 @@ export class TaskManager {
   handleGameEvent(gameId: string, event: GameEvent): void {
     console.log(`📋 TaskManager processing event: ${event.type} for game ${gameId}`);
     
-    const gameSequence = this.task.games.get(gameId);
-    if (!gameSequence) {
-      console.warn(`⚠️ No game sequence found for gameId: ${gameId}`);
+    const player = this.task.players.find(p => p.gameId === gameId);
+    if (!player) {
+      console.warn(`⚠️ No player found for gameId: ${gameId}`);
       return;
     }
     
     switch (event.type) {
       case 'CONNECTION_ESTABLISHED':
-        this.handleConnectionEstablished(gameId, event as ConnectionEstablishedEvent);
+        this.handleConnectionEstablished(player, event as ConnectionEstablishedEvent);
         break;
       case 'GAME_MOVE_COMPLETED':
-        this.handleMoveCompleted(gameId, event as GameMoveCompletedEvent);
+        this.handleMoveCompleted(player, event as GameMoveCompletedEvent);
         break;
       case 'OPTIMAL_PATHS_UPDATED':
-        this.handleOptimalPathsUpdated(gameId, event as OptimalPathsUpdatedEvent);
+        this.handleOptimalPathsUpdated(player, event as OptimalPathsUpdatedEvent);
         break;
       case 'GAME_ENDED':
-        this.handleGameEnded(gameId, event as GameEndedEvent);
+        this.handleGameEnded(player, event as GameEndedEvent);
         break;
       case 'TASK_ENDED':
         this.handleTaskEnded(event as TaskEndedEvent);
@@ -107,15 +108,15 @@ export class TaskManager {
     }
   }
 
-  private handleConnectionEstablished(gameId: string, event: ConnectionEstablishedEvent): void {
-    console.log('🔌 TaskManager: processing connection established for game', gameId);
+  private handleConnectionEstablished(player: Player, event: ConnectionEstablishedEvent): void {
+    console.log('🔌 TaskManager: processing connection established for game', player.gameId);
     
-    const gameSequence = this.task.games.get(gameId)!;
+    const gameSequence = player.gameSequence;
     const completeState = event.complete_state;
     
     // First, process solver data to get shortest path length for task
     if (completeState?.solver_results && completeState.solver_results.length > 0) {
-      console.log(`📋 Processing ${completeState.solver_results.length} solver results for game ${gameId}`);
+      console.log(`📋 Processing ${completeState.solver_results.length} solver results for game ${player.gameId}`);
       
       completeState.solver_results.forEach(solverResult => {
         // Set task-level properties if not already set
@@ -147,16 +148,16 @@ export class TaskManager {
       }
       
       // Build page states from move history (now with shortest path length available)
-      this.buildPageStatesFromMoveHistory(gameId, gameData.moves, gameData.config);
+      this.buildPageStatesFromMoveHistory(player, gameData.moves, gameData.config);
       
-      console.log(`📋 Initialized game ${gameId} with ${gameSequence.pageStates.length} page states`);
+      console.log(`📋 Initialized game ${player.gameId} with ${gameSequence.pageStates.length} page states`);
     }
     
     // Update optimal paths for all pages (now that page states exist)
     if (completeState?.solver_results && completeState.solver_results.length > 0) {
       completeState.solver_results.forEach(solverResult => {
         this.updateOptimalPathsForPage(
-          gameId,
+          player,
           solverResult.from_page_title,
           solverResult.optimal_paths || [],
           solverResult.optimal_path_length
@@ -164,23 +165,23 @@ export class TaskManager {
       });
       
       // After updating all solver results, calculate distance changes
-      this.updateDistanceChanges(gameId);
+      this.updateDistanceChanges(player);
     }
     
     this.updateTaskProgress();
     this.notifyListeners();
   }
 
-  private handleMoveCompleted(gameId: string, event: GameMoveCompletedEvent): void {
-    console.log('👟 TaskManager: handling move completed for game', gameId);
+  private handleMoveCompleted(player: Player, event: GameMoveCompletedEvent): void {
+    console.log('👟 TaskManager: handling move completed for game', player.gameId);
     
-    const gameSequence = this.task.games.get(gameId)!;
+    const gameSequence = player.gameSequence;
     gameSequence.status = event.status;
     const move = event.move;
     
     // Create new page state for the destination page
     const newPageState: PageState = {
-      gameId: gameId,
+      gameId: player.gameId,
       pageTitle: move.to_page_title,
       moveIndex: move.step,
       optimalPaths: [],
@@ -193,13 +194,13 @@ export class TaskManager {
     // Add the new page state
     gameSequence.pageStates.push(newPageState);
     
-    console.log(`👟 Added page state for game ${gameId}: ${move.to_page_title} (step ${move.step})`);
+    console.log(`👟 Added page state for game ${player.gameId}: ${move.to_page_title} (step ${move.step})`);
     this.updateTaskProgress();
     this.notifyListeners();
   }
 
-  private handleOptimalPathsUpdated(gameId: string, event: OptimalPathsUpdatedEvent): void {
-    console.log('🎯 TaskManager: handling optimal paths updated for game', gameId);
+  private handleOptimalPathsUpdated(player: Player, event: OptimalPathsUpdatedEvent): void {
+    console.log('🎯 TaskManager: handling optimal paths updated for game', player.gameId);
     
     const fromPageTitle = event.from_page_title;
     if (!fromPageTitle) {
@@ -208,14 +209,14 @@ export class TaskManager {
     }
     
     this.updateOptimalPathsForPage(
-      gameId,
+      player,
       fromPageTitle,
       event.optimal_paths || [],
       event.optimal_path_length
     );
     
     // Calculate distance changes now that we have optimal path data
-    this.updateDistanceChanges(gameId);
+    this.updateDistanceChanges(player);
     
     // Set task-level shortest path length if not set
     if (event.optimal_path_length && !this.task.shortestPathLength) {
@@ -226,28 +227,17 @@ export class TaskManager {
   }
 
   // TODO(hunter): when should we close websocket connection? (after all solves, or when next game starts?)
-  private handleGameEnded(gameId: string, event: GameEndedEvent): void {
-    console.log('🏁 TaskManager: handling game finished for game', gameId);
+  private handleGameEnded(player: Player, event: GameEndedEvent): void {
+    console.log('🏁 TaskManager: handling game finished for game', player.gameId);
     console.log(`💾 Status: ${event.game_result.status} (${event.game_result.steps} steps)`);
     
     // Update game sequence status
-    const gameSequence = this.task.games.get(gameId)!;
-    gameSequence.status = event.game_result.status;
+    player.gameSequence.status = event.game_result.status;
     
     // Store complete game result data
-    if (!this.task.gameResults) {
-      this.task.gameResults = new Map();
-    }
-    
     const gameResult: GameResult = {
       gameId: event.game_result.game_id,
-      model: {
-        provider: event.game_result.model.provider,
-        modelName: event.game_result.model.model_name,
-        settings: event.game_result.model.settings,
-        inputCostPer1mTokens: event.game_result.model.input_cost_per_1m_tokens,
-        outputCostPer1mTokens: event.game_result.model.output_cost_per_1m_tokens,
-      },
+      modelId: event.game_result.model_id,
       config: {
         startPageTitle: event.game_result.config.start_page_title,
         targetPageTitle: event.game_result.config.target_page_title,
@@ -268,7 +258,7 @@ export class TaskManager {
       endTimestamp: event.game_result.end_timestamp,
     };
     
-    this.task.gameResults.set(gameId, gameResult);
+    player.gameResult = gameResult;
     
     // Check if task is complete (all games finished)
     if (this.isTaskComplete()) {
@@ -290,13 +280,13 @@ export class TaskManager {
   // Page State Management
   // =============================================================================
 
-  private buildPageStatesFromMoveHistory(gameId: string, moveHistory: any[], config: any): void {
-    const gameSequence = this.task.games.get(gameId)!;
+  private buildPageStatesFromMoveHistory(player: Player, moveHistory: any[], config: any): void {
+    const gameSequence = player.gameSequence;
     gameSequence.pageStates = [];
     
     // Create start page state
     const startPageState: PageState = {
-      gameId: gameId,
+      gameId: player.gameId,
       pageTitle: config.start_page_title,
       moveIndex: 0,
       optimalPaths: [],
@@ -312,7 +302,7 @@ export class TaskManager {
     // Create page states for each move
     moveHistory.forEach(move => {
       const pageState: PageState = {
-        gameId: gameId,
+        gameId: player.gameId,
         pageTitle: move.to_page_title,
         moveIndex: move.step,
         optimalPaths: [],
@@ -325,8 +315,8 @@ export class TaskManager {
     });
   }
 
-  private updateOptimalPathsForPage(gameId: string, pageTitle: string, paths: string[][], pathLength?: number): void {
-    const gameSequence = this.task.games.get(gameId)!;
+  private updateOptimalPathsForPage(player: Player, pageTitle: string, paths: string[][], pathLength?: number): void {
+    const gameSequence = player.gameSequence;
     
     // Find ALL page states with this title (page might be visited multiple times)
     const matchingIndices: number[] = [];
@@ -344,14 +334,14 @@ export class TaskManager {
         pageState.distanceToTarget = pathLength;
       });
       
-      console.log(`✅ Updated optimal paths for game ${gameId}, page: ${pageTitle} (${paths.length} paths, distance: ${pathLength}) - updated ${matchingIndices.length} occurrences`);
+      console.log(`✅ Updated optimal paths for game ${player.gameId}, page: ${pageTitle} (${paths.length} paths, distance: ${pathLength}) - updated ${matchingIndices.length} occurrences`);
     } else {
-      console.warn(`⚠️ Could not find page state for game ${gameId}, page: ${pageTitle}. Available pages: ${gameSequence.pageStates.map(s => s.pageTitle).join(', ')}`);
+      console.warn(`⚠️ Could not find page state for game ${player.gameId}, page: ${pageTitle}. Available pages: ${gameSequence.pageStates.map(s => s.pageTitle).join(', ')}`);
     }
   }
 
-  private updateDistanceChanges(gameId: string): void {
-    const gameSequence = this.task.games.get(gameId)!;
+  private updateDistanceChanges(player: Player): void {
+    const gameSequence = player.gameSequence;
     
     for (let i = 1; i < gameSequence.pageStates.length; i++) {
       const currentState = gameSequence.pageStates[i];
@@ -375,8 +365,8 @@ export class TaskManager {
     // Calculate current and viewing page indices across all games
     let maxCurrentPageIndex = -1;
     
-    this.task.games.forEach(gameSequence => {
-      const currentIndex = gameSequence.pageStates.length - 1;
+    this.task.players.forEach(player => {
+      const currentIndex = player.gameSequence.pageStates.length - 1;
       maxCurrentPageIndex = Math.max(maxCurrentPageIndex, currentIndex);
     });
     
@@ -407,9 +397,9 @@ export class TaskManager {
     
     this.initializeStartAndTargetPages(allPages);
     
-    this.task.games.forEach((gameSequence, _gameId) => {
+    this.task.players.forEach(player => {
       // Process all page states for this game
-      gameSequence.pageStates.forEach(pageState => {
+      player.gameSequence.pageStates.forEach(pageState => {
         this.addPageStateToGraph(allPages, allEdges, pageState);
       });
       
@@ -417,10 +407,12 @@ export class TaskManager {
       // this.addOptimalPathsToGraph(allPages, allEdges, gameSequence, this.task.currentPageIndex);
     });
     
-    // Extract game order from Map insertion order (preserves original order)
-    const gameOrder = Array.from(this.task.games.keys());
+    const colorMap = new Map(this.task.players.map(p => [p.gameId, p.color]));
+    const spawnDirectionMap = new Map(this.task.players.map(p => 
+        [p.gameId, p.playerIndex % 2 === 0 ? 'counter-clockwise' : 'clockwise'] as const
+    ));
     
-    return { pages: Array.from(allPages.values()), edges: allEdges, gameOrder };
+    return { pages: Array.from(allPages.values()), edges: allEdges, colorMap, spawnDirectionMap };
   }
 
   private buildSteppingGraphData(globalPageIndex: number): PageGraphData {
@@ -430,8 +422,8 @@ export class TaskManager {
     
     this.initializeStartAndTargetPages(allPages);
     
-    this.task.games.forEach((gameSequence, _gameId) => {
-      const pageStatesUpToIndex = gameSequence.pageStates.slice(0, globalPageIndex + 1);
+    this.task.players.forEach(player => {
+      const pageStatesUpToIndex = player.gameSequence.pageStates.slice(0, globalPageIndex + 1);
       
       // Process page states up to global index for this game
       pageStatesUpToIndex.forEach(pageState => {
@@ -442,10 +434,12 @@ export class TaskManager {
       // this.addOptimalPathsToGraph(allPages, allEdges, gameSequence, globalPageIndex);
     });
     
-    // Extract game order from Map insertion order (preserves original order)
-    const gameOrder = Array.from(this.task.games.keys());
+    const colorMap = new Map(this.task.players.map(p => [p.gameId, p.color]));
+    const spawnDirectionMap = new Map(this.task.players.map(p =>
+        [p.gameId, p.playerIndex % 2 === 0 ? 'counter-clockwise' : 'clockwise'] as const
+    ));
     
-    return { pages: Array.from(allPages.values()), edges: allEdges, gameOrder };
+    return { pages: Array.from(allPages.values()), edges: allEdges, colorMap, spawnDirectionMap };
   }
 
   private initializeStartAndTargetPages(allPages: Map<string, PageNode>): void {
@@ -684,14 +678,14 @@ export class TaskManager {
   // =============================================================================
 
   getTask(): Task {
-    return { ...this.task, games: new Map(this.task.games) }; // Return copy
+    return { ...this.task, players: [...this.task.players] }; // Return copy
   }
 
   getCurrentPageForGame(gameId: string): string | null {
-    const gameSequence = this.task.games.get(gameId);
-    if (!gameSequence || gameSequence.pageStates.length === 0) return null;
+    const player = this.task.players.find(p => p.gameId === gameId);
+    if (!player || player.gameSequence.pageStates.length === 0) return null;
     
-    return gameSequence.pageStates[gameSequence.pageStates.length - 1].pageTitle;
+    return player.gameSequence.pageStates[player.gameSequence.pageStates.length - 1].pageTitle;
   }
 
   // =============================================================================
@@ -721,9 +715,6 @@ export class TaskManager {
   reset(): void {
     console.log('📋 TaskManager: Resetting state for new task');
     
-    // Reset player colors for new task
-    playerColorService.reset();
-    
     this.task = this.createEmptyTask();
     this.notifyListeners();
   }
@@ -733,26 +724,25 @@ export class TaskManager {
       startPage: this.task.startPage,
       targetPage: this.task.targetPage,
       shortestPathLength: this.task.shortestPathLength,
-      gameCount: this.task.games.size,
+      playerCount: this.task.players.length,
       currentPageIndex: this.task.currentPageIndex,
       viewingPageIndex: this.task.viewingPageIndex,
       renderingMode: this.task.renderingMode,
-      games: Array.from(this.task.games.entries()).map(([gameId, gameSequence]) => ({
-        gameId,
-        status: gameSequence.status,
-        pageCount: gameSequence.pageStates.length
+      players: this.task.players.map(player => ({
+        gameId: player.gameId,
+        modelId: player.model.id,
+        status: player.gameSequence.status,
+        pageCount: player.gameSequence.pageStates.length
       }))
     });
   }
 
   private isTaskComplete(): boolean {
     // Need at least one game to be considered for completion
-    if (this.task.games.size === 0) return false;
+    if (this.task.players.length === 0) return false;
     
     // Check if all games have results (meaning they've finished)
-    if (!this.task.gameResults || this.task.gameResults.size !== this.task.games.size) {
-      return false;
-    }
+    return this.task.players.every(p => p.gameResult);
     
     // Double-check that all game sequences have finished status
     // Updated to include actual status values from backend

@@ -1,14 +1,26 @@
+import { ModelData } from './model-service.js';
+// TODO(hunter): should ModelData be in types.ts?
+
 // =============================================================================
 // Core Task-Centric Data Types
 // =============================================================================
+
+// Player object that composes all data related to a single competitor
+export interface Player {
+  playerIndex: number;
+  color: string;
+  gameId: string;
+  model: ModelData;
+  gameSequence: GameSequence;
+  gameResult?: GameResult;
+}
 
 // Task object containing multiple games competing on same start/target pages
 export interface Task {
   startPage: string;
   targetPage: string;
   shortestPathLength: number | undefined; // NOTE: will be undefined until initial shortest paths are found
-  games: Map<string, GameSequence>; // keyed by game_id
-  gameResults?: Map<string, GameResult>; // empty until the game has ended
+  players: Player[];
   
   // Viewing information
   renderingMode: 'live' | 'stepping';
@@ -48,7 +60,7 @@ export interface PageState {
 export interface PageNode {
   pageTitle: string;
   type: 'start' | 'target' | 'visited' | 'optimal_path' | 'error'; // ‼️
-  distanceToTarget?: number; // Same for all visits - property of the graph
+  distanceToTarget?: number; // Same for all visits - property of the graph (wikipedia)
   
   // Array of visits from games (only when node is visited during a game)
   visits: Array<{
@@ -76,11 +88,14 @@ export interface NavigationEdge {
   distanceChange?: number; // How this move affected distance to target
 }
 
+export type SpawnDirection = 'clockwise' | 'counter-clockwise';
+
 // Complete graph data for visualization
 export interface PageGraphData {
   pages: PageNode[];
   edges: NavigationEdge[];
-  gameOrder: string[]; // Game IDs in the order they should be assigned to left/right sides
+  colorMap: Map<string, string>; // gameId -> color
+  spawnDirectionMap: Map<string, SpawnDirection>; // gameId -> spawn direction
 }
 
 // =============================================================================
@@ -149,13 +164,7 @@ export interface GameEndedEvent extends BaseGameEvent {
       max_steps: number;
       system_prompt_template?: string;
     };
-    model: {
-      provider: string;
-      model_name: string;
-      settings: { [key: string]: any };
-      input_cost_per_1m_tokens?: number;
-      output_cost_per_1m_tokens?: number;
-    };
+    model_id: string;
     status: string;
     steps: number;
     moves: Array<{
@@ -213,7 +222,7 @@ export interface Move {
   from_page_title: string;
   to_page_title: string;
   step: number;
-  timestamp?: string | null;
+  error?: string | undefined;
   distanceChange?: number; // Positive = got closer, negative = got further, 0 = same, undefined = unknown
 }
 
@@ -278,13 +287,7 @@ export interface ModelConfig {
 // Game result object for completed games
 export interface GameResult {
   gameId: string;
-  model: {
-    provider: string;
-    modelName: string;
-    settings: { [key: string]: any };
-    inputCostPer1mTokens?: number;
-    outputCostPer1mTokens?: number;
-  };
+  modelId: string;
   config: {
     startPageTitle: string;
     targetPageTitle: string;

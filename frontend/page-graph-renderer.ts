@@ -1,6 +1,5 @@
 import * as d3 from "d3";
-import { PageGraphData, PageNode, NavigationEdge } from './types.js';
-import { playerColorService } from './player-color-service.js';
+import { PageGraphData, PageNode, NavigationEdge, SpawnDirection } from './types.js';
 
 // =============================================================================
 // Physics Configuration Interface
@@ -60,6 +59,8 @@ export class PageGraphRenderer {
   private pages: PageNode[] = [];
   private edges: NavigationEdge[] = [];
   private pageMap: Map<string, PageNode> = new Map(); // For object constancy
+  private colorMap: Map<string, string> = new Map(); // gameId -> color
+  private spawnDirectionMap: Map<string, SpawnDirection> = new Map(); // gameId -> direction
 
   // Zoom behavior
   private zoom!: d3.ZoomBehavior<SVGSVGElement, unknown>;
@@ -82,9 +83,6 @@ export class PageGraphRenderer {
   // Solar system calculation
   private orbitSystem: OrbitCalculation | null = null;
   
-  // Game side assignment (left/right screen halves)
-  private gameAssignments: Map<string, 'left' | 'right'> = new Map();
-
   // Physics controls UI elements
   private controlsContainer?: HTMLElement;
   private debugButton?: HTMLElement;
@@ -961,82 +959,6 @@ export class PageGraphRenderer {
   }
 
   // =============================================================================
-  // Game Side Assignment System
-  // =============================================================================
-
-  private updateGameAssignments(gameOrder: string[]): void {
-    // Deterministically assign games based on provided order
-    // First game -> left, second game -> right, etc.
-    gameOrder.forEach((gameId, index) => {
-      const side = index % 2 === 0 ? 'left' : 'right';
-      if (!this.gameAssignments.has(gameId) || this.gameAssignments.get(gameId) !== side) {
-        this.gameAssignments.set(gameId, side);
-        console.log(`🎮 Assigned game ${gameId} to ${side} side (deterministic order: ${index})`);
-      }
-    });
-  }
-
-  private assignGameToSide(gameId: string): 'left' | 'right' {
-    if (this.gameAssignments.has(gameId)) {
-      return this.gameAssignments.get(gameId)!;
-    }
-
-    // Fallback if game not in predefined assignments (shouldn't happen normally)
-    console.warn(`⚠️ Game ${gameId} not found in predefined assignments, using fallback`);
-    const side = this.gameAssignments.size % 2 === 0 ? 'left' : 'right';
-    this.gameAssignments.set(gameId, side);
-
-    console.log(`🎮 Assigned game ${gameId} to ${side} side (fallback)`);
-    return side;
-  }
-
-  private getGameSide(page: PageNode): 'left' | 'right' | 'center' {
-    if (page.type === 'start' || page.type === 'target') {
-      return 'center'; // Start/target stay in center
-    }
-
-    if (page.type === 'optimal_path') {
-      return 'center'; // Optimal path nodes are not constrained to sides
-    }
-
-    // For visited nodes, use the first visit's game ID
-    if (page.visits && page.visits.length > 0) {
-      const primaryGameId = page.visits[0].gameId;
-      return this.assignGameToSide(primaryGameId);
-    }
-
-    // Fallback to center for unknown node types
-    return 'center';
-  }
-
-  private createSideConstraintForce() {
-    const self = this;
-    return function(alpha: number) {
-      self.pages.forEach((node: PageNode) => {
-        if (node.type === 'start' || node.type === 'target') return; // Skip anchors
-        
-        const gameSide = self.getGameSide(node);
-        if (gameSide === 'center') return; // Skip center nodes
-        
-        // Use center of visible area (center 1/4 of physics space)
-        const visibleLeft = self.width / 4;
-        const visibleWidth = self.width / 2;
-        const visibleCenterX = visibleLeft + visibleWidth / 2;
-        const currentX = node.x || 0;
-        
-        // Apply horizontal constraint force
-        if (gameSide === 'left' && currentX > visibleCenterX) {
-          // Node is on wrong side, push it left
-          (node as any).vx = ((node as any).vx || 0) - (currentX - visibleCenterX) * alpha * 0.3;
-        } else if (gameSide === 'right' && currentX < visibleCenterX) {
-          // Node is on wrong side, push it right
-          (node as any).vx = ((node as any).vx || 0) + (visibleCenterX - currentX) * alpha * 0.3;
-        }
-      });
-    };
-  }
-
-  // =============================================================================
   // Smart Node Positioning for Solar System
   // =============================================================================
 
@@ -1099,7 +1021,10 @@ export class PageGraphRenderer {
         const parentNode = this.findParentNode(page);
         if (parentNode && parentNode.x !== undefined && parentNode.y !== undefined && this.orbitSystem) {
           const spacing = this.orbitSystem.orbitRadius(1);
-          const gameSide = this.getGameSide(page);
+          // Use the first visit to determine the game and thus the spawn direction
+          // node will already be spawned in for other visits
+          const gameId = page.visits[0].gameId;
+          const spawnDirection = this.getSpawnDirectionForGame(gameId);
       
           // Vector from parent to the orbit system's center
           const parentToCenterX = this.orbitSystem.centerX - parentNode.x;
@@ -1107,8 +1032,7 @@ export class PageGraphRenderer {
       
           const distanceToCenter = Math.sqrt(parentToCenterX * parentToCenterX + parentToCenterY * parentToCenterY);
       
-          // For 'center' games or if the parent is at the center, spawn directly below as a fallback.
-          if (gameSide === 'center' || distanceToCenter < 1) {
+          if (distanceToCenter < 1) {
             return {
               x: parentNode.x,
               y: parentNode.y + spacing,
@@ -1121,11 +1045,11 @@ export class PageGraphRenderer {
       
           let orthogonalX, orthogonalY;
       
-          if (gameSide === 'left') {
+          if (spawnDirection === 'counter-clockwise') {
             // Counter-clockwise orthogonal vector is (-y, x)
             orthogonalX = -unitY;
             orthogonalY = unitX;
-          } else { // Assumes 'right'
+          } else { // Assumes 'clockwise'
             // Clockwise orthogonal vector is (y, -x)
             orthogonalX = unitY;
             orthogonalY = -unitX;
@@ -1137,15 +1061,8 @@ export class PageGraphRenderer {
           };
         }
       
-        // FALLBACK: Position at a corner if no parent is found
-        const gameSide = this.getGameSide(page);
-        if (gameSide === 'left') {
-          return { x: 0, y: this.height };
-        } else if (gameSide === 'right') {
-          return { x: this.width, y: this.height };
-        } else {
-          return { x: this.width / 2, y: this.height / 2 };
-        }
+        // FALLBACK: center of visible area
+        return { x: this.width / 2, y: this.height / 2 };
       }
 
       case 'optimal_path':
@@ -1177,8 +1094,9 @@ export class PageGraphRenderer {
       return;
     }
 
-    // Store game order for deterministic side assignment
-    this.updateGameAssignments(pageGraphData.gameOrder);
+    // Store color and spawn direction maps
+    this.colorMap = pageGraphData.colorMap;
+    this.spawnDirectionMap = pageGraphData.spawnDirectionMap;
 
     // Identify new nodes for smart positioning
     const newNodeIds = new Set<string>();
@@ -1302,7 +1220,7 @@ export class PageGraphRenderer {
        .force('orbital', this.createOrbitalForce(this.orbitSystem))
        
        // TERTIARY FORCE: Side constraint (keep games on their assigned sides)
-       .force('sideConstraint', this.createSideConstraintForce())
+       // .force('sideConstraint', this.createSideConstraintForce())
       
        // Simulation parameters - higher damping for stable orbits
        .alphaDecay(this.physicsConfig.alphaDecay)
@@ -1720,7 +1638,7 @@ export class PageGraphRenderer {
       gameId,
       count,
       percentage: (count / totalVisits) * 100,
-      color: playerColorService.getColorForGame(gameId)
+      color: this.colorMap.get(gameId) || '#64748b' // Fallback to gray
     }));
   }
 
@@ -1805,8 +1723,19 @@ export class PageGraphRenderer {
   }
 
   private getPageColor(page: PageNode): string {
-    // Use the PlayerColorService for all node coloring
-    return playerColorService.getNodeColor(page);
+    if (page.visits.length > 0) {
+      // For visited nodes, use the color of the first player to visit it
+      const firstGameId = page.visits[0].gameId;
+      return this.colorMap.get(firstGameId) || '#64748b'; // Fallback to gray
+    }
+    
+    // Fallback colors for non-visited nodes
+    switch (page.type) {
+        case 'optimal_path':
+            return '#374151'; // Cool Gray
+        default:
+            return '#475569'; // Slate
+    }
   }
 
   // private getPageStroke(page: PageNode): string {
@@ -1904,7 +1833,6 @@ export class PageGraphRenderer {
     this.edges = [];
     this.pageMap.clear();
     this.orbitSystem = null;
-    this.gameAssignments.clear(); // Reset game side assignments
     
     if (this.simulation) {
       this.simulation.stop();
@@ -2049,20 +1977,6 @@ export class PageGraphRenderer {
      });
    }
 
-   debugGameAssignments(): void {
-     console.log('🎮 Game Side Assignments:');
-     console.log('Current assignments:', Object.fromEntries(this.gameAssignments));
-     
-     // Show nodes by side
-     const leftNodes = this.pages.filter(p => this.getGameSide(p) === 'left');
-     const rightNodes = this.pages.filter(p => this.getGameSide(p) === 'right');
-     const centerNodes = this.pages.filter(p => this.getGameSide(p) === 'center');
-     
-     console.log(`Left side (${leftNodes.length} nodes):`, leftNodes.map(n => n.pageTitle));
-     console.log(`Right side (${rightNodes.length} nodes):`, rightNodes.map(n => n.pageTitle));
-     console.log(`Center (${centerNodes.length} nodes):`, centerNodes.map(n => n.pageTitle));
-   }
-
    debugVisibleAreaPositioning(): void {
      console.log('👁️ Visible Area Positioning Debug:');
      
@@ -2197,5 +2111,9 @@ export class PageGraphRenderer {
      console.log(`  Min: ${minVisits} visits → ${minRadius.toFixed(1)}px radius`);
      console.log(`  Max: ${maxVisits} visits → ${maxRadius.toFixed(1)}px radius`);
      console.log(`  Range: ${(maxRadius / minRadius).toFixed(2)}x size difference`);
+   }
+
+   private getSpawnDirectionForGame(gameId: string): SpawnDirection {
+     return this.spawnDirectionMap.get(gameId) || 'counter-clockwise';
    }
  }  
