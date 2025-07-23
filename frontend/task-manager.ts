@@ -404,7 +404,7 @@ export class TaskManager {
       });
       
       // Add optimal path pages from most recent optimal paths (use current viewing index for live mode)
-      // this.addOptimalPathsToGraph(allPages, allEdges, gameSequence, this.task.currentPageIndex);
+      // this.addOptimalPathsToGraph(allPages, allEdges, player.gameSequence, this.task.currentPageIndex);
     });
     
     const colorMap = new Map(this.task.players.map(p => [p.gameId, p.color]));
@@ -431,7 +431,7 @@ export class TaskManager {
       });
       
       // Add optimal path pages from most recent optimal paths up to viewing index
-      // this.addOptimalPathsToGraph(allPages, allEdges, gameSequence, globalPageIndex);
+      // this.addOptimalPathsToGraph(allPages, allEdges, player.gameSequence, globalPageIndex);
     });
     
     const colorMap = new Map(this.task.players.map(p => [p.gameId, p.color]));
@@ -587,14 +587,14 @@ export class TaskManager {
         } else {
           // Create new optimal path page (only if not start/target - they're already initialized)
           // TODO(hunter): i am 99% sure this check is not needed since start and target will always be in allPages
-          if (pageTitle !== this.task.startPage && pageTitle !== this.task.targetPage) {
+          // if (pageTitle !== this.task.startPage && pageTitle !== this.task.targetPage) {
             allPages.set(pageTitle, {
               pageTitle,
               type: 'optimal_path',
               distanceToTarget,
               visits: []
             });
-          }
+          // }
         }
       });
       
