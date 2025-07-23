@@ -11,6 +11,7 @@ export class RaceHUDController {
   private onEnterLiveMode?: () => void;
   private onConfigureNewRace?: () => void;
   private onQuickstart?: () => void;
+  private raceResultsShown: boolean = false;
 
   constructor() {
     this.initializeElements();
@@ -541,7 +542,10 @@ export class RaceHUDController {
     this.updateRaceResultContent(task);
 
     // Auto-expand to show results
-    hud.classList.add('expanded');
+    if (!this.raceResultsShown) {
+      hud.classList.add('expanded');
+      this.raceResultsShown = true;
+    }
 
     // Show the HUD
     hud.style.display = 'block';
@@ -950,6 +954,7 @@ export class RaceHUDController {
 
     // Hide race result HUD
     this.hideRaceResultHUD();
+    this.raceResultsShown = false;
   }
 
   // For debugging
