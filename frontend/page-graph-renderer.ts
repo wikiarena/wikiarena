@@ -12,7 +12,6 @@ interface PhysicsConfig {
   linkStrength: number; // For move edges (general)
   neutralMoveLinkStrength: number; // For moves with distanceChange = 0 (strong)
   progressMoveLinkStrength: number; // For moves with distanceChange != 0 (very weak)
-  multiVisitLinkStrength: number; // For edges connected to multi-visit nodes
   alphaDecay: number;
   velocityDecay: number;
   // Solar System Physics
@@ -74,7 +73,6 @@ export class PageGraphRenderer {
     linkStrength: 0.2, // Weaker links for moves - visual only (fallback)
     neutralMoveLinkStrength: 0.2, // For moves with distanceChange = 0 (strong structural)
     progressMoveLinkStrength: 0.1, // For moves with distanceChange != 0 (very weak)
-    multiVisitLinkStrength: 0.01, // Edges on multi-visit nodes are weak by default
     alphaDecay: 0.01,
     velocityDecay: 0.6, // Higher damping for stable orbits
     orbitalStrength: 0.8 // Strong orbital constraint
@@ -418,17 +416,6 @@ export class PageGraphRenderer {
         </div>
         
         <div class="control-section" style="margin-bottom: 12px;">
-          <h4 style="margin: 0 0 8px 0; color: #cbd5e1; font-size: 11px; text-transform: uppercase;">Multi-Visit Link Strength</h4>
-          <div class="control-item" style="margin-bottom: 8px;">
-            <label style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-              Multi-Visit Link Strength: <span id="multiVisitLinkStrengthValue" style="color: #f59e0b; font-weight: bold;">${this.physicsConfig.multiVisitLinkStrength}</span>
-            </label>
-            <input type="range" id="multiVisitLinkStrength" min="0" max="1" step="0.01" value="${this.physicsConfig.multiVisitLinkStrength}" style="width: 100%;">
-            <div style="font-size: 10px; color: #64748b; margin-top: 2px;">Strength for edges on multi-visit nodes.</div>
-          </div>
-        </div>
-        
-        <div class="control-section" style="margin-bottom: 12px;">
           <h4 style="margin: 0 0 8px 0; color: #cbd5e1; font-size: 11px; text-transform: uppercase;">Simulation</h4>
           <div class="control-item" style="margin-bottom: 8px;">
             <label style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
@@ -461,26 +448,16 @@ export class PageGraphRenderer {
           ">Reset Layout</button>
           <button id="reheatBtn" style="
             width: 100%;
-            padding: 6px;
-            background: #dc2626;
+            padding: 8px;
+            background: #059669;
             color: white;
             border: none;
             border-radius: 4px;
             cursor: pointer;
-            font-size: 11px;
-            margin-bottom: 6px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-bottom: 8px;
           ">Reheat Simulation</button>
-          <button id="toggleOrbitRingsBtn" style="
-            width: 100%;
-            padding: 6px;
-            background: #6366f1;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 11px;
-            margin-bottom: 6px;
-          ">Toggle Orbit Rings</button>
           <button id="togglePhysicsBoundaryBtn" style="
             width: 100%;
             padding: 6px;
@@ -491,39 +468,6 @@ export class PageGraphRenderer {
             cursor: pointer;
             font-size: 11px;
           ">Toggle Physics Boundary</button>
-          <button id="debugPositioningBtn" style="
-            width: 100%;
-            padding: 6px;
-            background: #f59e0b;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 11px;
-            margin-top: 6px;
-          ">Debug Visible Area Positioning</button>
-          <button id="debugLinearSpawningBtn" style="
-            width: 100%;
-            padding: 6px;
-            background: #10b981;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 11px;
-            margin-top: 6px;
-          ">Debug Linear Spawning</button>
-          <button id="debugVisitSizingBtn" style="
-            width: 100%;
-            padding: 6px;
-            background: #f472b6;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 11px;
-            margin-top: 6px;
-          ">Debug Visit-Based Sizing</button>
           <div style="margin-top: 8px; padding: 8px; background: rgba(20, 30, 45, 0.7); border-radius: 4px; font-size: 10px; color: #cbd5e1;">
             <strong>Expanded Physics:</strong><br/>
             Physics space: ${this.width}×${this.height}px<br/>
@@ -619,14 +563,6 @@ export class PageGraphRenderer {
       this.updateSimulationForces();
     });
 
-    // Multi-visit link strength control
-    const multiVisitLinkStrengthSlider = this.controlsContainer.querySelector('#multiVisitLinkStrength') as HTMLInputElement;
-    const multiVisitLinkStrengthValue = this.controlsContainer.querySelector('#multiVisitLinkStrengthValue') as HTMLSpanElement;
-    multiVisitLinkStrengthSlider?.addEventListener('input', (event) => {
-      this.physicsConfig.multiVisitLinkStrength = +(event.target as HTMLInputElement).value;
-      if (multiVisitLinkStrengthValue) multiVisitLinkStrengthValue.textContent = this.physicsConfig.multiVisitLinkStrength.toString();
-      this.updateSimulationForces();
-    });
 
     // Alpha decay control
     const alphaSlider = this.controlsContainer.querySelector('#alphaSlider') as HTMLInputElement;
@@ -662,17 +598,6 @@ export class PageGraphRenderer {
       }
     });
 
-    // Toggle orbit rings button
-    const toggleOrbitRingsBtn = this.controlsContainer.querySelector('#toggleOrbitRingsBtn') as HTMLButtonElement;
-    toggleOrbitRingsBtn?.addEventListener('click', () => {
-      const rings = this.pathGroup.selectAll('.orbital-ring');
-      if (rings.empty()) {
-        this.drawOrbitalRings();
-      } else {
-        rings.remove();
-      }
-    });
-
     // Toggle physics boundary button
     const togglePhysicsBoundaryBtn = this.controlsContainer.querySelector('#togglePhysicsBoundaryBtn') as HTMLButtonElement;
     togglePhysicsBoundaryBtn?.addEventListener('click', () => {
@@ -683,24 +608,6 @@ export class PageGraphRenderer {
         boundary.remove();
       }
     });
-
-    // Debug positioning button
-    const debugPositioningBtn = this.controlsContainer.querySelector('#debugPositioningBtn') as HTMLButtonElement;
-    debugPositioningBtn?.addEventListener('click', () => {
-      this.debugVisibleAreaPositioning();
-    });
-
-    // Debug linear spawning button
-    const debugLinearSpawningBtn = this.controlsContainer.querySelector('#debugLinearSpawningBtn') as HTMLButtonElement;
-    debugLinearSpawningBtn?.addEventListener('click', () => {
-      this.debugLinearSpawning();
-    });
-
-    // Debug visit-based sizing button
-    const debugVisitSizingBtn = this.controlsContainer.querySelector('#debugVisitSizingBtn') as HTMLButtonElement;
-    debugVisitSizingBtn?.addEventListener('click', () => {
-      this.debugVisitBasedSizing();
-    });
   }
 
   private getLinkStrength(d: any): number {
@@ -709,28 +616,49 @@ export class PageGraphRenderer {
       return this.physicsConfig.progressMoveLinkStrength;
     } 
 
+    // Base strength for regular moves.
+    let baseStrength: number;
+    if (d.distanceChange !== undefined) {
+      if (d.distanceChange === 0) {
+        baseStrength = this.physicsConfig.neutralMoveLinkStrength;
+      } else {
+        baseStrength = this.physicsConfig.progressMoveLinkStrength;
+      }
+    } else {
+      baseStrength = this.physicsConfig.linkStrength; // Fallback
+    }
+    
     // d.source and d.target are full PageNode objects thanks to D3's .id() mapping
     const sourceNode = d.source as PageNode;
     const targetNode = d.target as PageNode;
+    const isSourceMultiVisit = sourceNode && sourceNode.visits.length > 1;
+    const isTargetMultiVisit = targetNode && targetNode.visits.length > 1;
 
-    // Weaken edges connected to nodes that have been visited multiple times
-    if ((sourceNode && sourceNode.visits.length > 1) || (targetNode && targetNode.visits.length > 1)) {
-      return this.physicsConfig.multiVisitLinkStrength;
+    if (!isSourceMultiVisit && !isTargetMultiVisit) {
+        return baseStrength;
     }
 
-    // For move edges, use distanceChange to determine strength
-    if (d.distanceChange !== undefined) {
-      if (d.distanceChange === 0) {
-        // Neutral moves (same distance) get strong structural influence
-        return this.physicsConfig.neutralMoveLinkStrength;
-      } else {
-        // Progress/regress moves get very weak influence
-        return this.physicsConfig.progressMoveLinkStrength;
-      }
+    let strengthMultiplier = 1.0;
+
+    if (isSourceMultiVisit) {
+        const minMoveIndex = Math.min(...sourceNode.visits.map(v => v.moveIndex));
+        // The move *from* the source node happens one step after its visit.
+        const effectiveMoveIndex = d.moveIndex - 1;
+        if (effectiveMoveIndex > minMoveIndex) {
+            const diff = effectiveMoveIndex - minMoveIndex;
+            strengthMultiplier = Math.min(strengthMultiplier, 1.0 / (1.0 + diff));
+        }
     }
 
-    // Fallback for moves without distanceChange data
-    return this.physicsConfig.linkStrength;
+    if (isTargetMultiVisit) {
+        const minMoveIndex = Math.min(...targetNode.visits.map(v => v.moveIndex));
+        if (d.moveIndex > minMoveIndex) {
+            const diff = d.moveIndex - minMoveIndex;
+            strengthMultiplier = Math.min(strengthMultiplier, 1.0 / (1.0 + diff));
+        }
+    }
+
+    return baseStrength * strengthMultiplier;
   }
 
   private updateSimulationForces(): void {
@@ -1364,7 +1292,7 @@ export class PageGraphRenderer {
     // Merge and update all pages
     const pageUpdate = pageEnter.merge(pageSelection);
 
-    // First, handle circle updates for non-pie chart, non-target, and non-start nodes
+    // Handle circle updates for non-pie chart, non-target, and non-start nodes
     const circleNodes = pageUpdate.filter((d: PageNode) => 
       !(d.type === 'visited' && this.needsPieChart(d)) && d.type !== 'target' && d.type !== 'start');
     circleNodes.select('circle')
@@ -1397,7 +1325,7 @@ export class PageGraphRenderer {
       this.moveDistanceTextToTop(nodeGroup);
     });
 
-    // Finally, handle target node with concentric rings
+    // Handle target node with concentric rings
     const targetNodes = pageUpdate.filter((d: PageNode) => d.type === 'target');
     targetNodes.each((d: PageNode, i: number, nodes: ArrayLike<SVGGElement>) => {
       const nodeGroup = d3.select(nodes[i]);
@@ -1651,7 +1579,8 @@ export class PageGraphRenderer {
     // Create pie and arc generators
     const pie = d3.pie<{gameId: string, count: number, percentage: number, color: string}>()
       .value(d => d.count)
-      .sort(null); // Keep original order
+      .sort(null) // Keep original order
+      .endAngle(-2 * Math.PI); // sweep counter-clockwise (to draw player 1 on left)
     
     const arc = d3.arc<d3.PieArcDatum<{gameId: string, count: number, percentage: number, color: string}>>()
       .innerRadius(0)
