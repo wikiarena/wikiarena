@@ -397,6 +397,7 @@ import { ModelSelector } from './model-selector.js';
 enum ViewState {
     LANDING = 'landing',
     ABOUT = 'about',
+    LEADERBOARD = 'leaderboard',
     RACE = 'race'
 }
 
@@ -406,6 +407,7 @@ class UIManager {
     private landingModal: HTMLElement;
     private raceView: HTMLElement;
     private aboutPage: HTMLElement;
+    private leaderboardPage: HTMLElement;
     private startRaceBtn: HTMLButtonElement;
     private player1Input: HTMLInputElement;
     private player2Input: HTMLInputElement;
@@ -433,6 +435,7 @@ class UIManager {
         this.landingModal = document.getElementById('landing-modal')!;
         this.raceView = document.getElementById('race-view')!;
         this.aboutPage = document.getElementById('about-page')!;
+        this.leaderboardPage = document.getElementById('leaderboard-page')!;
         this.startRaceBtn = document.getElementById('start-race-btn') as HTMLButtonElement;
         this.player1Input = document.getElementById('player1-model') as HTMLInputElement;
         this.player2Input = document.getElementById('player2-model') as HTMLInputElement;
@@ -446,6 +449,7 @@ class UIManager {
         this.initializeSidebar();
         this.initializeLandingModal();
         this.initializeAboutPage();
+        this.initializeLeaderboardPage();
         this.initializeAutocomplete();
         this.initializeSlotMachineButtons();
         this.initializeModelSelectors();
@@ -485,8 +489,7 @@ class UIManager {
 
         // Leaderboard
         leaderboardBtn.addEventListener('click', () => {
-            console.log('Leaderboard clicked');
-            // TODO: Implement leaderboard
+            this.showLeaderboard();
         });
 
         // About
@@ -501,8 +504,7 @@ class UIManager {
         const aboutBtn = document.getElementById('about-modal-btn')!;
 
         leaderboardBtn.addEventListener('click', () => {
-            console.log('Leaderboard modal clicked');
-            // TODO: Implement leaderboard modal
+            this.showLeaderboard();
         });
 
         aboutBtn.addEventListener('click', async () => {
@@ -524,6 +526,13 @@ class UIManager {
         // Initialize side loading animations with slower timing
         this.aboutLeftAnimation = new LoadingAnimation('about-left-animation', 200, 600, 8, 800);
         this.aboutRightAnimation = new LoadingAnimation('about-right-animation', 200, 600, 8, 800);
+    }
+
+    private initializeLeaderboardPage() {
+        const leaderboardCloseBtn = document.getElementById('leaderboard-close-btn')!;
+        leaderboardCloseBtn.addEventListener('click', () => {
+            this.showLanding();
+        });
     }
 
     private initializeAutocomplete() {
@@ -759,6 +768,10 @@ class UIManager {
                 }
                 break;
 
+            case ViewState.LEADERBOARD:
+                this.leaderboardPage.classList.add('visible');
+                break;
+
             case ViewState.RACE:
                 this.raceView.style.display = 'block';
                 break;
@@ -782,6 +795,9 @@ class UIManager {
             this.aboutRightAnimation.hide();
         }
 
+        // Hide leaderboard page
+        this.leaderboardPage.classList.remove('visible');
+
         // Hide race view
         this.raceView.style.display = 'none';
     }
@@ -799,6 +815,10 @@ class UIManager {
     public async showAbout(): Promise<void> {
         this.showView(ViewState.ABOUT);
         await this.updateAboutPageStats();
+    }
+
+    public showLeaderboard(): void {
+        this.showView(ViewState.LEADERBOARD);
     }
 
     private async updateAboutPageStats(): Promise<void> {
