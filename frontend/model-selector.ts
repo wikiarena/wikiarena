@@ -1,25 +1,25 @@
 import { cyclingService } from './cycling-service.js';
-import { modelService, ModelData } from './model-service.js';
+import { modelService, ModelInfo } from './model-service.js';
 import { setIcon } from './icon-service.js';
 
 interface ModelSelectorOptions {
     placeholder?: string;
-    onSelect?: (model: ModelData) => void;
+    onSelect?: (model: ModelInfo) => void;
     onValidationChange?: (isValid: boolean) => void;
-    getExcludedModels?: () => ModelData[];
+    getExcludedModels?: () => ModelInfo[];
 }
 
 class ModelSelector {
     private input: HTMLInputElement;
     private container: HTMLElement;
     private dropdown: HTMLElement;
-    private models: ModelData[] = [];
-    private filteredModels: ModelData[] = [];
+    private models: ModelInfo[] = [];
+    private filteredModels: ModelInfo[] = [];
     private selectedIndex: number = -1;
     private isOpen: boolean = false;
     private options: Required<ModelSelectorOptions>;
     private currentQuery: string = '';
-    private selectedModel: ModelData | null = null;
+    private selectedModel: ModelInfo | null = null;
     private otherSelectors: ModelSelector[] = [];
     private cycleCallback: ((title: string) => void) | null = null;
 
@@ -89,7 +89,7 @@ class ModelSelector {
             
             // The data from the service is already in the format we need.
             // We just need to ensure it's mapped correctly if there are any differences.
-            // In this case, the new ModelData and our internal ModelData are compatible.
+            // In this case, the new ModelInfo and our internal ModelInfo are compatible.
             this.models = modelsData;
 
             this.filteredModels = [...this.models];
@@ -349,7 +349,7 @@ class ModelSelector {
         }
     }
 
-    private selectModel(model: ModelData): void {
+    private selectModel(model: ModelInfo): void {
         this.selectedModel = model;
         this.input.value = model.name;
         this.currentQuery = ''; // Clear the search query so clicking again shows all models
@@ -399,7 +399,7 @@ class ModelSelector {
         return this.selectedModel?.id || '';
     }
 
-    public getSelectedModel(): ModelData | null {
+    public getSelectedModel(): ModelInfo | null {
         return this.selectedModel;
     }
 
@@ -488,4 +488,4 @@ class ModelSelector {
     }
 }
 
-export { ModelSelector, type ModelSelectorOptions, type ModelData }; 
+export { ModelSelector, type ModelSelectorOptions, type ModelInfo }; 

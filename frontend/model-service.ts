@@ -1,4 +1,4 @@
-export interface ModelData {
+export interface ModelInfo {
     id: string;
     name: string;
     provider: string;
@@ -9,7 +9,7 @@ export interface ModelData {
 
 class ModelService {
     private static instance: ModelService;
-    private models: ModelData[] = [];
+    private models: ModelInfo[] = [];
     private modelsPromise: Promise<void> | null = null;
 
     private constructor() {
@@ -39,7 +39,7 @@ class ModelService {
         }
     }
 
-    public async getModels(): Promise<ModelData[]> {
+    public async getModels(): Promise<ModelInfo[]> {
         // Ensure that the models are loaded before returning them
         if (this.modelsPromise) {
             await this.modelsPromise;
@@ -47,7 +47,7 @@ class ModelService {
         return this.models;
     }
 
-    public async getModelById(modelId: string): Promise<ModelData | undefined> {
+    public async getModelById(modelId: string): Promise<ModelInfo | undefined> {
         await this.getModels(); // Ensure models are loaded
         return this.models.find(model => model.id === modelId);
     }

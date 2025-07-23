@@ -1,5 +1,5 @@
-import { ModelData } from './model-service.js';
-// TODO(hunter): should ModelData be in types.ts?
+import { ModelInfo } from './model-service.js';
+// TODO(hunter): should ModelInfo be in types.ts?
 
 // =============================================================================
 // Core Task-Centric Data Types
@@ -10,7 +10,7 @@ export interface Player {
   playerIndex: number;
   color: string;
   gameId: string;
-  model: ModelData;
+  model: ModelInfo;
   gameSequence: GameSequence;
   gameResult?: GameResult;
 }

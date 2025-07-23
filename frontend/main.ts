@@ -4,7 +4,7 @@ import { TaskConnectionManager } from './task-connection-manager.js';
 import { RaceHUDController } from './race-hud-controller.js';
 import { PageGraphRenderer } from './page-graph-renderer.js';
 import { LoadingAnimation } from './loading-animation.js';
-import { type ModelData } from './model-selector.js';
+import { type ModelInfo } from './model-selector.js';
 import { WikipediaStatsService } from './wikipedia-stats.js';
 
 // =============================================================================
@@ -117,7 +117,7 @@ class WikiArenaApp {
   // User Action Handlers
   // =============================================================================
   
-  public async handleStartCustomRace(startPage: string | null, targetPage: string | null, player1Model: ModelData | null, player2Model: ModelData | null): Promise<void> {
+  public async handleStartCustomRace(startPage: string | null, targetPage: string | null, player1Model: ModelInfo | null, player2Model: ModelInfo | null): Promise<void> {
     console.log(`🎲 User requested custom task: ${startPage || '(empty)'} -> ${targetPage || '(empty)'}`);
 
     // Reset state for new race
@@ -239,7 +239,7 @@ class WikiArenaApp {
   // API Calls
   // =============================================================================
 
-  private async createCustomTask(startPage: string | null, targetPage: string | null, player1Model: ModelData | null, player2Model: ModelData | null): Promise<Response> {
+  private async createCustomTask(startPage: string | null, targetPage: string | null, player1Model: ModelInfo | null, player2Model: ModelInfo | null): Promise<Response> {
     const apiUrl = 'http://localhost:8000/api/tasks';
     
     const model_ids = [

@@ -14,7 +14,7 @@ import {
   ConnectionEstablishedEvent,
   Player,
 } from './types.js';
-import { ModelData } from './model-service.js';
+import { ModelInfo } from './model-service.js';
 import { getPlayerColor } from './player-colors.js';
 
 // =============================================================================
@@ -45,7 +45,7 @@ export class TaskManager {
     };
   }
   
-  createTask(gamesInfo: Array<{ game_id: string; model: ModelData }>, startPage: string, targetPage: string): Task {
+  createTask(gamesInfo: Array<{ game_id: string; model: ModelInfo }>, startPage: string, targetPage: string): Task {
     // Reset for new task
     this.task = this.createEmptyTask();
 

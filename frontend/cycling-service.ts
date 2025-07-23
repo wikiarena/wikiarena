@@ -1,4 +1,4 @@
-import { modelService, ModelData } from './model-service.js';
+import { modelService, ModelInfo } from './model-service.js';
 import { WikipediaRandomService } from './wikipedia-random.js';
 
 class CyclingService {
@@ -6,7 +6,7 @@ class CyclingService {
     private modelCallbacks: Array<(modelName: string) => void> = [];
     private pageCallbacks: Array<(pageTitle: string) => void> = [];
     
-    private models: ModelData[] = [];
+    private models: ModelInfo[] = [];
     private pageTitles: string[] = [];
 
     private modelIndex: number = 0;
@@ -48,7 +48,7 @@ class CyclingService {
         }
     }
 
-    private async fetchModels(): Promise<ModelData[]> {
+    private async fetchModels(): Promise<ModelInfo[]> {
         try {
             // Use the singleton model service
             return await modelService.getModels();
