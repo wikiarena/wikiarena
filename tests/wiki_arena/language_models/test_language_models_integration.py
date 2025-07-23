@@ -14,7 +14,7 @@ from wiki_arena.language_models import (
 )
 from wiki_arena.language_models.language_model import LanguageModel, ToolCall
 from wiki_arena.language_models.random_model import RandomModel
-from wiki_arena.models import ModelConfig, GameState, GameConfig, Page
+from wiki_arena.types import ModelConfig, GameState, GameConfig, Page
 from mcp.types import Tool
 
 

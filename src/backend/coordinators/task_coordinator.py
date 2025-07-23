@@ -3,7 +3,7 @@ from typing import Dict, List, Optional
 from datetime import datetime
 
 from wiki_arena import EventBus, GameEvent
-from wiki_arena.models import Task
+from wiki_arena.types import Task
 from backend.services.model_service import model_service
 from backend.models.api_models import (
     CreateTaskRequest, CreateTaskResponse, Player

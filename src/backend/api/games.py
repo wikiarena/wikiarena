@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks, WebSocket, WebSoc
 from typing import Dict, Any, Annotated
 import logging
 
-from wiki_arena.models import GameState
+from wiki_arena.types import GameState
 from backend.coordinators.game_coordinator import GameCoordinator
 from backend.websockets.game_hub import websocket_manager
 from backend.dependencies import get_game_coordinator

@@ -9,7 +9,7 @@ from typing import AsyncGenerator
 
 from wiki_arena import EventBus, GameEvent
 from wiki_arena.solver import WikiTaskSolver,wiki_task_solver
-from wiki_arena.models import GameState, GameConfig, ModelConfig, Page, Move, GameStatus
+from wiki_arena.types import GameState, GameConfig, ModelConfig, Page, Move, GameStatus
 from backend.handlers.solver_handler import SolverHandler
 
 # Configure logging for tests

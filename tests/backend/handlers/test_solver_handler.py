@@ -9,7 +9,7 @@ import logging
 from typing import List
 
 from wiki_arena import EventBus, GameEvent
-from wiki_arena.models import GameState, GameConfig, ModelConfig, Page, Move, GameStatus
+from wiki_arena.types import GameState, GameConfig, ModelConfig, Page, Move, GameStatus
 from backend.handlers import SolverHandler
 
 logger = logging.getLogger(__name__)
@@ -72,7 +72,7 @@ class TestSolverHandler:
         event_bus.subscribe("task_selected", solver_handler.handle_task_selected)
         
         # Create a mock task for testing
-        from wiki_arena.models import Task
+        from wiki_arena.types import Task
         test_task = Task(
             start_page_title="Python (programming language)",
             target_page_title="JavaScript"

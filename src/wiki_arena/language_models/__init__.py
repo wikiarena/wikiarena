@@ -12,7 +12,7 @@ from .language_model import (
 from .random_model import RandomModel
 from .anthropic_model import AnthropicModel
 from .openai_model import OpenAIModel
-from wiki_arena.models import ModelConfig
+from wiki_arena.types import ModelConfig
 
 # Simple provider mapping
 PROVIDERS: Dict[str, Type[LanguageModel]] = {

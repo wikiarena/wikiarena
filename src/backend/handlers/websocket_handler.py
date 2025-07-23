@@ -2,7 +2,7 @@ import logging
 from typing import Dict, Any
 
 from wiki_arena import GameEvent
-from wiki_arena.models import GameState, Move, GameResult
+from wiki_arena.types import GameState, Move, GameResult
 from wiki_arena.openrouter import OpenRouterModelConfig
 from backend.websockets.game_hub import websocket_manager
 

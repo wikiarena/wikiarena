@@ -15,7 +15,7 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../../src'))
 
 from wiki_arena import EventBus, GameEvent
-from wiki_arena.models import GameState, GameConfig, ModelConfig, Page, Move, GameStatus
+from wiki_arena.types import GameState, GameConfig, ModelConfig, Page, Move, GameStatus
 from backend.handlers.websocket_handler import WebSocketHandler
 from backend.websockets.game_hub import GameWebSocketManager
 

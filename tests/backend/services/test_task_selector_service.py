@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import Mock, AsyncMock
 from backend.services.task_selector_service import CustomTaskSelector
 from backend.models.api_models import CustomTaskStrategy
-from wiki_arena.models import Task
+from wiki_arena.types import Task
 
 class TestCustomTaskSelector:
     """Test the CustomTaskSelector with validation and random fallback."""

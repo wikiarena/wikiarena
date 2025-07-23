@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Optional
 from datetime import datetime
 
-from wiki_arena.models import GameResult, GameStatus
+from wiki_arena.types import GameResult, GameStatus
 from .storage_config import StorageConfig
 
 

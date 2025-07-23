@@ -7,7 +7,7 @@ from typing import Optional
 import typer
 
 from wiki_arena.game import Game
-from wiki_arena.models import GameConfig, GameResult
+from wiki_arena.types import GameConfig, GameResult
 from wiki_arena.storage import GameStorageService, StorageConfig
 from wiki_arena.tools import get_tools
 from wiki_arena.openrouter import create_openrouter_model as create_model

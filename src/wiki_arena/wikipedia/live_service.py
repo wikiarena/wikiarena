@@ -3,7 +3,7 @@ import httpx
 import urllib.parse
 from typing import List
 
-from ..models import Page
+from wiki_arena.types import Page
 
 class LiveWikiService:
     """

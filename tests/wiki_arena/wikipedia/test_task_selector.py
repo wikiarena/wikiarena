@@ -6,7 +6,7 @@ from wiki_arena.wikipedia.task_selector import (
     get_random_task,
     get_random_task_async,
 )
-from wiki_arena.models import Task
+from wiki_arena.types import Task
 
 # Mark all tests in this file as integration tests
 pytestmark = pytest.mark.integration

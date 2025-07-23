@@ -16,7 +16,7 @@ from .language_model import (
     LLMRateLimitError,
     LLMTimeoutError,
 )
-from wiki_arena.models import (
+from wiki_arena.types import (
     AssistantMessage,
     AssistantToolCall,
     ContextMessage,

@@ -5,7 +5,7 @@ from datetime import datetime
 
 from wiki_arena import EventBus, GameEvent
 from wiki_arena.game import Game
-from wiki_arena.models import GameConfig, GameState, GameStatus, Task, Page
+from wiki_arena.types import GameConfig, GameState, GameStatus, Task, Page
 from wiki_arena.openrouter import create_openrouter_model
 from wiki_arena.tools import get_tools
 from wiki_arena.wikipedia import LiveWikiService

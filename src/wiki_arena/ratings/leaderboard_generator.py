@@ -2,7 +2,7 @@ from collections import defaultdict
 from typing import Dict, List
 
 from wiki_arena.storage import GameRepository
-from wiki_arena.models import GameResult, Task
+from wiki_arena.types import GameResult, Task
 from .bradley_terry import BradleyTerryModel
 
 class LeaderboardGenerator:

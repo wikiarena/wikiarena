@@ -9,7 +9,7 @@ from anthropic import (
     RateLimitError,
     APITimeoutError,
 )
-from wiki_arena.models import (
+from wiki_arena.types import (
     AssistantMessage,
     AssistantToolCall,
     ContextMessage,

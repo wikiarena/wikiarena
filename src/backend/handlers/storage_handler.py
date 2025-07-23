@@ -2,7 +2,7 @@ import logging
 from typing import Optional
 
 from wiki_arena import GameEvent
-from wiki_arena.models import GameResult, GameState
+from wiki_arena.types import GameResult, GameState
 from wiki_arena.openrouter import OpenRouterModelConfig
 from wiki_arena.storage import GameStorageService, StorageConfig
 

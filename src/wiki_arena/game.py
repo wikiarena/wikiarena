@@ -6,7 +6,7 @@ import uuid
 import asyncio
 import json
 
-from wiki_arena.models import (
+from wiki_arena.types import (
     GameConfig,
     GameState,
     GameStatus,

@@ -5,7 +5,7 @@ from typing import Any, Dict, List
 
 from openai import APITimeoutError, OpenAIError, RateLimitError
 
-from wiki_arena.models import (
+from wiki_arena.types import (
     AssistantMessage,
     AssistantToolCall,
     ContextMessage,

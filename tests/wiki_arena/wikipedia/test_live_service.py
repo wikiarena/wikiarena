@@ -1,6 +1,6 @@
 import pytest
 from wiki_arena.wikipedia.live_service import LiveWikiService
-from wiki_arena.models import Page
+from wiki_arena.types import Page
 
 # Mark all tests in this file as integration tests
 pytestmark = pytest.mark.integration

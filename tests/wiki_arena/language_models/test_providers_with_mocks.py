@@ -5,7 +5,7 @@ from datetime import datetime
 
 from wiki_arena.language_models import create_model
 from wiki_arena.language_models.language_model import ToolCall
-from wiki_arena.models import GameState, GameConfig, ModelConfig, Page, MoveMetrics
+from wiki_arena.types import GameState, GameConfig, ModelConfig, Page, MoveMetrics
 from mcp.types import Tool
 
 

@@ -8,8 +8,8 @@ import asyncio
 import logging
 from typing import Optional, List, Set
 
-from ..models import Task
-from .live_service import LiveWikiService
+from wiki_arena.types import Task
+from wiki_arena.wikipedia.live_service import LiveWikiService
 
 class WikipediaTaskSelector:
     """

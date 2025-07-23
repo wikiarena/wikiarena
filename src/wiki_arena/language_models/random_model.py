@@ -7,7 +7,7 @@ import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from wiki_arena.models import (
+from wiki_arena.types import (
     AssistantMessage,
     AssistantToolCall,
     ContextMessage,

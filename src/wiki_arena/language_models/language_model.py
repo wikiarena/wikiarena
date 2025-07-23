@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
 
-from wiki_arena.models import ContextMessage, GameState, AssistantMessage
+from wiki_arena.types import ContextMessage, GameState, AssistantMessage
 
 
 logger = logging.getLogger(__name__)

@@ -9,7 +9,7 @@ import logging
 from typing import Optional, Dict, Any
 from abc import ABC, abstractmethod
 
-from wiki_arena.models import Task
+from wiki_arena.types import Task
 from wiki_arena.wikipedia.task_selector import get_random_task_async
 from wiki_arena.wikipedia.live_service import LiveWikiService
 from wiki_arena.wikipedia.task_selector import WikipediaTaskSelector

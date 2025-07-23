@@ -5,7 +5,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 from typing import Dict, Any
 
-from wiki_arena.models import (
+from wiki_arena.types import (
     GameResult, GameConfig, ModelConfig, GameStatus, MoveMetrics, Task
 )
 from wiki_arena.storage import StorageConfig, GameRepository

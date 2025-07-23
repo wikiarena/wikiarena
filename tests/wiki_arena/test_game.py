@@ -9,7 +9,7 @@ from unittest.mock import patch
 from typing import List
 
 from wiki_arena.game import Game
-from wiki_arena.models import (
+from wiki_arena.types import (
     GameConfig, GameState, GameStatus, Page, Move, GameError, ErrorType, ModelConfig
 )
 from wiki_arena.wikipedia import LiveWikiService
@@ -17,7 +17,7 @@ from wiki_arena.language_models import LanguageModel
 from wiki_arena.language_models.random_model import RandomModel
 from wiki_arena.tools import get_tools
 from wiki_arena import EventBus
-from wiki_arena.models import AssistantMessage, AssistantToolCall
+from wiki_arena.types import AssistantMessage, AssistantToolCall
 
 
 @pytest.fixture
