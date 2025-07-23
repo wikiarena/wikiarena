@@ -1,4 +1,5 @@
 import { Task, GameSequence, ConnectionStatus, RenderingMode, Player } from './types.js';
+import { setIcon } from './icon-service.js';
 
 // =============================================================================
 // UI Controller - Handles all DOM updates and user interactions
@@ -229,20 +230,9 @@ export class RaceHUDController {
     // Create player indicator (provider icon at current progress)
     const playerIndicator = document.createElement('div');
     playerIndicator.className = 'horizontal-progress-indicator';
-    
-    // Create and set the provider icon
-    const iconImg = document.createElement('img');
-    iconImg.src = `https://unpkg.com/@lobehub/icons-static-png@latest/dark/${player.model.icon_slug}-color.png`;
-    iconImg.onerror = function() {
-        (this as HTMLImageElement).onerror = null;
-        (this as HTMLImageElement).src = `https://unpkg.com/@lobehub/icons-static-png@latest/dark/${player.model.icon_slug}.png`;
-    };
-    iconImg.alt = `${player.model.provider} icon`;
-    iconImg.style.width = '20px';
-    iconImg.style.height = '20px';
-    iconImg.style.display = 'block';
-    
-    playerIndicator.appendChild(iconImg);
+    const img = document.createElement('img');
+    setIcon(img, player.model);
+    playerIndicator.appendChild(img);
     
     playerIndicator.style.transition = 'left 0.8s ease';
     playerIndicator.style.left = `${indicatorPosition}%`;
@@ -403,12 +393,7 @@ export class RaceHUDController {
     const statusElement = dropdown.querySelector('.player-dropdown-status') as HTMLElement;
     
     if (logoElement) {
-        logoElement.src = `https://unpkg.com/@lobehub/icons-static-png@latest/dark/${iconSlug}-color.png`;
-        logoElement.onerror = function() {
-            (this as HTMLImageElement).onerror = null;
-            (this as HTMLImageElement).src = `https://unpkg.com/@lobehub/icons-static-png@latest/dark/${iconSlug}.png`;
-        };
-      logoElement.alt = `${displayName} logo`;
+        setIcon(logoElement, player.model);
     }
 
     if (nameElement) {
@@ -563,10 +548,36 @@ export class RaceHUDController {
   }
 
   private updateRaceResultContent(task: Task): void {
-    // Create players HTML using ordered results
-    const playersHTML = task.players.map(player => this.createRaceResultPlayerHTML(player)).join('');
+    const content = this.elements.get('race-result-content');
+    if (!content) return;
+
+    // Clear previous content
+    content.innerHTML = '';
     
-    // Create action buttons HTML
+    // Create container for player results
+    const playersContainer = document.createElement('div');
+    playersContainer.className = 'race-result-players';
+
+    // Create and append each player result
+    task.players.forEach(player => {
+        const playerHTML = this.createRaceResultPlayerHTML(player);
+        if (playerHTML) {
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = playerHTML;
+            const playerElement = tempDiv.firstElementChild as HTMLElement;
+
+            if (playerElement) {
+                const logo = playerElement.querySelector('.race-result-player-logo') as HTMLImageElement;
+                if (logo) {
+                    setIcon(logo, player.model);
+                }
+                playersContainer.appendChild(playerElement);
+            }
+        }
+    });
+    content.appendChild(playersContainer);
+
+    // Create and append action buttons
     const actionsHTML = `
       <div class="race-result-actions">
         <button class="race-result-action-button" id="race-result-configure-btn">
@@ -577,20 +588,10 @@ export class RaceHUDController {
         </button>
       </div>
     `;
-    
-    // Update the content element (parent of players) to include both players and actions
-    const content = this.elements.get('race-result-content');
-    if (content) {
-      content.innerHTML = `
-        <div class="race-result-players">
-          ${playersHTML}
-        </div>
-        ${actionsHTML}
-      `;
+    content.insertAdjacentHTML('beforeend', actionsHTML);
       
-      // Add event listeners for the buttons
-      this.setupRaceResultButtonListeners();
-    }
+    // Add event listeners for the buttons
+    this.setupRaceResultButtonListeners();
   }
 
   private setupRaceResultButtonListeners(): void {
@@ -619,12 +620,9 @@ export class RaceHUDController {
     if (!result) return '';
 
     return `
-      <div class="race-result-player">
+      <div class="race-result-player" data-player-game-id="${player.gameId}">
         <div class="race-result-player-header">
-          <img class="race-result-player-logo" 
-               src="https://unpkg.com/@lobehub/icons-static-png@latest/dark/${player.model.icon_slug}-color.png" 
-               onerror="this.onerror=null; this.src='https://unpkg.com/@lobehub/icons-static-png@latest/dark/${player.model.icon_slug}.png'"
-               alt="${player.model.name} logo">
+          <img class="race-result-player-logo" />
           <div class="race-result-player-info">
             <div class="race-result-player-name">${player.model.name}</div>
             <div class="race-result-player-model">${result.modelId}</div>

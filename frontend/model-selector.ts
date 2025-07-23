@@ -1,5 +1,6 @@
 import { cyclingService } from './cycling-service.js';
 import { modelService, ModelData } from './model-service.js';
+import { setIcon } from './icon-service.js';
 
 interface ModelSelectorOptions {
     placeholder?: string;
@@ -286,27 +287,36 @@ class ModelSelector {
             return;
         }
 
-        const html = this.filteredModels.map((model, index) => `
-            <div class="model-selector-item ${index === this.selectedIndex ? 'selected' : ''}" 
-                 data-index="${index}"
-                 role="option"
-                 aria-selected="${index === this.selectedIndex}">
-                <div class="model-selector-item-icon">
-                    <img src="https://unpkg.com/@lobehub/icons-static-png@latest/dark/${model.icon_slug}-color.png"
-                         onerror="this.onerror=null; this.src='https://unpkg.com/@lobehub/icons-static-png@latest/dark/${model.icon_slug}.png'"
-                         alt="${model.provider}" />
-                </div>
-                <div class="model-selector-item-content">
-                    <div class="model-selector-item-name">${this.escapeHtml(model.name)}</div>
-                    <div class="model-selector-item-details">
-                        <!-- <span class="model-selector-cost">${this.escapeHtml(model.id)}</span> -->
-                        <span class="model-selector-cost">$${model.input_cost_per_1m_tokens.toFixed(2)} / $${model.output_cost_per_1m_tokens.toFixed(2)} per 1M</span>
-                    </div>
-                </div>
-            </div>
-        `).join('');
+        // Clear previous content
+        this.dropdown.innerHTML = '';
 
-        this.dropdown.innerHTML = html;
+        this.filteredModels.forEach((model, index) => {
+            const item = document.createElement('div');
+            item.className = `model-selector-item ${index === this.selectedIndex ? 'selected' : ''}`;
+            item.dataset.index = index.toString();
+            item.setAttribute('role', 'option');
+            item.setAttribute('aria-selected', (index === this.selectedIndex).toString());
+
+            const iconContainer = document.createElement('div');
+            iconContainer.className = 'model-selector-item-icon';
+            const img = document.createElement('img');
+            setIcon(img, model);
+            iconContainer.appendChild(img);
+            
+            const content = document.createElement('div');
+            content.className = 'model-selector-item-content';
+            content.innerHTML = `
+                <div class="model-selector-item-name">${this.escapeHtml(model.name)}</div>
+                <div class="model-selector-item-details">
+                    <span class="model-selector-cost">$${model.input_cost_per_1m_tokens.toFixed(2)} / $${model.output_cost_per_1m_tokens.toFixed(2)} per 1M</span>
+                </div>
+            `;
+
+            item.appendChild(iconContainer);
+            item.appendChild(content);
+            this.dropdown.appendChild(item);
+        });
+
 
         // Add click and hover listeners to items
         this.dropdown.querySelectorAll('.model-selector-item').forEach((item, index) => {
