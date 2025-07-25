@@ -69,11 +69,11 @@ async def lifespan(app: FastAPI):
     event_bus.subscribe("game_ended", websocket_handler.handle_game_ended) # broadcast game ended to all clients
     event_bus.subscribe("game_ended", storage_handler.handle_game_ended) # store game in database# NOTE: task_solved is similar to initial_paths_ready
     event_bus.subscribe("game_ended", task_coordinator.handle_game_ended) # mark game as ended, broadcast task_ended if all games have ended 
+    event_bus.subscribe("game_ended", solver_handler.handle_game_ended) # clear solver handler cache for game
     
     event_bus.subscribe("task_ended", websocket_handler.handle_task_ended) # broadcast task ended to all clients
-    # TODO(hunter): make solver cache per target page (more than one task at a time)
-    # event_bus.subscribe("task_ended", solver_handler.handle_task_ended) # clear solver cache for this target page
-    
+    # event_bus.subscribe("task_all_moves_solved", task_coordinator.handle_task_all_moves_solved) # tell frontend to start websocket teardown
+
     logger.info("Event handlers registered")
     
     # Store in app state

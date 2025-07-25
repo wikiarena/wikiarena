@@ -22,7 +22,6 @@ class SolverHandler:
         # Cache for solver results per game and page
         # Structure: Dict[game_id, Dict[from_page_title, solver_result]]
         self.cache: Dict[str, Dict[str, Dict[str, Any]]] = {}
-        # TODO(hunter): clear the cache when the game is over, need an handle_game_ended()
     
     def get_cached_results(self, game_id: str) -> List[Dict[str, Any]]:
         """Get all cached solver results for a game in frontend-compatible format."""
@@ -195,3 +194,13 @@ class SolverHandler:
                     "to_page_title": to_page,
                 }
             ))
+
+
+    async def handle_game_ended(self, event: GameEvent):
+        """Clear per-game solver cache for this target page when a game ends."""
+        game_id = event.game_id
+        if game_id in self.cache:
+            del self.cache[game_id]
+            logger.debug(f"cleared solver handler cache for game {game_id}")
+        else:
+            logger.warning(f"no cache to clear for game {game_id}")
