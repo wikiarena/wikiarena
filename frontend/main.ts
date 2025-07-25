@@ -123,6 +123,9 @@ class WikiArenaApp {
     // Reset state for new race
     this.hasReceivedFirstData = false;
 
+    // Safety net: disconnect any existing WebSocket connections from a previous task
+    this.connectionManager.disconnectFromTask();
+
     // Show loading animation
     this.loadingAnimation.show();
     this.loadingAnimation.start();
