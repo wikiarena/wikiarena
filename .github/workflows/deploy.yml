@@ -1,0 +1,168 @@
+name: Deploy to Elastic Beanstalk
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'sandbox'
+        type: choice
+        options:
+        - sandbox
+        - production
+      version_label:
+        description: 'Version to deploy (leave empty for latest)'
+        required: false
+        type: string
+
+env:
+  AWS_REGION: us-west-2  # Update this to match your region
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Determine version to deploy
+      id: version
+      run: |
+        if [[ -n "${{ github.event.inputs.version_label }}" ]]; then
+          VERSION_LABEL="${{ github.event.inputs.version_label }}"
+          S3_KEY="${VERSION_LABEL}.zip"
+        else
+          # Find the latest version in S3
+          LATEST_KEY=$(aws s3api list-objects-v2 \
+            --bucket wikiarena-deployment-${{ github.event.inputs.environment }} \
+            --query 'sort_by(Contents, &LastModified)[-1].Key' \
+            --output text)
+          
+          if [[ "$LATEST_KEY" == "None" ]]; then
+            echo "❌ No deployment packages found in S3"
+            exit 1
+          fi
+          
+          VERSION_LABEL=$(basename "$LATEST_KEY" .zip)
+          S3_KEY="$LATEST_KEY"
+        fi
+        
+        echo "VERSION_LABEL=${VERSION_LABEL}" >> $GITHUB_OUTPUT
+        echo "S3_KEY=${S3_KEY}" >> $GITHUB_OUTPUT
+        echo "Deploying version: ${VERSION_LABEL}"
+
+    - name: Verify S3 package exists
+      run: |
+        BUCKET="wikiarena-deployment-${{ github.event.inputs.environment }}"
+        S3_KEY="${{ steps.version.outputs.S3_KEY }}"
+        
+        if aws s3api head-object --bucket "$BUCKET" --key "$S3_KEY" > /dev/null 2>&1; then
+          echo "✅ Found deployment package: s3://${BUCKET}/${S3_KEY}"
+        else
+          echo "❌ Deployment package not found: s3://${BUCKET}/${S3_KEY}"
+          echo "Available packages:"
+          aws s3 ls s3://${BUCKET}/ --recursive
+          exit 1
+        fi
+
+    - name: Create Elastic Beanstalk application version
+      run: |
+        APPLICATION_NAME="wikiarena"
+        VERSION_LABEL="${{ steps.version.outputs.VERSION_LABEL }}"
+        S3_BUCKET="wikiarena-deployment-${{ github.event.inputs.environment }}"
+        S3_KEY="${{ steps.version.outputs.S3_KEY }}"
+        
+        echo "Creating EB application version..."
+        aws elasticbeanstalk create-application-version \
+          --application-name "$APPLICATION_NAME" \
+          --version-label "$VERSION_LABEL" \
+          --source-bundle S3Bucket="$S3_BUCKET",S3Key="$S3_KEY" \
+          --description "Deployed from GitHub Actions - $(date)"
+
+    - name: Deploy to Elastic Beanstalk
+      run: |
+        APPLICATION_NAME="wikiarena"
+        ENVIRONMENT_NAME="wikiarena-${{ github.event.inputs.environment }}"
+        VERSION_LABEL="${{ steps.version.outputs.VERSION_LABEL }}"
+        
+        echo "Deploying to environment: $ENVIRONMENT_NAME"
+        aws elasticbeanstalk update-environment \
+          --application-name "$APPLICATION_NAME" \
+          --environment-name "$ENVIRONMENT_NAME" \
+          --version-label "$VERSION_LABEL" \
+          --option-settings \
+            Namespace=aws:elasticbeanstalk:application:environment,OptionName=ANTHROPIC_API_KEY,Value="${{ secrets.ANTHROPIC_API_KEY }}" \
+            Namespace=aws:elasticbeanstalk:application:environment,OptionName=OPENAI_API_KEY,Value="${{ secrets.OPENAI_API_KEY }}" \
+            Namespace=aws:elasticbeanstalk:application:environment,OptionName=OPENROUTER_API_KEY,Value="${{ secrets.OPENROUTER_API_KEY }}"
+
+    - name: Wait for deployment to complete
+      run: |
+        ENVIRONMENT_NAME="wikiarena-${{ github.event.inputs.environment }}"
+        
+        echo "Waiting for deployment to complete..."
+        aws elasticbeanstalk wait environment-updated \
+          --environment-names "$ENVIRONMENT_NAME"
+        
+        # Get the final status
+        STATUS=$(aws elasticbeanstalk describe-environments \
+          --environment-names "$ENVIRONMENT_NAME" \
+          --query 'Environments[0].Status' \
+          --output text)
+        
+        HEALTH=$(aws elasticbeanstalk describe-environments \
+          --environment-names "$ENVIRONMENT_NAME" \
+          --query 'Environments[0].Health' \
+          --output text)
+        
+        echo "Environment Status: $STATUS"
+        echo "Environment Health: $HEALTH"
+        
+        if [[ "$STATUS" != "Ready" ]] || [[ "$HEALTH" != "Ok" ]]; then
+          echo "❌ Deployment failed or environment is unhealthy"
+          exit 1
+        fi
+
+    - name: Get application URL
+      run: |
+        ENVIRONMENT_NAME="wikiarena-${{ github.event.inputs.environment }}"
+        
+        CNAME=$(aws elasticbeanstalk describe-environments \
+          --environment-names "$ENVIRONMENT_NAME" \
+          --query 'Environments[0].CNAME' \
+          --output text)
+        
+        echo "## Deployment Successful! 🎉" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "- **Environment**: ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Version**: ${{ steps.version.outputs.VERSION_LABEL }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **URL**: https://${CNAME}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "Your FastAPI application is now live! 🚀" >> $GITHUB_STEP_SUMMARY
+
+    - name: Health check
+      run: |
+        ENVIRONMENT_NAME="wikiarena-${{ github.event.inputs.environment }}"
+        
+        CNAME=$(aws elasticbeanstalk describe-environments \
+          --environment-names "$ENVIRONMENT_NAME" \
+          --query 'Environments[0].CNAME' \
+          --output text)
+        
+        echo "Performing health check..."
+        HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://${CNAME}/health" || echo "000")
+        
+        if [[ "$HTTP_STATUS" -eq 200 ]]; then
+          echo "✅ Health check passed (HTTP $HTTP_STATUS)"
+        else
+          echo "⚠️  Health check returned HTTP $HTTP_STATUS"
+          echo "This might be normal if /health endpoint doesn't exist yet"
+        fi

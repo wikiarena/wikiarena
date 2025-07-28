@@ -1,0 +1,109 @@
+name: Build and Package
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v4
+      with:
+        version: "latest"
+
+    - name: Set up Python
+      run: uv python install ${{ env.PYTHON_VERSION }}
+
+    - name: Install dependencies
+      run: |
+        # Install all dependencies including dev group for testing
+        uv sync --all-groups
+        
+    - name: Run tests
+      run: |
+        # Run your test suite
+        uv run pytest tests/ -v
+        
+    - name: Create deployment package
+      run: |
+        # Create deployment directory
+        mkdir -p deployment-package
+        
+        # Copy application entry point
+        cp application.py deployment-package/
+        
+        # Copy source code
+        cp -r src deployment-package/
+        
+        # Install production dependencies into the package
+        # This creates a clean install with only production deps
+        cd deployment-package
+        uv venv --python ${{ env.PYTHON_VERSION }}
+        
+        # Activate venv and install dependencies
+        source .venv/bin/activate
+        uv pip install -r ../pyproject.toml --no-deps
+        
+        # Copy the installed packages to deployment root
+        # This puts dependencies where EB can find them
+        cp -r .venv/lib/python*/site-packages/* .
+        
+        # Clean up venv directory (not needed in deployment)
+        rm -rf .venv
+        
+        # Create the deployment zip
+        zip -r ../deployment-package.zip . -x "*.pyc" "*/__pycache__/*"
+        
+    - name: Upload deployment package
+      uses: actions/upload-artifact@v4
+      with:
+        name: deployment-package
+        path: deployment-package.zip
+        retention-days: 30
+
+    # Only upload to S3 on main branch pushes (not PRs)
+    - name: Configure AWS credentials
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-west-2  # Update this to match your region
+
+    - name: Upload to S3
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: |
+        # Create unique version identifier
+        TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+        COMMIT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
+        VERSION_LABEL="wikiarena-${TIMESTAMP}-${COMMIT_SHA}"
+        
+        # Upload to deployment bucket
+        aws s3 cp deployment-package.zip s3://wikiarena-deployment-sandbox/${VERSION_LABEL}.zip
+        
+        # Save version info for potential deploy workflow
+        echo "VERSION_LABEL=${VERSION_LABEL}" >> $GITHUB_OUTPUT
+        echo "S3_KEY=${VERSION_LABEL}.zip" >> $GITHUB_OUTPUT
+        
+    - name: Build summary
+      run: |
+        echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Dependencies installed with uv" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Tests passed" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Deployment package created" >> $GITHUB_STEP_SUMMARY
+        if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          echo "- ✅ Uploaded to S3 deployment bucket" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "- ⏭️ Skipped S3 upload (not main branch)" >> $GITHUB_STEP_SUMMARY
+        fi
