@@ -2,6 +2,7 @@ import logging
 from typing import List, Dict, Optional
 from backend.models.api_models import ModelInfoResponse
 from wiki_arena.openrouter import list_openrouter_models, OpenRouterModelConfig, get_openrouter_model_config
+from backend.config import MODEL_ALLOW_SET
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +34,11 @@ class ModelService:
     """
     
     def __init__(self):
-        self._models: List[OpenRouterModelConfig] = list_openrouter_models()
-        logger.info(f"ModelService initialized with {len(self._models)} models.")
+        all_models: List[OpenRouterModelConfig] = list_openrouter_models()
+        self._models = [m for m in all_models if m.id in MODEL_ALLOW_SET]
+
+        logger.info(f"ModelService initialized with {len(self._models)} allowed models.")
+        logger.debug(f"Allowed models: {MODEL_ALLOW_SET}")
     
     def get_models(self) -> List[ModelInfoResponse]:
         """Returns a list of all models, enriched with frontend-specific info."""
