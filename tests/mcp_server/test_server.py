@@ -20,8 +20,8 @@ async def session():
     # We set PYTHONPATH to `src` so that the subprocess can find
     # the `wiki_arena` package correctly.
     server_params = StdioServerParameters(
-        command="python",
-        args=["-m", "mcp_server.server"],
+        command="uv",
+        args=["run", "mcp_server"],
         env={"PYTHONPATH": "src"},
     )
 
@@ -53,6 +53,7 @@ async def test_navigate_tool_success(session: ClientSession):
 
     # The result should be a CallToolResult with content
     assert result is not None
+    assert isinstance(result, types.ToolCallResult)
     assert hasattr(result, 'content')
     assert isinstance(result.content, list)
     assert len(result.content) == 2
@@ -90,6 +91,7 @@ async def test_navigate_tool_page_not_found(session: ClientSession):
 
     # The result should be a CallToolResult with isError=True
     assert result is not None
+    assert isinstance(result, types.ToolCallResult)
     assert hasattr(result, 'content')
     assert hasattr(result, 'isError')
     assert result.isError is True  # This indicates an actual error occurred

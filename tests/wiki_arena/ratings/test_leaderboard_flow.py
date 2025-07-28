@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Dict, Any
 
 from wiki_arena.types import (
-    GameResult, GameConfig, ModelConfig, GameStatus, MoveMetrics, Task
+    GameResult, GameConfig, ModelConfig, GameStatus, Task
 )
 from wiki_arena.storage import StorageConfig, GameRepository
 from wiki_arena.ratings import LeaderboardGenerator

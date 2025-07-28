@@ -4,8 +4,8 @@ from unittest.mock import patch, AsyncMock, MagicMock
 from datetime import datetime
 
 from wiki_arena.language_models import create_model
-from wiki_arena.language_models.language_model import ToolCall
-from wiki_arena.types import GameState, GameConfig, ModelConfig, Page, MoveMetrics
+from wiki_arena.types import AssistantToolCall, ModelCallMetrics
+from wiki_arena.types import GameState, GameConfig, Page
 from mcp.types import Tool
 
 
@@ -172,7 +172,7 @@ class TestProviderAPICallStructure:
             assert "tools" in call_kwargs
             
             # Verify result structure
-            assert isinstance(result, ToolCall)
+            assert isinstance(result, AssistantToolCall)
             assert result.metrics is not None
             assert result.metrics.input_tokens == 100
             assert result.metrics.output_tokens == 50
@@ -222,7 +222,7 @@ class TestProviderAPICallStructure:
             assert call_kwargs["tool_choice"] == "auto"
             
             # Verify result structure
-            assert isinstance(result, ToolCall)
+            assert isinstance(result, AssistantToolCall)
             assert result.metrics is not None
             assert result.metrics.input_tokens == 120
             assert result.metrics.output_tokens == 60
@@ -255,7 +255,7 @@ class TestCostCalculationIntegration:
     def test_move_metrics_creation(self):
         """Test that MoveMetrics objects are created correctly."""
         # Test typical metrics
-        metrics = MoveMetrics(
+        metrics = ModelCallMetrics(
             input_tokens=150,
             output_tokens=75,
             total_tokens=225,
@@ -298,8 +298,8 @@ class TestProviderErrorHandling:
             
             result = await model.generate_response(tools, game_state)
             
-            # Should return error ToolCall, not raise exception
-            assert isinstance(result, ToolCall)
+            # Should return error AssistantToolCall, not raise exception
+            assert isinstance(result, AssistantToolCall)
             assert result.tool_name is None
             assert result.tool_arguments is None
             assert result.metrics is not None
@@ -328,8 +328,8 @@ class TestProviderErrorHandling:
             
             result = await model.generate_response(tools, game_state)
             
-            # Should return error ToolCall, not raise exception
-            assert isinstance(result, ToolCall)
+            # Should return error AssistantToolCall, not raise exception
+            assert isinstance(result, AssistantToolCall)
             assert result.tool_name is None
             assert result.tool_arguments is None
             assert result.metrics is not None
@@ -383,7 +383,7 @@ class TestEndToEndWorkflow:
         response = await model.generate_response(tools, game_state)
         
         # 5. Verify complete response
-        assert isinstance(response, ToolCall)
+        assert isinstance(response, AssistantToolCall)
         assert response.tool_name == "navigate"
         assert response.tool_arguments["page_title"] in current_page.links
         assert response.metrics is not None

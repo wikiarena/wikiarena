@@ -263,7 +263,7 @@ class TestWebSocketHandler:
         end_event = GameEvent(
             type="game_ended",
             game_id=game_id,
-            data={"game_state": ended_state}
+            data={"game_state": ended_state, "game_result": "some_result"}
         )
         
         # Process through real handler
@@ -278,6 +278,7 @@ class TestWebSocketHandler:
         assert data["game_id"] == game_id
         assert data["final_status"] == "won"
         assert data["total_steps"] == 3
+        assert data["game_result"] == "some_result"
     
     @pytest.mark.asyncio
     async def test_broadcast_isolation_between_games(
@@ -406,8 +407,9 @@ class TestWebSocketHandler:
         # Should be valid JSON
         data = json.loads(messages[0])
         
-        # Should contain move timestamp (even if None)
+        # Should contain move timestamp and not be None
         assert "timestamp" in data["move"]
+        assert data["move"]["timestamp"] is not None
         assert data["game_id"] == game_id
         
         # Should preserve all original data structure
