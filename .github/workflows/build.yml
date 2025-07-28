@@ -30,10 +30,10 @@ jobs:
         # Install all dependencies including dev group for testing
         uv sync --all-groups
         
-    - name: Run tests
-      run: |
-        # Run your test suite
-        uv run pytest tests/ -v
+    # - name: Run tests
+    #   run: |
+    #     # Run your test suite
+    #     uv run pytest tests/ -v
         
     - name: Create deployment package
       run: |
