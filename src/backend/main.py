@@ -14,6 +14,7 @@ from backend.coordinators.game_coordinator import GameCoordinator
 from backend.coordinators.task_coordinator import TaskCoordinator
 from wiki_arena import EventBus
 from wiki_arena.wikipedia import LiveWikiService
+from backend import __version__
 
 # Configure unified logging to match wiki_arena style
 from wiki_arena.logging_config import setup_logging
@@ -97,7 +98,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Wiki Arena API",
     description="API for running Wikipedia navigation games with real-time updates",
-    version="0.0.1",
+    version=__version__,
     debug=config.debug,
     lifespan=lifespan
 )
@@ -119,7 +120,7 @@ async def root():
     """Root endpoint with API information."""
     return {
         "message": "Wiki Arena API",
-        "version": "0.0.1",
+        "version": __version__,
         "features": [
             "REST API for game management",
             "Task-centric multi-game coordination",
@@ -139,7 +140,7 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "wiki-arena-api",
-        "version": "0.0.1",
+        "version": __version__,
         "features": {
             "websockets": True,
             "background_execution": True,

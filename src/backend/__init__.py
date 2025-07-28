@@ -1,3 +1,4 @@
 """Wiki Arena Backend API."""
 
-__version__ = "1.0.0"
+import importlib.metadata
+__version__ = importlib.metadata.version("wiki-arena")

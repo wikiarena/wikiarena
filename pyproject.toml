@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wiki-arena"
-version = "0.1.0"
+version = "0.0.1"
 description = "Wiki Arena - a competitive evaluation for language models"
 readme = "README.md"
 requires-python = ">=3.12"
