@@ -1,5 +1,6 @@
 import { WebSocketClient } from './websocket.js';
 import { GameEvent, ConnectionStatus, WebSocketConfig } from './types.js';
+import { config } from './config.js';
 
 // =============================================================================
 // Task Connection Manager - WebSocket Communication Abstraction
@@ -67,7 +68,7 @@ export class TaskConnectionManager {
   }
 
   private async connectToGame(gameId: string): Promise<void> {
-    const gameWebSocketUrl = `ws://localhost:8000/api/games/${gameId}/ws`;
+    const gameWebSocketUrl = `${config.wsBaseUrl}/api/games/${gameId}/ws`;
     
     console.log(`🔌 Connecting to game ${gameId}: ${gameWebSocketUrl}`);
     

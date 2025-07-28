@@ -6,6 +6,7 @@ import { PageGraphRenderer } from './page-graph-renderer.js';
 import { LoadingAnimation } from './loading-animation.js';
 import { type ModelInfo } from './model-selector.js';
 import { WikipediaStatsService } from './wikipedia-stats.js';
+import { config } from './config.js';
 
 // =============================================================================
 // Main Application Class - Orchestrates all components
@@ -243,7 +244,7 @@ class WikiArenaApp {
   // =============================================================================
 
   private async createCustomTask(startPage: string | null, targetPage: string | null, player1Model: ModelInfo | null, player2Model: ModelInfo | null): Promise<Response> {
-    const apiUrl = 'http://localhost:8000/api/tasks';
+    const apiUrl = `${config.apiBaseUrl}/api/tasks`;
     
     const model_ids = [
         player1Model ? player1Model.id : 'wikiarena/random',

@@ -1,3 +1,5 @@
+import { config } from './config.js';
+
 export interface ModelInfo {
     id: string;
     name: string;
@@ -26,7 +28,7 @@ class ModelService {
     private async loadModels(): Promise<void> {
         try {
             console.log('Fetching models from backend API...');
-            const response = await fetch('http://localhost:8000/api/models');
+            const response = await fetch(`${config.apiBaseUrl}/api/models`);
             if (!response.ok) {
                 throw new Error(`Failed to fetch models: ${response.statusText}`);
             }
