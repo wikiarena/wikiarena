@@ -64,9 +64,8 @@ class WikiTaskSolver:
         # Ensures only one backward expansion per target at a time
         self._target_locks: Dict[int, asyncio.Lock] = {}
         
-        # Cache cleanup task
+        # Cache cleanup task (started lazily)
         self._cleanup_task: Optional[asyncio.Task] = None
-        self._start_cleanup_task()
 
         """
         Instead of counting the incoming and outgoing links before choosing which direction to expand
@@ -83,7 +82,7 @@ class WikiTaskSolver:
         """
 
     def _start_cleanup_task(self):
-        """Start the background cache cleanup task."""
+        """Start the background cache cleanup task if there's an event loop."""
         if self._cleanup_task is None:
             self._cleanup_task = asyncio.create_task(self._periodic_cleanup())
 
@@ -740,8 +739,4 @@ class WikiTaskSolver:
             try:
                 await self._cleanup_task
             except asyncio.CancelledError:
-                pass
-
-
-# Global instance for easy access
-wiki_task_solver = WikiTaskSolver() 
+                pass 

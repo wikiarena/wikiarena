@@ -39,7 +39,8 @@ async def lifespan(app: FastAPI):
     from wiki_arena.solver import static_solver_db
     
     solver = WikiTaskSolver(db=static_solver_db)
-    logger.info("WikiTaskSolver created")
+    solver._start_cleanup_task() # Start cleanup task with event loop available
+    logger.info("WikiTaskSolver created with cleanup task started")
     
     # Create coordinators
     game_coordinator = GameCoordinator(event_bus, wiki_service)
@@ -92,6 +93,7 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down Wiki Arena API...")
     await game_coordinator.shutdown()
     await task_coordinator.shutdown()
+    await solver.shutdown()  # Ensure cleanup task is cancelled
     logger.info("Wiki Arena API shutdown complete")
 
 # Create FastAPI app
