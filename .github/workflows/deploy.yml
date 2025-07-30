@@ -81,12 +81,21 @@ jobs:
         S3_BUCKET="wikiarena-deployment-${{ github.event.inputs.environment }}"
         S3_KEY="${{ steps.version.outputs.S3_KEY }}"
         
-        echo "Creating EB application version..."
-        aws elasticbeanstalk create-application-version \
+        # Check if version already exists
+        if aws elasticbeanstalk describe-application-versions \
           --application-name "$APPLICATION_NAME" \
-          --version-label "$VERSION_LABEL" \
-          --source-bundle S3Bucket="$S3_BUCKET",S3Key="$S3_KEY" \
-          --description "Deployed from GitHub Actions - $(date)"
+          --version-labels "$VERSION_LABEL" \
+          --query 'ApplicationVersions[0].VersionLabel' \
+          --output text | grep -q "$VERSION_LABEL"; then
+          echo "✅ Application version $VERSION_LABEL already exists, skipping creation"
+        else
+          echo "Creating EB application version $VERSION_LABEL..."
+          aws elasticbeanstalk create-application-version \
+            --application-name "$APPLICATION_NAME" \
+            --version-label "$VERSION_LABEL" \
+            --source-bundle S3Bucket="$S3_BUCKET",S3Key="$S3_KEY" \
+            --description "Deployed from GitHub Actions - $(date)"
+        fi
 
     - name: Deploy to Elastic Beanstalk
       run: |
