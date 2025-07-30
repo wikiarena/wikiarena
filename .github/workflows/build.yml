@@ -48,6 +48,7 @@ jobs:
         cat > deployment-package/requirements.txt << 'EOF'
         fastapi>=0.100.0
         gunicorn>=20.0.0
+        uvicorn>=0.20.0
         EOF
         
         # Clean up any Python cache files
