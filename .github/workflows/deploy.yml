@@ -135,7 +135,7 @@ jobs:
         echo "Environment Status: $STATUS"
         echo "Environment Health: $HEALTH"
         
-        if [[ "$STATUS" != "Ready" ]] || [[ "$HEALTH" != "Ok" ]]; then
+        if [[ "$STATUS" != "Ready" ]] || [[ "$HEALTH" != "Green" ]]; then
           echo "❌ Deployment failed or environment is unhealthy"
           exit 1
         fi

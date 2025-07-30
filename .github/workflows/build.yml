@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 env:
-  PYTHON_VERSION: "3.13"
+  PYTHON_VERSION: "3.11"
 
 jobs:
   build:
@@ -40,16 +40,13 @@ jobs:
         # Create deployment directory
         mkdir -p deployment-package
         
-        # Copy minimal application entry point and Procfile
-        cp application.py deployment-package/
+        # Copy the full source tree (excluding unnecessary files)
+        cp -r src/ deployment-package/
+        cp pyproject.toml deployment-package/
         cp Procfile deployment-package/
         
-        # Use minimal requirements.txt for deployment testing
-        cat > deployment-package/requirements.txt << 'EOF'
-        fastapi>=0.100.0
-        gunicorn>=20.0.0
-        uvicorn>=0.20.0
-        EOF
+        # Generate requirements.txt from pyproject.toml dependencies
+        uv pip compile pyproject.toml --output-file deployment-package/requirements.txt
         
         # Clean up any Python cache files
         find deployment-package -type d -name "__pycache__" -exec rm -rf {} + || true
