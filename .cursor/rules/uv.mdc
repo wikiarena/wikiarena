@@ -1,0 +1,5 @@
+---
+alwaysApply: true
+---
+Always use `uv` for python package management and run application and tests with `uv run`
+always use pydantic v2
