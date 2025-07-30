@@ -32,8 +32,8 @@ jobs:
         
     # - name: Run tests
     #   run: |
-    #     # Run your test suite
-    #     uv run pytest tests/ -v
+    #     # Run tests excluding integration tests that require database
+    #     uv run pytest tests/ -v -m "not integration"
         
     - name: Create deployment package
       run: |
@@ -46,21 +46,23 @@ jobs:
         # Copy source code
         cp -r src deployment-package/
         
-        # Install production dependencies into the package
-        # This creates a clean install with only production deps
+        # Copy pyproject.toml and uv.lock for proper dependency resolution
+        cp pyproject.toml deployment-package/
+        cp uv.lock deployment-package/
+        
         cd deployment-package
-        uv venv --python ${{ env.PYTHON_VERSION }}
         
-        # Activate venv and install dependencies
-        source .venv/bin/activate
-        uv pip install -r ../pyproject.toml --no-deps
+        # Use uv sync to install production dependencies
+        # This creates .venv with all correct dependencies
+        uv sync --no-dev
         
-        # Copy the installed packages to deployment root
-        # This puts dependencies where EB can find them
+        # Copy installed packages to deployment root where EB expects them
         cp -r .venv/lib/python*/site-packages/* .
         
-        # Clean up venv directory (not needed in deployment)
-        rm -rf .venv
+        # Clean up files not needed in deployment
+        rm -rf .venv pyproject.toml uv.lock
+        find . -type d -name "__pycache__" -exec rm -rf {} + || true
+        find . -name "*.pyc" -delete || true
         
         # Create the deployment zip
         zip -r ../deployment-package.zip . -x "*.pyc" "*/__pycache__/*"
