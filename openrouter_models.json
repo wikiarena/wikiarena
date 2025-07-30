@@ -25,6 +25,7 @@
                 "completion": "0",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -77,6 +78,7 @@
                 "completion": "0",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -128,6 +130,7 @@
                 "completion": "0",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -177,6 +180,7 @@
                 "completion": "0",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -229,6 +233,7 @@
                 "completion": "0",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -282,6 +287,7 @@
                 "completion": "0",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -337,6 +343,7 @@
                 "completion": "0",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -388,6 +395,7 @@
                 "completion": "0",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -434,6 +442,7 @@
                 "completion": "0",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -476,6 +485,7 @@
                 "completion": "0",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -527,6 +537,7 @@
                 "completion": "0",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -578,6 +589,7 @@
                 "completion": "0",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -627,6 +639,7 @@
                 "completion": "0.00000002",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -642,18 +655,18 @@
                 "top_p",
                 "tools",
                 "tool_choice",
+                "structured_outputs",
+                "response_format",
                 "stop",
                 "frequency_penalty",
                 "presence_penalty",
-                "seed",
-                "logit_bias",
-                "logprobs",
-                "top_logprobs",
-                "response_format",
-                "min_p",
                 "repetition_penalty",
                 "top_k",
-                "structured_outputs"
+                "seed",
+                "min_p",
+                "logit_bias",
+                "logprobs",
+                "top_logprobs"
             ]
         },
         {
@@ -680,6 +693,7 @@
                 "completion": "0.000000025",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -732,6 +746,7 @@
                 "completion": "0.00000005",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -786,6 +801,7 @@
                 "completion": "0.000000027",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -839,6 +855,7 @@
                 "completion": "0.000000054",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -890,6 +907,7 @@
                 "completion": "0.000000054",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -941,6 +959,7 @@
                 "completion": "0.00000003",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -994,6 +1013,7 @@
                 "completion": "0.00000006",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -1015,11 +1035,11 @@
                 "stop",
                 "min_p",
                 "logit_bias",
-                "tools",
-                "tool_choice",
                 "response_format",
                 "top_logprobs",
-                "logprobs"
+                "logprobs",
+                "tools",
+                "tool_choice"
             ]
         },
         {
@@ -1046,6 +1066,7 @@
                 "completion": "0.00000014",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -1089,6 +1110,7 @@
                 "completion": "0.00000015",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.00000001",
@@ -1138,6 +1160,7 @@
                 "completion": "0.00000012",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -1151,17 +1174,17 @@
                 "max_tokens",
                 "temperature",
                 "top_p",
+                "structured_outputs",
+                "response_format",
+                "seed",
                 "tools",
                 "tool_choice",
                 "stop",
                 "frequency_penalty",
                 "presence_penalty",
                 "repetition_penalty",
-                "response_format",
                 "top_k",
-                "seed",
                 "min_p",
-                "structured_outputs",
                 "logit_bias",
                 "logprobs",
                 "top_logprobs"
@@ -1191,6 +1214,7 @@
                 "completion": "0.00000004",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -1239,6 +1263,7 @@
                 "completion": "0.00000005",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -1291,6 +1316,7 @@
                 "completion": "0.00000009",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -1344,6 +1370,7 @@
                 "completion": "0.0000002",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.00000002"
@@ -1363,49 +1390,6 @@
                 "seed",
                 "response_format",
                 "presence_penalty"
-            ]
-        },
-        {
-            "id": "amazon/nova-lite-v1",
-            "canonical_slug": "amazon/nova-lite-v1",
-            "hugging_face_id": "",
-            "name": "Amazon: Nova Lite 1.0",
-            "created": 1733437363,
-            "description": "Amazon Nova Lite 1.0 is a very low-cost multimodal model from Amazon that focused on fast processing of image, video, and text inputs to generate text output. Amazon Nova Lite can handle real-time customer interactions, document analysis, and visual question-answering tasks with high accuracy.\n\nWith an input context of 300K tokens, it can analyze multiple images or up to 30 minutes of video in a single input.",
-            "context_length": 300000,
-            "architecture": {
-                "modality": "text+image->text",
-                "input_modalities": [
-                    "text",
-                    "image"
-                ],
-                "output_modalities": [
-                    "text"
-                ],
-                "tokenizer": "Nova",
-                "instruct_type": null
-            },
-            "pricing": {
-                "prompt": "0.00000006",
-                "completion": "0.00000024",
-                "request": "0",
-                "image": "0.00009",
-                "web_search": "0",
-                "internal_reasoning": "0"
-            },
-            "top_provider": {
-                "context_length": 300000,
-                "max_completion_tokens": 5120,
-                "is_moderated": true
-            },
-            "per_request_limits": null,
-            "supported_parameters": [
-                "max_tokens",
-                "temperature",
-                "top_p",
-                "tools",
-                "top_k",
-                "stop"
             ]
         },
         {
@@ -1432,6 +1416,7 @@
                 "completion": "0.00000024",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -1464,6 +1449,50 @@
             ]
         },
         {
+            "id": "amazon/nova-lite-v1",
+            "canonical_slug": "amazon/nova-lite-v1",
+            "hugging_face_id": "",
+            "name": "Amazon: Nova Lite 1.0",
+            "created": 1733437363,
+            "description": "Amazon Nova Lite 1.0 is a very low-cost multimodal model from Amazon that focused on fast processing of image, video, and text inputs to generate text output. Amazon Nova Lite can handle real-time customer interactions, document analysis, and visual question-answering tasks with high accuracy.\n\nWith an input context of 300K tokens, it can analyze multiple images or up to 30 minutes of video in a single input.",
+            "context_length": 300000,
+            "architecture": {
+                "modality": "text+image->text",
+                "input_modalities": [
+                    "text",
+                    "image"
+                ],
+                "output_modalities": [
+                    "text"
+                ],
+                "tokenizer": "Nova",
+                "instruct_type": null
+            },
+            "pricing": {
+                "prompt": "0.00000006",
+                "completion": "0.00000024",
+                "request": "0",
+                "image": "0.00009",
+                "audio": "0",
+                "web_search": "0",
+                "internal_reasoning": "0"
+            },
+            "top_provider": {
+                "context_length": 300000,
+                "max_completion_tokens": 5120,
+                "is_moderated": true
+            },
+            "per_request_limits": null,
+            "supported_parameters": [
+                "max_tokens",
+                "temperature",
+                "top_p",
+                "tools",
+                "top_k",
+                "stop"
+            ]
+        },
+        {
             "id": "google/gemini-flash-1.5",
             "canonical_slug": "google/gemini-flash-1.5",
             "hugging_face_id": null,
@@ -1488,6 +1517,7 @@
                 "completion": "0.0000003",
                 "request": "0",
                 "image": "0.00004",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.00000001875",
@@ -1539,6 +1569,7 @@
                 "completion": "0.0000003",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -1583,6 +1614,7 @@
                 "completion": "0.00000024",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -1633,6 +1665,7 @@
                 "completion": "0.00000029",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -1650,15 +1683,15 @@
                 "tool_choice",
                 "reasoning",
                 "include_reasoning",
+                "structured_outputs",
                 "response_format",
                 "stop",
                 "frequency_penalty",
                 "presence_penalty",
-                "repetition_penalty",
-                "top_k",
                 "seed",
+                "top_k",
                 "min_p",
-                "structured_outputs",
+                "repetition_penalty",
                 "logit_bias",
                 "logprobs",
                 "top_logprobs"
@@ -1689,6 +1722,7 @@
                 "completion": "0.0000003",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -1742,6 +1776,7 @@
                 "completion": "0.0000001",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -1783,6 +1818,7 @@
                 "completion": "0.0000001",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -1830,6 +1866,7 @@
                 "completion": "0.0000001",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -1871,6 +1908,7 @@
                 "completion": "0.0000001",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -1912,6 +1950,7 @@
                 "completion": "0.0000001",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -1959,6 +1998,7 @@
                 "completion": "0.00000028",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -1972,16 +2012,16 @@
                 "max_tokens",
                 "temperature",
                 "top_p",
-                "tools",
-                "tool_choice",
-                "response_format",
                 "stop",
                 "frequency_penalty",
                 "presence_penalty",
-                "repetition_penalty",
-                "top_k",
                 "seed",
+                "top_k",
                 "min_p",
+                "repetition_penalty",
+                "tools",
+                "tool_choice",
+                "response_format",
                 "logit_bias",
                 "logprobs",
                 "top_logprobs",
@@ -2012,6 +2052,7 @@
                 "completion": "0.0000003",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -2063,6 +2104,7 @@
                 "completion": "0.0000003",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -2115,6 +2157,7 @@
                 "completion": "0.0000003",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -2172,6 +2215,7 @@
                 "completion": "0.0000004",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.000000025",
@@ -2222,6 +2266,7 @@
                 "completion": "0.0000004",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.000000025",
@@ -2272,6 +2317,7 @@
                 "completion": "0.0000004",
                 "request": "0",
                 "image": "0.0000258",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.000000025",
@@ -2320,6 +2366,7 @@
                 "completion": "0.0000004",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.000000025"
@@ -2371,6 +2418,7 @@
                 "completion": "0.0000001179",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -2425,6 +2473,7 @@
                 "completion": "0.0000003",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -2477,6 +2526,7 @@
                 "completion": "0.00000039",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -2530,6 +2580,7 @@
                 "completion": "0.00000059",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -2583,6 +2634,7 @@
                 "completion": "0.0000006",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -2639,6 +2691,7 @@
                 "completion": "0.00000015",
                 "request": "0",
                 "image": "0.0002168",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -2694,6 +2747,7 @@
                 "completion": "0.0000006",
                 "request": "0",
                 "image": "0.007225",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.000000075"
@@ -2748,6 +2802,7 @@
                 "completion": "0.0000006",
                 "request": "0",
                 "image": "0.000217",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.000000075"
@@ -2800,6 +2855,7 @@
                 "completion": "0.0000006",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -2848,6 +2904,7 @@
                 "completion": "0.00000085",
                 "request": "0",
                 "image": "0.00070182",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -2901,6 +2958,7 @@
                 "completion": "0.0000002",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -2951,6 +3009,7 @@
                 "completion": "0.0000004",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -2993,6 +3052,7 @@
                 "completion": "0.0000006",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -3043,6 +3103,7 @@
                 "completion": "0.0000006",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -3064,6 +3125,59 @@
                 "response_format",
                 "structured_outputs",
                 "seed"
+            ]
+        },
+        {
+            "id": "z-ai/glm-4.5-air",
+            "canonical_slug": "z-ai/glm-4.5-air",
+            "hugging_face_id": "zai-org/GLM-4.5-Air",
+            "name": "Z.AI: GLM 4.5 Air",
+            "created": 1753471258,
+            "description": "GLM-4.5-Air is the lightweight variant of our latest flagship model family, also purpose-built for agent-centric applications. Like GLM-4.5, it adopts the Mixture-of-Experts (MoE) architecture but with a more compact parameter size. GLM-4.5-Air also supports hybrid inference modes, offering a \"thinking mode\" for advanced reasoning and tool use, and a \"non-thinking mode\" for real-time interaction. Users can control the reasoning behaviour with the `reasoning` `enabled` boolean. [Learn more in our docs](https://openrouter.ai/docs/use-cases/reasoning-tokens#enable-reasoning-with-default-config)",
+            "context_length": 128000,
+            "architecture": {
+                "modality": "text->text",
+                "input_modalities": [
+                    "text"
+                ],
+                "output_modalities": [
+                    "text"
+                ],
+                "tokenizer": "Other",
+                "instruct_type": null
+            },
+            "pricing": {
+                "prompt": "0.0000002",
+                "completion": "0.0000011",
+                "request": "0",
+                "image": "0",
+                "audio": "0",
+                "web_search": "0",
+                "internal_reasoning": "0",
+                "input_cache_read": "0.00000003"
+            },
+            "top_provider": {
+                "context_length": 128000,
+                "max_completion_tokens": 96000,
+                "is_moderated": false
+            },
+            "per_request_limits": null,
+            "supported_parameters": [
+                "max_tokens",
+                "temperature",
+                "top_p",
+                "tools",
+                "tool_choice",
+                "reasoning",
+                "include_reasoning",
+                "stop",
+                "frequency_penalty",
+                "presence_penalty",
+                "repetition_penalty",
+                "response_format",
+                "top_k",
+                "seed",
+                "min_p"
             ]
         },
         {
@@ -3090,6 +3204,7 @@
                 "completion": "0.00000045",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -3142,6 +3257,7 @@
                 "completion": "0.00000025",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -3190,6 +3306,7 @@
                 "completion": "0.00000125",
                 "request": "0",
                 "image": "0.0004",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.00000003",
@@ -3236,6 +3353,7 @@
                 "completion": "0.00000125",
                 "request": "0",
                 "image": "0.0004",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.00000003",
@@ -3281,6 +3399,7 @@
                 "completion": "0.000000272",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -3334,6 +3453,7 @@
                 "completion": "0.0000004",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -3347,19 +3467,19 @@
                 "max_tokens",
                 "temperature",
                 "top_p",
+                "tools",
+                "tool_choice",
                 "stop",
                 "frequency_penalty",
                 "presence_penalty",
-                "top_k",
                 "repetition_penalty",
-                "logit_bias",
-                "min_p",
                 "response_format",
-                "top_logprobs",
-                "logprobs",
+                "top_k",
                 "seed",
-                "tools",
-                "tool_choice"
+                "min_p",
+                "logit_bias",
+                "top_logprobs",
+                "logprobs"
             ]
         },
         {
@@ -3386,6 +3506,7 @@
                 "completion": "0.0000005",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.000000075"
@@ -3436,6 +3557,7 @@
                 "completion": "0.0000005",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.000000075"
@@ -3485,6 +3607,7 @@
                 "completion": "0.0000009",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -3532,6 +3655,7 @@
                 "completion": "0.0000012",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -3587,6 +3711,7 @@
                 "completion": "0.0000025",
                 "request": "0",
                 "image": "0.001238",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.000000075",
@@ -3609,59 +3734,6 @@
                 "structured_outputs",
                 "response_format",
                 "stop"
-            ]
-        },
-        {
-            "id": "moonshotai/kimi-k2",
-            "canonical_slug": "moonshotai/kimi-k2",
-            "hugging_face_id": "moonshotai/Kimi-K2-Instruct",
-            "name": "MoonshotAI: Kimi K2",
-            "created": 1752263252,
-            "description": "Kimi K2 Instruct is a large-scale Mixture-of-Experts (MoE) language model developed by Moonshot AI, featuring 1 trillion total parameters with 32 billion active per forward pass. It is optimized for agentic capabilities, including advanced tool use, reasoning, and code synthesis. Kimi K2 excels across a broad range of benchmarks, particularly in coding (LiveCodeBench, SWE-bench), reasoning (ZebraLogic, GPQA), and tool-use (Tau2, AceBench) tasks. It supports long-context inference up to 128K tokens and is designed with a novel training stack that includes the MuonClip optimizer for stable large-scale MoE training.",
-            "context_length": 131072,
-            "architecture": {
-                "modality": "text->text",
-                "input_modalities": [
-                    "text"
-                ],
-                "output_modalities": [
-                    "text"
-                ],
-                "tokenizer": "Other",
-                "instruct_type": null
-            },
-            "pricing": {
-                "prompt": "0.0000003024",
-                "completion": "0.0000003024",
-                "request": "0",
-                "image": "0",
-                "web_search": "0",
-                "internal_reasoning": "0"
-            },
-            "top_provider": {
-                "context_length": 32768,
-                "max_completion_tokens": null,
-                "is_moderated": false
-            },
-            "per_request_limits": null,
-            "supported_parameters": [
-                "max_tokens",
-                "temperature",
-                "top_p",
-                "tools",
-                "tool_choice",
-                "structured_outputs",
-                "response_format",
-                "stop",
-                "frequency_penalty",
-                "presence_penalty",
-                "top_k",
-                "repetition_penalty",
-                "logit_bias",
-                "min_p",
-                "logprobs",
-                "top_logprobs",
-                "seed"
             ]
         },
         {
@@ -3688,6 +3760,7 @@
                 "completion": "0.0000004",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -3741,6 +3814,7 @@
                 "completion": "0.0000004",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -3793,6 +3867,7 @@
                 "completion": "0.0000012",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.00000016"
@@ -3838,6 +3913,7 @@
                 "completion": "0.0000013",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -3893,6 +3969,7 @@
                 "completion": "0.0000016",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.0000001"
@@ -3945,6 +4022,7 @@
                 "completion": "0.000002",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -3993,6 +4071,7 @@
                 "completion": "0.000002",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -4040,6 +4119,7 @@
                 "completion": "0.00000215",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -4095,6 +4175,7 @@
                 "completion": "0.0000015",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -4144,6 +4225,7 @@
                 "completion": "0.0000015",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -4191,6 +4273,7 @@
                 "completion": "0.0000015",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -4238,6 +4321,7 @@
                 "completion": "0.0000015",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -4287,6 +4371,7 @@
                 "completion": "0.0000022",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -4339,6 +4424,7 @@
                 "completion": "0.0000022",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -4368,6 +4454,116 @@
             ]
         },
         {
+            "id": "moonshotai/kimi-k2",
+            "canonical_slug": "moonshotai/kimi-k2",
+            "hugging_face_id": "moonshotai/Kimi-K2-Instruct",
+            "name": "MoonshotAI: Kimi K2",
+            "created": 1752263252,
+            "description": "Kimi K2 Instruct is a large-scale Mixture-of-Experts (MoE) language model developed by Moonshot AI, featuring 1 trillion total parameters with 32 billion active per forward pass. It is optimized for agentic capabilities, including advanced tool use, reasoning, and code synthesis. Kimi K2 excels across a broad range of benchmarks, particularly in coding (LiveCodeBench, SWE-bench), reasoning (ZebraLogic, GPQA), and tool-use (Tau2, AceBench) tasks. It supports long-context inference up to 128K tokens and is designed with a novel training stack that includes the MuonClip optimizer for stable large-scale MoE training.",
+            "context_length": 131072,
+            "architecture": {
+                "modality": "text->text",
+                "input_modalities": [
+                    "text"
+                ],
+                "output_modalities": [
+                    "text"
+                ],
+                "tokenizer": "Other",
+                "instruct_type": null
+            },
+            "pricing": {
+                "prompt": "0.00000055",
+                "completion": "0.0000022",
+                "request": "0",
+                "image": "0",
+                "audio": "0",
+                "web_search": "0",
+                "internal_reasoning": "0"
+            },
+            "top_provider": {
+                "context_length": 131000,
+                "max_completion_tokens": null,
+                "is_moderated": false
+            },
+            "per_request_limits": null,
+            "supported_parameters": [
+                "max_tokens",
+                "temperature",
+                "top_p",
+                "tools",
+                "tool_choice",
+                "stop",
+                "frequency_penalty",
+                "presence_penalty",
+                "repetition_penalty",
+                "response_format",
+                "top_k",
+                "seed",
+                "min_p",
+                "structured_outputs",
+                "logit_bias",
+                "logprobs",
+                "top_logprobs"
+            ]
+        },
+        {
+            "id": "z-ai/glm-4.5",
+            "canonical_slug": "z-ai/glm-4.5",
+            "hugging_face_id": "zai-org/GLM-4.5",
+            "name": "Z.AI: GLM 4.5",
+            "created": 1753471347,
+            "description": "GLM-4.5 is our latest flagship foundation model, purpose-built for agent-based applications. It leverages a Mixture-of-Experts (MoE) architecture and supports a context length of up to 128k tokens. GLM-4.5 delivers significantly enhanced capabilities in reasoning, code generation, and agent alignment. It supports a hybrid inference mode with two options, a \"thinking mode\" designed for complex reasoning and tool use, and a \"non-thinking mode\" optimized for instant responses. Users can control the reasoning behaviour with the `reasoning` `enabled` boolean. [Learn more in our docs](https://openrouter.ai/docs/use-cases/reasoning-tokens#enable-reasoning-with-default-config)",
+            "context_length": 128000,
+            "architecture": {
+                "modality": "text->text",
+                "input_modalities": [
+                    "text"
+                ],
+                "output_modalities": [
+                    "text"
+                ],
+                "tokenizer": "Other",
+                "instruct_type": null
+            },
+            "pricing": {
+                "prompt": "0.0000006",
+                "completion": "0.0000022",
+                "request": "0",
+                "image": "0",
+                "audio": "0",
+                "web_search": "0",
+                "internal_reasoning": "0",
+                "input_cache_read": "0.00000011"
+            },
+            "top_provider": {
+                "context_length": 128000,
+                "max_completion_tokens": 96000,
+                "is_moderated": false
+            },
+            "per_request_limits": null,
+            "supported_parameters": [
+                "max_tokens",
+                "temperature",
+                "top_p",
+                "tools",
+                "tool_choice",
+                "reasoning",
+                "include_reasoning",
+                "frequency_penalty",
+                "min_p",
+                "presence_penalty",
+                "repetition_penalty",
+                "seed",
+                "stop",
+                "top_k",
+                "response_format",
+                "logprobs",
+                "logit_bias",
+                "top_logprobs"
+            ]
+        },
+        {
             "id": "deepseek/deepseek-r1-0528",
             "canonical_slug": "deepseek/deepseek-r1-0528",
             "hugging_face_id": "deepseek-ai/DeepSeek-R1-0528",
@@ -4391,6 +4587,7 @@
                 "completion": "0.0000025",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -4446,6 +4643,7 @@
                 "completion": "0.00000099",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -4501,6 +4699,7 @@
                 "completion": "0.0000012",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -4550,6 +4749,7 @@
                 "completion": "0.0000008",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -4568,15 +4768,15 @@
                 "stop",
                 "frequency_penalty",
                 "presence_penalty",
-                "top_k",
                 "repetition_penalty",
                 "response_format",
+                "top_k",
+                "seed",
+                "min_p",
                 "structured_outputs",
                 "logit_bias",
                 "logprobs",
-                "top_logprobs",
-                "min_p",
-                "seed"
+                "top_logprobs"
             ]
         },
         {
@@ -4604,6 +4804,7 @@
                 "completion": "0.0000032",
                 "request": "0",
                 "image": "0.0012",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -4647,6 +4848,7 @@
                 "completion": "0.000004",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.00000008",
@@ -4693,98 +4895,7 @@
                 "completion": "0.000004",
                 "request": "0",
                 "image": "0",
-                "web_search": "0",
-                "internal_reasoning": "0",
-                "input_cache_read": "0.00000008",
-                "input_cache_write": "0.000001"
-            },
-            "top_provider": {
-                "context_length": 200000,
-                "max_completion_tokens": 8192,
-                "is_moderated": true
-            },
-            "per_request_limits": null,
-            "supported_parameters": [
-                "max_tokens",
-                "temperature",
-                "top_p",
-                "tools",
-                "tool_choice",
-                "top_k",
-                "stop"
-            ]
-        },
-        {
-            "id": "anthropic/claude-3.5-haiku-20241022:beta",
-            "canonical_slug": "anthropic/claude-3-5-haiku-20241022",
-            "hugging_face_id": null,
-            "name": "Anthropic: Claude 3.5 Haiku (2024-10-22) (self-moderated)",
-            "created": 1730678400,
-            "description": "Claude 3.5 Haiku features enhancements across all skill sets including coding, tool use, and reasoning. As the fastest model in the Anthropic lineup, it offers rapid response times suitable for applications that require high interactivity and low latency, such as user-facing chatbots and on-the-fly code completions. It also excels in specialized tasks like data extraction and real-time content moderation, making it a versatile tool for a broad range of industries.\n\nIt does not support image inputs.\n\nSee the launch announcement and benchmark results [here](https://www.anthropic.com/news/3-5-models-and-computer-use)",
-            "context_length": 200000,
-            "architecture": {
-                "modality": "text+image->text",
-                "input_modalities": [
-                    "text",
-                    "image"
-                ],
-                "output_modalities": [
-                    "text"
-                ],
-                "tokenizer": "Claude",
-                "instruct_type": null
-            },
-            "pricing": {
-                "prompt": "0.0000008",
-                "completion": "0.000004",
-                "request": "0",
-                "image": "0",
-                "web_search": "0",
-                "internal_reasoning": "0",
-                "input_cache_read": "0.00000008",
-                "input_cache_write": "0.000001"
-            },
-            "top_provider": {
-                "context_length": 200000,
-                "max_completion_tokens": 8192,
-                "is_moderated": false
-            },
-            "per_request_limits": null,
-            "supported_parameters": [
-                "max_tokens",
-                "temperature",
-                "top_p",
-                "tools",
-                "tool_choice",
-                "top_k",
-                "stop"
-            ]
-        },
-        {
-            "id": "anthropic/claude-3.5-haiku-20241022",
-            "canonical_slug": "anthropic/claude-3-5-haiku-20241022",
-            "hugging_face_id": null,
-            "name": "Anthropic: Claude 3.5 Haiku (2024-10-22)",
-            "created": 1730678400,
-            "description": "Claude 3.5 Haiku features enhancements across all skill sets including coding, tool use, and reasoning. As the fastest model in the Anthropic lineup, it offers rapid response times suitable for applications that require high interactivity and low latency, such as user-facing chatbots and on-the-fly code completions. It also excels in specialized tasks like data extraction and real-time content moderation, making it a versatile tool for a broad range of industries.\n\nIt does not support image inputs.\n\nSee the launch announcement and benchmark results [here](https://www.anthropic.com/news/3-5-models-and-computer-use)",
-            "context_length": 200000,
-            "architecture": {
-                "modality": "text+image->text",
-                "input_modalities": [
-                    "text",
-                    "image"
-                ],
-                "output_modalities": [
-                    "text"
-                ],
-                "tokenizer": "Claude",
-                "instruct_type": null
-            },
-            "pricing": {
-                "prompt": "0.0000008",
-                "completion": "0.000004",
-                "request": "0",
-                "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.00000008",
@@ -4830,6 +4941,7 @@
                 "completion": "0.0000009",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -4882,6 +4994,7 @@
                 "completion": "0.000001",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -4923,6 +5036,7 @@
                 "completion": "0.000002",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -4973,6 +5087,7 @@
                 "completion": "0.0000044",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.00000055"
@@ -5016,6 +5131,7 @@
                 "completion": "0.0000044",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.00000055"
@@ -5061,6 +5177,7 @@
                 "completion": "0.0000044",
                 "request": "0",
                 "image": "0.0008415",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.000000275"
@@ -5105,6 +5222,7 @@
                 "completion": "0.0000044",
                 "request": "0",
                 "image": "0.0008415",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.000000275"
@@ -5149,6 +5267,7 @@
                 "completion": "0.000005",
                 "request": "0",
                 "image": "0.0006575",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -5198,6 +5317,7 @@
                 "completion": "0.00001",
                 "request": "0",
                 "image": "0.00516",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.00000031",
@@ -5248,6 +5368,7 @@
                 "completion": "0.00001",
                 "request": "0",
                 "image": "0.00516",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.00000031",
@@ -5299,6 +5420,7 @@
                 "completion": "0.00001",
                 "request": "0",
                 "image": "0.00516",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.00000031",
@@ -5348,6 +5470,7 @@
                 "completion": "0.000006",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.000000375"
@@ -5391,6 +5514,7 @@
                 "completion": "0.0000064",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.00000064"
@@ -5436,6 +5560,7 @@
                 "completion": "0.000005",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -5485,6 +5610,7 @@
                 "completion": "0.000005",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -5534,6 +5660,7 @@
                 "completion": "0.000006",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -5581,6 +5708,7 @@
                 "completion": "0.000006",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -5628,6 +5756,7 @@
                 "completion": "0.000006",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -5676,6 +5805,7 @@
                 "completion": "0.000006",
                 "request": "0",
                 "image": "0.002888",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -5723,6 +5853,7 @@
                 "completion": "0.000008",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -5767,6 +5898,7 @@
                 "completion": "0.000008",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.0000005"
@@ -5821,6 +5953,7 @@
                 "completion": "0.000008",
                 "request": "0",
                 "image": "0.00153",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.0000005"
@@ -5864,6 +5997,7 @@
                 "completion": "0.00001",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -5914,6 +6048,7 @@
                 "completion": "0.00001",
                 "request": "0",
                 "image": "0.003613",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.00000125"
@@ -5968,6 +6103,7 @@
                 "completion": "0.00001",
                 "request": "0",
                 "image": "0.003613",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.00000125"
@@ -6020,6 +6156,7 @@
                 "completion": "0.00001",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -6069,6 +6206,7 @@
                 "completion": "0.00001",
                 "request": "0",
                 "image": "0.003613",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.00000125"
@@ -6121,6 +6259,7 @@
                 "completion": "0.000004",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -6171,6 +6310,7 @@
                 "completion": "0.000015",
                 "request": "0",
                 "image": "0.0048",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.0000003",
@@ -6218,6 +6358,7 @@
                 "completion": "0.000015",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.00000075"
@@ -6269,6 +6410,7 @@
                 "completion": "0.000015",
                 "request": "0",
                 "image": "0.0048",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.0000003",
@@ -6315,6 +6457,7 @@
                 "completion": "0.000015",
                 "request": "0",
                 "image": "0.0048",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.0000003",
@@ -6361,6 +6504,7 @@
                 "completion": "0.000015",
                 "request": "0",
                 "image": "0.0048",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.0000003",
@@ -6407,6 +6551,7 @@
                 "completion": "0.000015",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.00000075"
@@ -6457,6 +6602,7 @@
                 "completion": "0.000015",
                 "request": "0",
                 "image": "0.0048",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.0000003",
@@ -6503,6 +6649,7 @@
                 "completion": "0.000015",
                 "request": "0",
                 "image": "0.0048",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.0000003",
@@ -6548,6 +6695,7 @@
                 "completion": "0.000015",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -6595,6 +6743,7 @@
                 "completion": "0.000015",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.00000075"
@@ -6644,6 +6793,7 @@
                 "completion": "0.000015",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -6692,6 +6842,7 @@
                 "completion": "0.000015",
                 "request": "0",
                 "image": "0.0048",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.0000003",
@@ -6741,6 +6892,7 @@
                 "completion": "0.000015",
                 "request": "0",
                 "image": "0.007225",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -6794,6 +6946,7 @@
                 "completion": "0.000018",
                 "request": "0",
                 "image": "0.007225",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -6845,6 +6998,7 @@
                 "completion": "0.00003",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -6896,6 +7050,7 @@
                 "completion": "0.00003",
                 "request": "0",
                 "image": "0.01445",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -6945,6 +7100,7 @@
                 "completion": "0.00003",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -6996,6 +7152,7 @@
                 "completion": "0.00006",
                 "request": "0",
                 "image": "0.021675",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.0000075"
@@ -7040,6 +7197,7 @@
                 "completion": "0.000075",
                 "request": "0",
                 "image": "0.024",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.0000015",
@@ -7086,6 +7244,7 @@
                 "completion": "0.000075",
                 "request": "0",
                 "image": "0.024",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.0000015",
@@ -7132,6 +7291,7 @@
                 "completion": "0.000075",
                 "request": "0",
                 "image": "0.024",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.0000015",
@@ -7181,6 +7341,7 @@
                 "completion": "0.00008",
                 "request": "0",
                 "image": "0.0153",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -7223,6 +7384,7 @@
                 "completion": "0.00006",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -7272,6 +7434,7 @@
                 "completion": "0.00006",
                 "request": "0",
                 "image": "0",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0"
             },
@@ -7299,6 +7462,53 @@
             ]
         },
         {
+            "id": "anthropic/claude-3.5-haiku-20241022",
+            "canonical_slug": "anthropic/claude-3-5-haiku-20241022",
+            "hugging_face_id": null,
+            "name": "Anthropic: Claude 3.5 Haiku (2024-10-22)",
+            "created": 1730678400,
+            "description": "Claude 3.5 Haiku features enhancements across all skill sets including coding, tool use, and reasoning. As the fastest model in the Anthropic lineup, it offers rapid response times suitable for applications that require high interactivity and low latency, such as user-facing chatbots and on-the-fly code completions. It also excels in specialized tasks like data extraction and real-time content moderation, making it a versatile tool for a broad range of industries.\n\nIt does not support image inputs.\n\nSee the launch announcement and benchmark results [here](https://www.anthropic.com/news/3-5-models-and-computer-use)",
+            "context_length": 200000,
+            "architecture": {
+                "modality": "text+image->text",
+                "input_modalities": [
+                    "text",
+                    "image"
+                ],
+                "output_modalities": [
+                    "text"
+                ],
+                "tokenizer": "Claude",
+                "instruct_type": null
+            },
+            "pricing": {
+                "prompt": "0.0000008",
+                "completion": "0.000004",
+                "request": "0",
+                "image": "0",
+                "audio": "0",
+                "web_search": "0",
+                "internal_reasoning": "0",
+                "input_cache_read": "0.00000008",
+                "input_cache_write": "0.000001"
+            },
+            "top_provider": {
+                "context_length": 200000,
+                "max_completion_tokens": 8192,
+                "is_moderated": false
+            },
+            "per_request_limits": null,
+            "supported_parameters": [
+                "max_tokens",
+                "temperature",
+                "top_p",
+                "tools",
+                "tool_choice",
+                "top_k",
+                "stop"
+            ]
+        },
+        {
             "id": "anthropic/claude-3-sonnet",
             "canonical_slug": "anthropic/claude-3-sonnet",
             "hugging_face_id": null,
@@ -7323,6 +7533,7 @@
                 "completion": "0.000015",
                 "request": "0",
                 "image": "0.0048",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.0000003",
@@ -7369,6 +7580,7 @@
                 "completion": "0.000015",
                 "request": "0",
                 "image": "0.0048",
+                "audio": "0",
                 "web_search": "0",
                 "internal_reasoning": "0",
                 "input_cache_read": "0.0000003",
