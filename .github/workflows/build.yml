@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 env:
-  PYTHON_VERSION: "3.12"
+  PYTHON_VERSION: "3.13"
 
 jobs:
   build:
@@ -46,25 +46,15 @@ jobs:
         # Copy source code
         cp -r src deployment-package/
         
-        # Copy pyproject.toml and uv.lock for proper dependency resolution
-        cp pyproject.toml deployment-package/
-        cp uv.lock deployment-package/
+        # Generate requirements.txt from uv for EB to use
+        uv export --no-dev --format requirements-txt > deployment-package/requirements.txt
         
-        cd deployment-package
-        
-        # Use uv to install dependencies to target directory
-        # This avoids binary compatibility issues
-        uv export --no-dev --format requirements-txt > requirements.txt
-        
-        # Install all dependencies directly to target directory
-        uv pip install --python ${{ env.PYTHON_VERSION }} --target . -r requirements.txt
-        
-        # Clean up files not needed in deployment
-        rm -rf .venv pyproject.toml uv.lock
-        find . -type d -name "__pycache__" -exec rm -rf {} + || true
-        find . -name "*.pyc" -delete || true
+        # Clean up any Python cache files
+        find deployment-package -type d -name "__pycache__" -exec rm -rf {} + || true
+        find deployment-package -name "*.pyc" -delete || true
         
         # Create the deployment zip
+        cd deployment-package
         zip -r ../deployment-package.zip . -x "*.pyc" "*/__pycache__/*"
         
     - name: Upload deployment package
