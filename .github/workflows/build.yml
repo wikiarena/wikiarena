@@ -40,14 +40,14 @@ jobs:
         # Create deployment directory
         mkdir -p deployment-package
         
-        # Copy application entry point
+        # Copy minimal application entry point
         cp application.py deployment-package/
         
-        # Copy source code
-        cp -r src deployment-package/
-        
-        # Generate requirements.txt from uv for EB to use
-        uv export --no-dev --format requirements-txt > deployment-package/requirements.txt
+        # Use minimal requirements.txt for deployment testing
+        cat > deployment-package/requirements.txt << 'EOF'
+        fastapi>=0.100.0
+        uvicorn[standard]>=0.20.0
+        EOF
         
         # Clean up any Python cache files
         find deployment-package -type d -name "__pycache__" -exec rm -rf {} + || true
