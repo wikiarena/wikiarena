@@ -52,12 +52,12 @@ jobs:
         
         cd deployment-package
         
-        # Use uv sync to install production dependencies
-        # This creates .venv with all correct dependencies
-        uv sync --no-dev
+        # Use uv to install dependencies to target directory
+        # This avoids binary compatibility issues
+        uv export --no-dev --format requirements-txt > requirements.txt
         
-        # Copy installed packages to deployment root where EB expects them
-        cp -r .venv/lib/python*/site-packages/* .
+        # Install all dependencies directly to target directory
+        uv pip install --python ${{ env.PYTHON_VERSION }} --target . -r requirements.txt
         
         # Clean up files not needed in deployment
         rm -rf .venv pyproject.toml uv.lock
