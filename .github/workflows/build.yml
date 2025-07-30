@@ -46,7 +46,8 @@ jobs:
         # Use minimal requirements.txt for deployment testing
         cat > deployment-package/requirements.txt << 'EOF'
         fastapi>=0.100.0
-        uvicorn[standard]>=0.20.0
+        uvicorn>=0.20.0
+        click>=8.0.0
         EOF
         
         # Clean up any Python cache files
