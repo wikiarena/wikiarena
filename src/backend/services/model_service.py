@@ -15,7 +15,7 @@ PROVIDER_SLUG_OVERRIDES = {
     "moonshotai": "moonshot",
     "amazon": "nova",
     "x-ai": "grok",
-    "wikiarena": "dice", # TODO(hunter): this isn't on lobehub
+    "wikiarena": "dice",
 }
 
 def _get_icon_slug(provider: str) -> str:

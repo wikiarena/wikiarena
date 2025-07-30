@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -10,39 +11,79 @@ from .model import OpenRouterLanguageModel
 _MODELS_CONFIG_CACHE: Optional[Dict[str, OpenRouterModelConfig]] = None
 
 
+def _get_cache_path() -> Path:
+    """Intelligent cache path resolution for different environments."""
+    # Priority order for cache locations:
+    cache_locations = [
+        # 1. Project root (relative to this file)
+        Path(__file__).parent.parent.parent.parent / "openrouter_models.json",
+        # 2. EB deployment directory (if running in EB)
+        Path("/var/app/current/openrouter_models.json"),
+        # 3. System temp directory (fallback)
+        Path("/tmp/openrouter_models.json"),
+    ]
+    
+    # Return the first location that exists, or the most appropriate one
+    for location in cache_locations:
+        if location.exists():
+            return location
+    
+    # If none exist, prefer project root for development, temp for production
+    if os.getenv("AWS_EXECUTION_ENV"):  # Running in AWS
+        return Path("/tmp/openrouter_models.json")
+    else:
+        return Path(__file__).parent.parent.parent.parent / "openrouter_models.json"
+
+
 def _load_and_cache_models() -> Dict[str, OpenRouterModelConfig]:
-    """Load and cache OpenRouter models configuration from JSON file."""
+    """Load and cache OpenRouter models configuration from JSON file or API."""
     global _MODELS_CONFIG_CACHE
     if _MODELS_CONFIG_CACHE:
         return _MODELS_CONFIG_CACHE
 
-    # Correct path to openrouter_models.json at the project root
-    models_path = Path(__file__).parent.parent.parent.parent / "openrouter_models.json"
-
-    if not models_path.exists():
-        raise FileNotFoundError(
-            f"{models_path} not found. Please run the script to fetch the models first."
-        )
-
-    with open(models_path, "r") as f:
-        data = json.load(f)
-        
-        # Filter for models that support tool use
-        tool_supported_models = [
-            m for m in data["data"] 
-            if m.get("supported_parameters") and "tools" in m["supported_parameters"]
-        ]
-        
-        validated_models = OpenRouterModelsData.model_validate({"data": tool_supported_models})
-        
-        models_dict = {model.id: model for model in validated_models.data}
-        
-        # Add the special-cased random model
-        random_config = _get_random_model_config()
-        models_dict[random_config.id] = random_config
-        
-        _MODELS_CONFIG_CACHE = models_dict
-        return _MODELS_CONFIG_CACHE
+    cache_path = _get_cache_path()
+    
+    # Try to load from cache file first
+    if cache_path.exists():
+        try:
+            with open(cache_path, "r") as f:
+                data = json.load(f)
+            print(f"Loaded OpenRouter models from cache: {cache_path}")
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"Failed to load cache from {cache_path}: {e}")
+            data = None
+    else:
+        data = None
+    
+    # If cache doesn't exist or is invalid, fetch from API
+    if not data:
+        try:
+            import requests
+            print("Fetching OpenRouter models from API...")
+            response = requests.get("https://openrouter.ai/api/v1/models?supported_parameters=tools")
+            response.raise_for_status()
+            data = response.json()
+            
+            # Cache for next time (ensure directory exists)
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(cache_path, "w") as f:
+                json.dump(data, f, indent=2)
+            print(f"Cached OpenRouter models to: {cache_path}")
+            
+        except Exception as e:
+            raise RuntimeError(f"Failed to fetch OpenRouter models: {e}")
+    
+    # API already filtered for supported_parameters=tools, so we can use all returned models
+    validated_models = OpenRouterModelsData.model_validate(data)
+    
+    models_dict = {model.id: model for model in validated_models.data}
+    
+    # Add the special-cased random model
+    random_config = _get_random_model_config()
+    models_dict[random_config.id] = random_config
+    
+    _MODELS_CONFIG_CACHE = models_dict
+    return _MODELS_CONFIG_CACHE
 
 
 def _get_random_model_config() -> OpenRouterModelConfig:
