@@ -38,6 +38,11 @@ async def lifespan(app: FastAPI):
     from wiki_arena.solver import WikiTaskSolver
     from wiki_arena.solver import static_solver_db
     
+    # Initialize the static solver database (S3 download happens here if needed)
+    logger.info("Initializing database...")
+    await static_solver_db.initialize()
+    logger.info("Database initialization complete")
+    
     solver = WikiTaskSolver(db=static_solver_db)
     solver._start_cleanup_task() # Start cleanup task with event loop available
     logger.info("WikiTaskSolver created with cleanup task started")

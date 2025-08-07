@@ -12,6 +12,7 @@ import aiosqlite
 import math
 import time
 from dataclasses import dataclass, field
+from backend.ebs_mount import mount_database_volume
 
 from wiki_arena.utils.wiki_helpers import (
     get_sanitized_page_title, 
@@ -35,15 +36,32 @@ class StaticSolverDB:
       Returns the number of steps in the shortest path between two pages.
     """
     
-    def __init__(self, db_path: str = "database/wiki_graph.sqlite"):
-        self.db_path = Path(db_path)
+    def __init__(self,):
+        self.db_path = None
+        self.max_variables = 32766  # Safe default for 3.32.0 and later, will be updated from PRAGMA
+        self._initialized = False
+        
+    async def initialize(self):
+        """Initialize the database connection and setup. Call this before using the database."""
+        if self._initialized:
+            return
+        
+        # Determine database path
+        try:
+            self.db_path = await mount_database_volume()
+        except ImportError:
+            # Fallback for development
+            self.db_path = Path("database/wiki_graph.sqlite")
+            
         if not self.db_path.exists():
             logger.error(f"Database file not found at {self.db_path.resolve()}")
             # Consider raising an error here if the DB is essential for startup
             # For now, proceeding will likely lead to errors in DB operations.
+        else:
+            logger.info(f"Database initialized at {self.db_path.resolve()}")
         
-        self.max_variables = 32766 # Safe default for 3.32.0 and later, will be updated from PRAGMA
         self._initialize_variable_limit()
+        self._initialized = True
         
     def _initialize_variable_limit(self):
         """Initialize the SQLite variable limit by reading from PRAGMA compile_options."""
