@@ -1,106 +1,128 @@
 #!/bin/bash
-# Platform Hook: Database Setup for Wiki Arena
+# Platform Hook: EBS Database Mount for Wiki Arena
 # 
 # This script runs during Elastic Beanstalk deployment BEFORE the application starts.
-# It downloads the 33GB Wikipedia graph database from S3 and sets it up for the application.
+# It mounts the pre-existing EBS volume containing the Wikipedia database.
+# 
+# NEW APPROACH: Database is pre-loaded in an EBS snapshot, so we just mount it.
+# This eliminates the 30+ minute download time that was causing deployment timeouts.
 # 
 # Platform Hook benefits:
 # - Runs as root (no permission issues)
-# - Access to EB environment variables (DATABASE_S3_BUCKET)
-# - Fails deployment if database setup fails (safer than ignoring errors)
+# - Fails deployment if database mount fails (safer than ignoring errors)
 # - Deployed with application code (version controlled)
-# - Only runs during deployments (not every app restart)
+# - FAST: 10 seconds vs 30+ minutes for S3 download
 
 set -e  # Exit on any error
 exec > >(tee /var/log/wiki-arena-database-setup.log) 2>&1  # Log everything
 
-echo "=== Wiki Arena Database Setup Started at $(date) ==="
+echo "=== Wiki Arena EBS Database Mount Started at $(date) ==="
 
 # Get environment variables from Elastic Beanstalk
-# Use EB's get-config utility to access environment variables
-DATABASE_S3_BUCKET=$(/opt/elasticbeanstalk/bin/get-config environment -k DATABASE_S3_BUCKET)
+EBS_VOLUME_ID=$(/opt/elasticbeanstalk/bin/get-config environment -k EBS_VOLUME_ID)
 DATABASE_PATH="/var/app/database/wiki_graph.sqlite"
-DATABASE_DIR="/var/app/database"
-TEMP_GZ="/tmp/wiki_graph.sqlite.gz"
+MOUNT_POINT="/var/app/database"
 
-echo "Setting up database from S3 bucket: $DATABASE_S3_BUCKET"
+echo "Mounting EBS volume: $EBS_VOLUME_ID"
 
-# Create database directory with proper permissions for webapp user
-echo "Creating database directory: $DATABASE_DIR"
-mkdir -p "$DATABASE_DIR"
-chown webapp:webapp "$DATABASE_DIR"
-chmod 755 "$DATABASE_DIR"
-
-# Check if database already exists (handles instance restarts and redeployments)
-if [ -f "$DATABASE_PATH" ]; then
-    DB_SIZE=$(du -h "$DATABASE_PATH" | cut -f1)
-    echo "Database already exists at $DATABASE_PATH (Size: $DB_SIZE)"
-    echo "Skipping download - using existing database"
-    exit 0
-fi
-
-echo "Database not found locally - downloading from S3..."
-
-# Validate S3 bucket is configured
-if [ -z "$DATABASE_S3_BUCKET" ]; then
-    echo "ERROR: DATABASE_S3_BUCKET environment variable not set"
+# Validate EBS volume ID is configured
+if [ -z "$EBS_VOLUME_ID" ]; then
+    echo "ERROR: EBS_VOLUME_ID environment variable not set"
     echo "Check Elastic Beanstalk environment configuration"
     exit 1
 fi
 
-# Download compressed database from S3
-echo "Downloading compressed database from s3://$DATABASE_S3_BUCKET/wiki_graph.sqlite.gz..."
-if ! aws s3 cp "s3://$DATABASE_S3_BUCKET/wiki_graph.sqlite.gz" "$TEMP_GZ"; then
-    echo "ERROR: Failed to download database from S3"
-    echo "Check:"
-    echo "  1. S3 bucket exists: $DATABASE_S3_BUCKET"
-    echo "  2. File exists: s3://$DATABASE_S3_BUCKET/wiki_graph.sqlite.gz"
-    echo "  3. EC2 instance has S3 read permissions"
+# Create mount point with proper permissions
+echo "Creating mount point: $MOUNT_POINT"
+mkdir -p "$MOUNT_POINT"
+chown webapp:webapp "$MOUNT_POINT"
+chmod 755 "$MOUNT_POINT"
+
+# Check if database is already mounted and accessible
+if [ -f "$DATABASE_PATH" ]; then
+    DB_SIZE=$(du -h "$DATABASE_PATH" | cut -f1)
+    echo "Database already mounted at $DATABASE_PATH (Size: $DB_SIZE)"
+    echo "Verifying database accessibility..."
+    
+    # Quick verification that database is readable
+    if sqlite3 "$DATABASE_PATH" "PRAGMA quick_check;" > /dev/null 2>&1; then
+        echo "Database verification passed - setup complete"
+        exit 0
+    else
+        echo "WARNING: Existing database failed verification - remounting..."
+        umount "$MOUNT_POINT" 2>/dev/null || true
+    fi
+fi
+
+# Wait for EBS device to be available (both traditional and NVMe naming)
+echo "Waiting for EBS device to be available..."
+DEVICE_PATH=""
+for i in {1..30}; do
+    # Check for traditional naming first
+    if [ -b "/dev/xvdf" ]; then
+        DEVICE_PATH="/dev/xvdf"
+        echo "EBS device found at: $DEVICE_PATH"
+        break
+    # Check for NVMe naming (modern instance types)
+    elif [ -b "/dev/nvme1n1" ]; then
+        DEVICE_PATH="/dev/nvme1n1"
+        echo "EBS device found at: $DEVICE_PATH (NVMe interface)"
+        break
+    fi
+    
+    if [ $i -eq 30 ]; then
+        echo "ERROR: EBS device not found after 5 minutes"
+        echo "Checked: /dev/xvdf and /dev/nvme1n1"
+        echo "Available block devices:"
+        lsblk
+        echo "Check that EBS volume $EBS_VOLUME_ID is properly attached"
+        exit 1
+    fi
+    sleep 10
+done
+
+# Mount the EBS volume
+echo "Mounting EBS volume from $DEVICE_PATH to $MOUNT_POINT..."
+if ! mount "$DEVICE_PATH" "$MOUNT_POINT"; then
+    echo "ERROR: Failed to mount EBS volume"
+    echo "Device: $DEVICE_PATH"
+    echo "Mount point: $MOUNT_POINT"
+    echo "EBS Volume ID: $EBS_VOLUME_ID"
     exit 1
 fi
 
-# Verify download
-if [ ! -f "$TEMP_GZ" ]; then
-    echo "ERROR: Downloaded file not found at $TEMP_GZ"
+# Verify the database file exists on the mounted volume
+if [ ! -f "$DATABASE_PATH" ]; then
+    echo "ERROR: Database file not found at $DATABASE_PATH after mounting"
+    echo "This indicates the EBS snapshot may not contain the database"
+    echo "Check that the snapshot was created correctly"
+    umount "$MOUNT_POINT" || true
     exit 1
 fi
 
-COMPRESSED_SIZE=$(du -h "$TEMP_GZ" | cut -f1)
-echo "Downloaded compressed database: $COMPRESSED_SIZE"
-
-# Decompress database to final location
-echo "Decompressing database to $DATABASE_PATH..."
-if ! gunzip -c "$TEMP_GZ" > "$DATABASE_PATH"; then
-    echo "ERROR: Failed to decompress database"
-    rm -f "$TEMP_GZ" "$DATABASE_PATH"
-    exit 1
-fi
-
-# Set proper ownership and permissions
+# Set proper ownership for the database file
 chown webapp:webapp "$DATABASE_PATH"
 chmod 644 "$DATABASE_PATH"
 
-# Verify final database
-if [ ! -f "$DATABASE_PATH" ]; then
-    echo "ERROR: Database file not found after decompression"
+# Verify database integrity
+echo "Performing database integrity check..."
+if ! sqlite3 "$DATABASE_PATH" "PRAGMA quick_check;" > /dev/null 2>&1; then
+    echo "ERROR: Database integrity check failed"
+    echo "The database may be corrupted or incomplete"
+    umount "$MOUNT_POINT" || true
     exit 1
 fi
 
+# Get final database size for confirmation
 FINAL_SIZE=$(du -h "$DATABASE_PATH" | cut -f1)
-echo "Database decompression complete. Final size: $FINAL_SIZE"
+MOUNT_INFO=$(df -h "$MOUNT_POINT" | tail -1)
 
-# Clean up temporary files
-rm -f "$TEMP_GZ"
+echo "Database integrity check passed"
+echo "Database size: $FINAL_SIZE"
+echo "Mount info: $MOUNT_INFO"
 
-# Verify database integrity (basic SQLite check)
-echo "Performing basic database integrity check..."
-if ! sqlite3 "$DATABASE_PATH" "PRAGMA quick_check;" > /dev/null 2>&1; then
-    echo "WARNING: Database integrity check failed - database may be corrupted"
-    # Don't exit here - let the application handle the error
-else
-    echo "Database integrity check passed"
-fi
-
-echo "=== Database setup completed successfully at $(date) ==="
+echo "=== EBS Database mount completed successfully at $(date) ==="
 echo "Database ready at: $DATABASE_PATH"
+echo "Mount point: $MOUNT_POINT"
+echo "EBS Volume: $EBS_VOLUME_ID"
 echo "Application can now start and use the database"
