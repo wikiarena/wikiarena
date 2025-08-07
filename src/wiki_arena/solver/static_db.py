@@ -12,7 +12,6 @@ import aiosqlite
 import math
 import time
 from dataclasses import dataclass, field
-from backend.ebs_mount import mount_database_volume
 
 from wiki_arena.utils.wiki_helpers import (
     get_sanitized_page_title, 
@@ -46,19 +45,31 @@ class StaticSolverDB:
         if self._initialized:
             return
         
-        # Determine database path
-        try:
-            self.db_path = await mount_database_volume()
-        except ImportError:
-            # Fallback for development
-            self.db_path = Path("database/wiki_graph.sqlite")
-            
-        if not self.db_path.exists():
-            logger.error(f"Database file not found at {self.db_path.resolve()}")
-            # Consider raising an error here if the DB is essential for startup
-            # For now, proceeding will likely lead to errors in DB operations.
+        # Database should be ready at this standard location (set up by User Data script)
+        # In production: /var/app/database/wiki_graph.sqlite (downloaded by EC2 User Data)
+        # In development: database/wiki_graph.sqlite (local copy)
+        
+        production_path = Path("/var/app/database/wiki_graph.sqlite")
+        dev_path = Path("database/wiki_graph.sqlite")
+        
+        if production_path.exists():
+            self.db_path = production_path
+            logger.info(f"Using production database at {self.db_path} (Size: {self.db_path.stat().st_size / (1024*1024):.1f} MB)")
+        elif dev_path.exists():
+            self.db_path = dev_path
+            logger.info(f"Using development database at {self.db_path} (Size: {self.db_path.stat().st_size / (1024*1024):.1f} MB)")
         else:
-            logger.info(f"Database initialized at {self.db_path.resolve()}")
+            # Database is essential - fail hard if not found
+            error_msg = (
+                f"CRITICAL ERROR: Wikipedia database not found at either:\n"
+                f"  Production: {production_path}\n"
+                f"  Development: {dev_path}\n\n"
+                f"The database is essential for the Wikipedia solver functionality.\n"
+                f"In production, this indicates the EC2 User Data script failed to download the database.\n"
+                f"Check EC2 User Data logs at /var/log/wiki-arena-database-setup.log"
+            )
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
         
         self._initialize_variable_limit()
         self._initialized = True
@@ -95,8 +106,6 @@ class StaticSolverDB:
             Optional[int]: The resolved page ID, or None if not found.
         """
         validate_page_title(title)
-        sanitized_title = get_sanitized_page_title(title)
-        
         return await self._get_page_id_impl(title, namespace)
     
     async def _get_page_id_impl(self, title: str, namespace: int = 0) -> Optional[int]:
@@ -146,8 +155,6 @@ class StaticSolverDB:
                         f"Page '{title}' (namespace={namespace}) is a redirect but no target found for ID {first_result_id}."
                     )
                     return None
-
-        return None
 
     async def get_page_title(self, page_id: int) -> Optional[str]:
         """Get the readable title for a given page ID."""
