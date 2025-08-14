@@ -14,12 +14,30 @@
 # - FAST: 10 seconds vs 30+ minutes for S3 download
 
 set -e  # Exit on any error
-exec > >(tee /var/log/wiki-arena-database-setup.log) 2>&1  # Log everything
 
 echo "=== Wiki Arena EBS Database Mount Started at $(date) ==="
 
-# Get environment variables from Elastic Beanstalk
-EBS_VOLUME_ID=$(/opt/elasticbeanstalk/bin/get-config environment -k EBS_VOLUME_ID)
+# Try multiple log locations (fallback approach)
+for LOG_DIR in "/opt/elasticbeanstalk/tasks/bundlelogs" "/var/log" "/tmp"; do
+    if mkdir -p "$LOG_DIR" 2>/dev/null; then
+        LOG_FILE="$LOG_DIR/database-setup.log"
+        exec > >(tee "$LOG_FILE") 2>&1
+        echo "Logging to: $LOG_FILE"
+        break
+    fi
+done
+
+echo "Script started successfully, checking environment variables..."
+
+# Get environment variables from Elastic Beanstalk with error handling
+echo "Getting EBS_VOLUME_ID from EB environment..."
+if ! EBS_VOLUME_ID=$(/opt/elasticbeanstalk/bin/get-config environment -k EBS_VOLUME_ID 2>&1); then
+    echo "ERROR: Failed to get EBS_VOLUME_ID from EB environment"
+    echo "Error output: $EBS_VOLUME_ID"
+    echo "Available environment variables:"
+    /opt/elasticbeanstalk/bin/get-config environment || echo "Failed to get any environment variables"
+    exit 1
+fi
 DATABASE_PATH="/var/app/database/wiki_graph.sqlite"
 MOUNT_POINT="/var/app/database"
 
