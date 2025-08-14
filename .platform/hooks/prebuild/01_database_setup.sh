@@ -54,14 +54,19 @@ if [ -f "$DATABASE_PATH" ]; then
     fi
 fi
 
-# Wait for EBS device to be available (both traditional and NVMe naming)
+# Wait for EBS device to be available (check all common device paths)
 echo "Waiting for EBS device to be available..."
 DEVICE_PATH=""
-for i in {1..30}; do
-    # Check for traditional naming first
-    if [ -b "/dev/xvdf" ]; then
+for i in {1..24}; do  # 24 * 5 seconds = 2 minutes max
+    # Check for actual AWS attachment device (most common)
+    if [ -b "/dev/sdf" ]; then
+        DEVICE_PATH="/dev/sdf"
+        echo "EBS device found at: $DEVICE_PATH (AWS default)"
+        break
+    # Check for traditional naming
+    elif [ -b "/dev/xvdf" ]; then
         DEVICE_PATH="/dev/xvdf"
-        echo "EBS device found at: $DEVICE_PATH"
+        echo "EBS device found at: $DEVICE_PATH (traditional)"
         break
     # Check for NVMe naming (modern instance types)
     elif [ -b "/dev/nvme1n1" ]; then
@@ -70,15 +75,18 @@ for i in {1..30}; do
         break
     fi
     
-    if [ $i -eq 30 ]; then
-        echo "ERROR: EBS device not found after 5 minutes"
-        echo "Checked: /dev/xvdf and /dev/nvme1n1"
+    if [ $i -eq 24 ]; then
+        echo "ERROR: EBS device not found after 2 minutes"
+        echo "Checked: /dev/sdf, /dev/xvdf, /dev/nvme1n1"
         echo "Available block devices:"
         lsblk
-        echo "Check that EBS volume $EBS_VOLUME_ID is properly attached"
+        echo "EBS Volume ID: $EBS_VOLUME_ID"
+        echo "Check that EBS volume is properly attached to this instance"
         exit 1
     fi
-    sleep 10
+    
+    echo "Attempt $i/24: Device not found, waiting..."
+    sleep 5  # Check every 5 seconds instead of 10
 done
 
 # Mount the EBS volume
