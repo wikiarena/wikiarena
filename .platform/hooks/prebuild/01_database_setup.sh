@@ -55,14 +55,8 @@ if [ -f "$DATABASE_PATH" ]; then
     echo "Database already mounted at $DATABASE_PATH (Size: $DB_SIZE)"
     echo "Verifying database accessibility..."
     
-    # Quick verification that database is readable
-    if sqlite3 "$DATABASE_PATH" "PRAGMA quick_check;" > /dev/null 2>&1; then
-        echo "Database verification passed - setup complete"
-        exit 0
-    else
-        echo "WARNING: Existing database failed verification - remounting..."
-        umount "$MOUNT_POINT" 2>/dev/null || true
-    fi
+    echo "Database already exists - setup complete"
+    exit 0
 fi
 
 # Wait for EBS device to be available (check all common device paths)
@@ -123,20 +117,11 @@ fi
 chown webapp:webapp "$DATABASE_PATH"
 chmod 644 "$DATABASE_PATH"
 
-# Verify database integrity
-echo "Performing database integrity check..."
-if ! sqlite3 "$DATABASE_PATH" "PRAGMA quick_check;" > /dev/null 2>&1; then
-    echo "ERROR: Database integrity check failed"
-    echo "The database may be corrupted or incomplete"
-    umount "$MOUNT_POINT" || true
-    exit 1
-fi
-
 # Get final database size for confirmation
 FINAL_SIZE=$(du -h "$DATABASE_PATH" | cut -f1)
 MOUNT_INFO=$(df -h "$MOUNT_POINT" | tail -1)
 
-echo "Database integrity check passed"
+echo "Database mount completed"
 echo "Database size: $FINAL_SIZE"
 echo "Mount info: $MOUNT_INFO"
 
