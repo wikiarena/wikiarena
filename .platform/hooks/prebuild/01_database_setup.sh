@@ -13,19 +13,12 @@
 # - Deployed with application code (version controlled)
 # - FAST: 10 seconds vs 30+ minutes for S3 download
 
-set -e  # Exit on any error
-
+# Log EVERYTHING to /var/log/eb-hooks.log immediately (no tee, no redirection)
+{
 echo "=== Wiki Arena EBS Database Mount Started at $(date) ==="
+echo "Script is running on instance $(hostname) at $(date)"
 
-# Try multiple log locations (fallback approach)
-for LOG_DIR in "/opt/elasticbeanstalk/tasks/bundlelogs" "/var/log" "/tmp"; do
-    if mkdir -p "$LOG_DIR" 2>/dev/null; then
-        LOG_FILE="$LOG_DIR/database-setup.log"
-        exec > >(tee "$LOG_FILE") 2>&1
-        echo "Logging to: $LOG_FILE"
-        break
-    fi
-done
+set -e  # Exit on any error
 
 echo "Script started successfully, checking environment variables..."
 
@@ -152,3 +145,5 @@ echo "Database ready at: $DATABASE_PATH"
 echo "Mount point: $MOUNT_POINT"
 echo "EBS Volume: $EBS_VOLUME_ID"
 echo "Application can now start and use the database"
+
+} >> /var/log/eb-hooks.log 2>&1
