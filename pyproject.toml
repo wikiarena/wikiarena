@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "wiki-arena"
+name = "wikiarena"
 version = "0.0.1"
 description = "Wiki Arena - a competitive evaluation for language models"
 readme = "README.md"
@@ -71,4 +71,5 @@ dev = [
     "pytest>=8.3.5",
     "pytest-asyncio>=1.0.0",
     "pytest-cov>=6.2.1",
+    "awsebcli>=3.20.0",
 ]

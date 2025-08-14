@@ -12,7 +12,7 @@ from wiki_arena.logging_config import setup_logging
 setup_logging(level="INFO")
 
 # Configure the server for stateless HTTP to enable testing
-mcp = FastMCP("wiki-arena")
+mcp = FastMCP("wikiarena")
 
 @mcp.tool()
 async def navigate(page: str) -> List[Union[types.TextContent, types.EmbeddedResource]]:

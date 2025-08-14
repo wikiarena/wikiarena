@@ -146,7 +146,7 @@ async def health_check():
     """Health check endpoint."""
     return {
         "status": "healthy",
-        "service": "wiki-arena-api",
+        "service": "wikiarena-api",
         "version": __version__,
         "features": {
             "websockets": True,

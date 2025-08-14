@@ -66,7 +66,7 @@ class StaticSolverDB:
                 f"  Development: {dev_path}\n\n"
                 f"The database is essential for the Wikipedia solver functionality.\n"
                 f"In production, this indicates the EC2 User Data script failed to download the database.\n"
-                f"Check EC2 User Data logs at /var/log/wiki-arena-database-setup.log"
+                f"Check EC2 User Data logs at /var/log/wikiarena-database-setup.log"
             )
             logger.error(error_msg)
             raise RuntimeError(error_msg)
