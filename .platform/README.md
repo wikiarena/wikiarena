@@ -29,7 +29,7 @@ This directory contains Elastic Beanstalk Platform Hooks that run during applica
 - ✅ Access to EB environment variables via `get-config`
 - ✅ Fails deployment if database setup fails
 - ✅ Skips download if database already exists
-- ✅ Logs everything to `/var/log/wiki-arena-database-setup.log`
+- ✅ Logs everything to `/var/log/wikiarena-database-setup.log`
 
 **Environment Variables Used:**
 - `DATABASE_S3_BUCKET` - S3 bucket containing `wiki_graph.sqlite.gz`
@@ -51,7 +51,7 @@ This directory contains Elastic Beanstalk Platform Hooks that run during applica
 
 **View hook logs:**
 ```bash
-sudo tail -f /var/log/wiki-arena-database-setup.log
+sudo tail -f /var/log/wikiarena-database-setup.log
 ```
 
 **Check database status:**
