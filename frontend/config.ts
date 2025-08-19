@@ -19,8 +19,8 @@ function getConfig(): AppConfig {
     };
   } else {
     return {
-      apiBaseUrl: 'http://wikiarena-sandbox.eba-s4iv5gts.us-west-2.elasticbeanstalk.com',
-      wsBaseUrl: 'ws://wikiarena-sandbox.eba-s4iv5gts.us-west-2.elasticbeanstalk.com',
+      apiBaseUrl: 'https://api.wikiarena.org',
+      wsBaseUrl: 'wss://api.wikiarena.org',
       environment: 'production'
     };
   }
