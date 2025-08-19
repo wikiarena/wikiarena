@@ -43,7 +43,6 @@ jobs:
         # Copy the full source tree (excluding unnecessary files)
         cp -r src/ deployment-package/
         cp -r .platform/ deployment-package/
-        cp -r .ebextensions/ deployment-package/
         cp pyproject.toml deployment-package/
         cp Procfile deployment-package/
         
