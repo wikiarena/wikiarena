@@ -116,7 +116,10 @@ jobs:
             exit 1
           fi
 
-          sha256sum "$raw_path" > "dist/${{ steps.resolve.outputs.raw_sha_name }}"
+          (
+            cd dist
+            sha256sum "${{ steps.resolve.outputs.graph_name }}" > "${{ steps.resolve.outputs.raw_sha_name }}"
+          )
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4

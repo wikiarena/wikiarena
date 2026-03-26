@@ -1,0 +1,174 @@
+name: Build Graph
+
+on:
+  workflow_dispatch:
+    inputs:
+      dump_date:
+        description: Wikimedia dump date in YYYYMMDD format. Leave empty for latest.
+        required: false
+        type: string
+      upload_raw_to_s3:
+        description: Upload raw dated graph binary to S3.
+        required: true
+        default: true
+        type: boolean
+      publish_release:
+        description: Publish compressed graph assets as a GitHub Release.
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+  id-token: write
+
+env:
+  AWS_ACCOUNT_ID: "171436514933"
+  GRAPH_S3_BUCKET: wikiarena-graph-production
+  PYTHON_VERSION: "3.13"
+  WIKI: enwiki
+
+jobs:
+  build-graph:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Free runner disk space
+        run: |
+          df -h
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+          docker system prune -af || true
+          df -h
+
+      - name: Install OS dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq pigz xz-utils
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: latest
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Install project dependencies
+        run: uv sync --all-groups
+
+      - name: Resolve dump date
+        id: dump-date
+        run: |
+          if [[ -n "${{ inputs.dump_date }}" ]]; then
+            dump_date="${{ inputs.dump_date }}"
+          else
+            dump_date=$(curl -L https://dumps.wikimedia.org/index.json | jq --raw-output '.wikis.enwiki.jobs.pagelinkstable.updated | split(" ") | .[0]')
+          fi
+
+          if [[ ! "$dump_date" =~ ^[0-9]{8}$ ]]; then
+            echo "Invalid dump date: $dump_date" >&2
+            exit 1
+          fi
+
+          echo "dump_date=$dump_date" >> "$GITHUB_OUTPUT"
+          echo "graph_name=wikiarena_graph_${{ env.WIKI }}_${dump_date}.bin" >> "$GITHUB_OUTPUT"
+          echo "metadata_name=wikiarena_graph_${{ env.WIKI }}_${dump_date}.metadata.json" >> "$GITHUB_OUTPUT"
+          echo "snapshot_id=enwiki-${dump_date}" >> "$GITHUB_OUTPUT"
+          echo "release_tag=graph-enwiki-${dump_date}" >> "$GITHUB_OUTPUT"
+
+      - name: Build raw graph binary
+        run: |
+          uv run python scripts/build_graph.py \
+            --wiki "${{ env.WIKI }}" \
+            --dump-date "${{ steps.dump-date.outputs.dump_date }}" \
+            --work-dir dumps \
+            --output "dumps/${{ steps.dump-date.outputs.graph_name }}"
+
+      - name: Smoke test raw graph binary
+        run: |
+          uv run python scripts/smoke_test_graph.py \
+            --graph "dumps/${{ steps.dump-date.outputs.graph_name }}"
+
+      - name: Compress graph for release
+        run: |
+          xz -T0 -9e -f -k "dumps/${{ steps.dump-date.outputs.graph_name }}"
+
+      - name: Write checksums and metadata
+        run: |
+          (
+            cd dumps
+            sha256sum "${{ steps.dump-date.outputs.graph_name }}" > "${{ steps.dump-date.outputs.graph_name }}.sha256"
+            sha256sum "${{ steps.dump-date.outputs.graph_name }}.xz" > "${{ steps.dump-date.outputs.graph_name }}.xz.sha256"
+          )
+          uv run python scripts/write_graph_metadata.py \
+            --graph "dumps/${{ steps.dump-date.outputs.graph_name }}" \
+            --compressed "dumps/${{ steps.dump-date.outputs.graph_name }}.xz" \
+            --dump-date "${{ steps.dump-date.outputs.dump_date }}" \
+            --snapshot-id "${{ steps.dump-date.outputs.snapshot_id }}" \
+            --output "dumps/${{ steps.dump-date.outputs.metadata_name }}"
+
+      - name: Configure AWS credentials
+        if: inputs.upload_raw_to_s3
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/wikiarena-production-github-actions-app
+          aws-region: us-west-2
+
+      - name: Upload raw graph to S3
+        if: inputs.upload_raw_to_s3
+        run: |
+          if [[ -z "$GRAPH_S3_BUCKET" ]]; then
+            echo "GRAPH_S3_BUCKET environment variable is required when upload_raw_to_s3=true" >&2
+            exit 1
+          fi
+
+          s3_prefix="s3://${GRAPH_S3_BUCKET}/graphs/${{ env.WIKI }}/${{ steps.dump-date.outputs.dump_date }}"
+          aws s3 cp "dumps/${{ steps.dump-date.outputs.graph_name }}" "${s3_prefix}/${{ steps.dump-date.outputs.graph_name }}"
+          aws s3 cp "dumps/${{ steps.dump-date.outputs.graph_name }}.sha256" "${s3_prefix}/${{ steps.dump-date.outputs.graph_name }}.sha256"
+          aws s3 cp "dumps/${{ steps.dump-date.outputs.metadata_name }}" "${s3_prefix}/${{ steps.dump-date.outputs.metadata_name }}"
+
+      - name: Publish GitHub release
+        if: inputs.publish_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.dump-date.outputs.release_tag }}
+          name: enwiki graph ${{ steps.dump-date.outputs.dump_date }}
+          overwrite_files: true
+          files: |
+            dumps/${{ steps.dump-date.outputs.graph_name }}.xz
+            dumps/${{ steps.dump-date.outputs.graph_name }}.xz.sha256
+            dumps/${{ steps.dump-date.outputs.metadata_name }}
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wikiarena-graph-${{ steps.dump-date.outputs.dump_date }}
+          path: |
+            dumps/${{ steps.dump-date.outputs.graph_name }}.xz
+            dumps/${{ steps.dump-date.outputs.graph_name }}.xz.sha256
+            dumps/${{ steps.dump-date.outputs.metadata_name }}
+          retention-days: 14
+
+      - name: Build summary
+        run: |
+          echo "## Graph Build Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Dump date: ${{ steps.dump-date.outputs.dump_date }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Snapshot id: ${{ steps.dump-date.outputs.snapshot_id }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Raw graph: dumps/${{ steps.dump-date.outputs.graph_name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Release asset: dumps/${{ steps.dump-date.outputs.graph_name }}.xz" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "${{ inputs.upload_raw_to_s3 }}" == "true" ]]; then
+            echo "- Raw S3 prefix: s3://${GRAPH_S3_BUCKET}/graphs/${{ env.WIKI }}/${{ steps.dump-date.outputs.dump_date }}/" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- Raw S3 upload: skipped" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [[ "${{ inputs.publish_release }}" == "true" ]]; then
+            echo "- Release tag: ${{ steps.dump-date.outputs.release_tag }}" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- GitHub release: skipped" >> "$GITHUB_STEP_SUMMARY"
+          fi
