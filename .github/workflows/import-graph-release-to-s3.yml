@@ -1,0 +1,139 @@
+name: Import Graph Release To S3
+
+on:
+  workflow_dispatch:
+    inputs:
+      dump_date:
+        description: Wikimedia dump date in YYYYMMDD format.
+        required: true
+        type: string
+      release_tag:
+        description: Optional GitHub release tag. Defaults to graph-enwiki-<dump_date>.
+        required: false
+        type: string
+      graph_s3_bucket:
+        description: Optional S3 bucket override for raw graph upload.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_ACCOUNT_ID: "171436514933"
+  AWS_REGION: us-west-2
+  DEFAULT_GRAPH_S3_BUCKET: wikiarena-graph-production
+  WIKI: enwiki
+
+jobs:
+  import-graph-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Free runner disk space
+        run: |
+          df -h
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+          docker system prune -af || true
+          df -h
+
+      - name: Install OS dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq xz-utils
+
+      - name: Resolve graph artifact names
+        id: resolve
+        run: |
+          dump_date="${{ inputs.dump_date }}"
+          if [[ ! "$dump_date" =~ ^[0-9]{8}$ ]]; then
+            echo "Invalid dump date: $dump_date" >&2
+            exit 1
+          fi
+
+          release_tag="${{ inputs.release_tag }}"
+          if [[ -z "$release_tag" ]]; then
+            release_tag="graph-${{ env.WIKI }}-${dump_date}"
+          fi
+
+          graph_name="wikiarena_graph_${{ env.WIKI }}_${dump_date}.bin"
+          metadata_name="wikiarena_graph_${{ env.WIKI }}_${dump_date}.metadata.json"
+          graph_s3_bucket="${{ inputs.graph_s3_bucket }}"
+          if [[ -z "$graph_s3_bucket" ]]; then
+            graph_s3_bucket="${{ env.DEFAULT_GRAPH_S3_BUCKET }}"
+          fi
+
+          echo "dump_date=$dump_date" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+          echo "graph_name=$graph_name" >> "$GITHUB_OUTPUT"
+          echo "compressed_name=${graph_name}.xz" >> "$GITHUB_OUTPUT"
+          echo "raw_sha_name=${graph_name}.sha256" >> "$GITHUB_OUTPUT"
+          echo "metadata_name=$metadata_name" >> "$GITHUB_OUTPUT"
+          echo "graph_s3_bucket=$graph_s3_bucket" >> "$GITHUB_OUTPUT"
+
+      - name: Download graph release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p dist
+          gh release download "${{ steps.resolve.outputs.release_tag }}" \
+            --repo wikiarena/wikiarena \
+            --pattern "${{ steps.resolve.outputs.compressed_name }}" \
+            --pattern "${{ steps.resolve.outputs.metadata_name }}" \
+            --dir dist
+
+      - name: Verify compressed release asset
+        run: |
+          compressed_path="dist/${{ steps.resolve.outputs.compressed_name }}"
+          metadata_path="dist/${{ steps.resolve.outputs.metadata_name }}"
+
+          expected_compressed_sha=$(jq --raw-output '.compressed.sha256' "$metadata_path")
+          actual_compressed_sha=$(sha256sum "$compressed_path" | cut -d' ' -f1)
+          if [[ "$expected_compressed_sha" != "$actual_compressed_sha" ]]; then
+            echo "Compressed graph checksum mismatch" >&2
+            exit 1
+          fi
+
+      - name: Decompress and verify raw graph
+        run: |
+          compressed_path="dist/${{ steps.resolve.outputs.compressed_name }}"
+          raw_path="dist/${{ steps.resolve.outputs.graph_name }}"
+          metadata_path="dist/${{ steps.resolve.outputs.metadata_name }}"
+
+          xz -d -T0 -k -f "$compressed_path"
+
+          expected_raw_sha=$(jq --raw-output '.graph.sha256' "$metadata_path")
+          actual_raw_sha=$(sha256sum "$raw_path" | cut -d' ' -f1)
+          if [[ "$expected_raw_sha" != "$actual_raw_sha" ]]; then
+            echo "Raw graph checksum mismatch" >&2
+            exit 1
+          fi
+
+          sha256sum "$raw_path" > "dist/${{ steps.resolve.outputs.raw_sha_name }}"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/wikiarena-production-github-actions-app
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Upload raw graph artifacts to S3
+        run: |
+          s3_prefix="s3://${{ steps.resolve.outputs.graph_s3_bucket }}/graphs/${{ env.WIKI }}/${{ steps.resolve.outputs.dump_date }}"
+          aws s3 cp "dist/${{ steps.resolve.outputs.graph_name }}" "$s3_prefix/${{ steps.resolve.outputs.graph_name }}"
+          aws s3 cp "dist/${{ steps.resolve.outputs.raw_sha_name }}" "$s3_prefix/${{ steps.resolve.outputs.raw_sha_name }}"
+          aws s3 cp "dist/${{ steps.resolve.outputs.metadata_name }}" "$s3_prefix/${{ steps.resolve.outputs.metadata_name }}"
+
+      - name: Build summary
+        run: |
+          echo "## Graph Import Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Release tag: ${{ steps.resolve.outputs.release_tag }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Dump date: ${{ steps.resolve.outputs.dump_date }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Raw graph uploaded to: s3://${{ steps.resolve.outputs.graph_s3_bucket }}/graphs/${{ env.WIKI }}/${{ steps.resolve.outputs.dump_date }}/" >> "$GITHUB_STEP_SUMMARY"
