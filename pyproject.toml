@@ -7,27 +7,23 @@ name = "wikiarena"
 version = "0.0.1"
 description = "Wiki Arena - a competitive evaluation for language models"
 readme = "README.md"
+license = { text = "MIT" }
 requires-python = ">=3.11"
 dependencies = [
-    "aiohttp>=3.10.0",
     "aiosqlite>=0.20.0",
     "anthropic>=0.51.0",
-    "boto3>=1.40.3",
     "fastapi>=0.115.12",
     "httpx>=0.28.1",
-    "mcp[cli]>=1.9.0",
     "openai>=1.79.0",
-    "psutil>=7.0.0",
     "pydantic>=2.11.4",
     "python-dotenv>=0.21.0",
-    "python-multipart>=0.0.20",
     "requests>=2.32.3",
-    "tqdm>=4.66.0",
-    "typer[all]>=0.15.4",
+    "typer>=0.15.4",
     "uvicorn[standard]>=0.34.2",
-    "websockets==11.0.3",
-    "wikipedia-api>=0.8.1",
 ]
+
+[project.scripts]
+wikiarena = "wikiarena.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -37,7 +33,7 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 # Test discovery and execution
-testpaths = ["tests"]
+testpaths = ["tests/wikiarena"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
@@ -62,14 +58,34 @@ markers = [
     "unit: Unit tests with no external dependencies",
     "integration: Integration tests with real dependencies", 
     "slow: Tests that take more than 1 second",
+    "legacy: Deprecated tests for legacy src/wiki_arena code",
+    "live_alignment: Solver/live Wikipedia alignment checks",
     "requires_db: Tests that need wiki_graph.sqlite",
     "requires_mcp: Tests that need MCP server running",
 ]
 
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+src = ["src", "tests", "scripts", "database/scripts"]
+extend-exclude = ["dumps", "src/backend", "src/mcp_server", "src/wiki_arena"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
 [dependency-groups]
 dev = [
+    "aiohttp>=3.10.0",
+    "awsebcli>=3.20.0",
+    "duckdb>=1.5.0",
+    "mcp[cli]>=1.9.0",
     "pytest>=8.3.5",
     "pytest-asyncio>=1.0.0",
     "pytest-cov>=6.2.1",
-    "awsebcli>=3.20.0",
+    "ruff>=0.12.0",
 ]
