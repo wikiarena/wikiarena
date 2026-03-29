@@ -1,4 +1,7 @@
+import { loadRandomPageTitles } from "./api";
+
 interface RandomPageCache {
+  snapshotId: string;
   titles: string[];
   cachedAtMs: number;
 }
@@ -197,34 +200,15 @@ export class WikipediaRandomService {
 
   private async fetchAndCacheRandomTitles(): Promise<string[]> {
     try {
-      const response = await fetch(
-        `https://en.wikipedia.org/w/api.php?action=query&list=random&rnnamespace=0&rnfilterredir=nonredirects&rnlimit=${this.randomPageCount}&format=json&origin=*`,
-        {
-          headers: {
-            Accept: "application/json",
-          },
-        },
-      );
-
-      if (!response.ok) {
-        throw new Error(`Random title request failed with status ${response.status}`);
-      }
-
-      const payload = (await response.json()) as {
-        query?: {
-          random?: Array<{
-            title?: string;
-          }>;
-        };
-      };
-
+      const payload = await loadRandomPageTitles(this.randomPageCount);
       const titles = this.shuffleTitles(
-        (payload.query?.random ?? [])
-          .map((entry) => entry.title?.trim() ?? "")
+        payload.titles
+          .map((title) => title.trim())
           .filter((title) => title.length > 0),
       );
 
       sharedRandomState.cache = {
+        snapshotId: payload.snapshot_id,
         titles,
         cachedAtMs: Date.now(),
       };
@@ -233,9 +217,14 @@ export class WikipediaRandomService {
       }
       return titles;
     } catch {
+      if (sharedRandomState.cache !== null) {
+        return sharedRandomState.cache.titles;
+      }
+
       const titles = [...this.fallbackTitles];
       if (sharedRandomState.cache === null) {
         sharedRandomState.cache = {
+          snapshotId: "fallback",
           titles,
           cachedAtMs: Date.now(),
         };

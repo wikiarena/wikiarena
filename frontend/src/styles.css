@@ -240,7 +240,6 @@ input {
 .status-token,
 .summary-token,
 .path-sheet-label,
-.path-sheet-stat,
 .api-method,
 .rule-index {
   display: inline-flex;
@@ -296,6 +295,7 @@ input {
 }
 
 .title-box {
+  position: relative;
   padding: 16px;
   transition: transform 180ms ease, box-shadow 180ms ease;
 }
@@ -524,6 +524,10 @@ input {
   align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
+}
+
+.results-header {
+  align-items: center;
 }
 
 .result-summary {
@@ -775,12 +779,23 @@ input {
   }
 
   .title-divider {
-    width: 100%;
+    width: auto;
     text-align: center;
+    transform: rotate(90deg);
   }
 
   .title-middle-controls {
-    width: 100%;
+    width: fit-content;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+
+  .swap-button span {
+    display: inline-block;
+    transform: rotate(90deg);
   }
 
   .result-summary,

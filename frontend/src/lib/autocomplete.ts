@@ -20,8 +20,10 @@ export function attachTitleAutocomplete(options: TitleAutocompleteOptions): void
     suggestionListElement.classList.add("hidden");
   }
 
-  function applySelection(selectedTitle: string): void {
-    inputElement.value = selectedTitle;
+  async function applySelection(selectedTitle: string): Promise<void> {
+    const resolution = await searchService.resolveTitle(selectedTitle);
+    inputElement.value = resolution.canonicalTitle ?? selectedTitle;
+    inputElement.dispatchEvent(new Event("input", { bubbles: true }));
     clearSuggestions();
   }
 
@@ -61,7 +63,7 @@ export function attachTitleAutocomplete(options: TitleAutocompleteOptions): void
         const index = Number(button.dataset.index);
         const result = currentResults[index];
         if (result !== undefined) {
-          applySelection(result.title);
+          void applySelection(result.title);
         }
       });
     });
@@ -138,7 +140,7 @@ export function attachTitleAutocomplete(options: TitleAutocompleteOptions): void
       event.preventDefault();
       const result = currentResults[activeIndex];
       if (result !== undefined) {
-        applySelection(result.title);
+        void applySelection(result.title);
       }
       return;
     }

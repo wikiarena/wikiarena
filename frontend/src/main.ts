@@ -4,6 +4,7 @@ import { ApiError, loadMeta, solvePath, type SolveResponse } from "./lib/api";
 import { attachTitleAutocomplete } from "./lib/autocomplete";
 import { formatDurationMs, formatInteger } from "./lib/format";
 import { WikipediaRandomService } from "./lib/random-pages";
+import { WikipediaSearchService } from "./lib/wikipedia-search";
 
 type SolveButtonMode = "solve" | "another" | "solving";
 
@@ -24,24 +25,6 @@ function getRequiredElement<T extends HTMLElement>(id: string): T {
     throw new Error(`Missing required element: ${id}`);
   }
   return element as T;
-}
-
-function setStatus(
-  element: HTMLElement,
-  label: string,
-  state: "loading" | "ready" | "error",
-): void {
-  element.textContent = label;
-  element.classList.remove("is-loading", "is-ready", "is-error");
-  if (state === "loading") {
-    element.classList.add("is-loading");
-  }
-  if (state === "ready") {
-    element.classList.add("is-ready");
-  }
-  if (state === "error") {
-    element.classList.add("is-error");
-  }
 }
 
 function showFormError(formErrorElement: HTMLElement, message: string): void {
@@ -69,10 +52,6 @@ function escapeHtml(value: string): string {
 
 function normalizeTitle(title: string): string {
   return title.trim().toLowerCase();
-}
-
-function formatServiceVersion(version: string): string {
-  return version.startsWith("v") ? version : `v${version}`;
 }
 
 function pairsMatch(left: ArticlePair | null, right: ArticlePair | null): boolean {
@@ -265,7 +244,6 @@ function renderPathCards(resultsContainer: HTMLElement, solveResponse: SolveResp
         <article class="path-sheet" style="--path-delay: ${pathIndex};">
           <header class="path-sheet-header">
             <span class="path-sheet-label">Path ${pathIndex + 1}</span>
-            <span class="path-sheet-stat">${solveResponse.path_length ?? 0} steps</span>
           </header>
           <ol class="path-list">${itemsMarkup}</ol>
         </article>
@@ -286,9 +264,10 @@ function renderSolveResponse(
   resultsPanelElement.classList.add("is-visible");
 
   summaryElement.innerHTML = `
-    <span class="summary-token">${formatDurationMs(solveResponse.solve_ms)}</span>
-    <span class="summary-token">${solveResponse.paths.length} path${solveResponse.paths.length === 1 ? "" : "s"}</span>
     <span class="summary-token">${solveResponse.path_length === null ? "No route" : `${solveResponse.path_length} steps`}</span>
+    <span class="summary-token">${formatInteger(solveResponse.pages_visited)} pages</span>
+    <span class="summary-token">${formatInteger(solveResponse.links_scanned)} links</span>
+    <span class="summary-token">${formatDurationMs(solveResponse.solve_ms)}</span>
   `;
 
   if (solveResponse.paths.length === 0 || solveResponse.path_length === null) {
@@ -319,7 +298,6 @@ async function initializeHomePage(): Promise<void> {
   const solveButton = getRequiredElement<HTMLButtonElement>("solve-button");
   const swapButton = getRequiredElement<HTMLButtonElement>("swap-button");
   const formErrorElement = getRequiredElement<HTMLElement>("form-error");
-  const statusElement = getRequiredElement<HTMLElement>("solver-status");
   const heroSnapshotElement = getRequiredElement<HTMLElement>("hero-snapshot");
   const heroNodeCountElement = getRequiredElement<HTMLElement>("hero-node-count");
   const heroEdgeCountElement = getRequiredElement<HTMLElement>("hero-edge-count");
@@ -337,6 +315,7 @@ async function initializeHomePage(): Promise<void> {
   const sharedRandomService = new WikipediaRandomService();
   const startFieldRandomService = new WikipediaRandomService();
   const targetFieldRandomService = new WikipediaRandomService();
+  const titleResolutionService = new WikipediaSearchService();
 
   let lastSolvedPair: ArticlePair | null = null;
   let solveButtonMode: SolveButtonMode = "solve";
@@ -380,6 +359,18 @@ async function initializeHomePage(): Promise<void> {
     setSolveButtonMode("solve");
   }
 
+  async function resolveArticlePair(articlePair: ArticlePair): Promise<ArticlePair> {
+    const [startResolution, targetResolution] = await Promise.all([
+      titleResolutionService.resolveTitle(articlePair.startTitle),
+      titleResolutionService.resolveTitle(articlePair.targetTitle),
+    ]);
+
+    return {
+      startTitle: startResolution.canonicalTitle ?? articlePair.startTitle,
+      targetTitle: targetResolution.canonicalTitle ?? articlePair.targetTitle,
+    };
+  }
+
   attachTitleAutocomplete({
     inputElement: startInput,
     suggestionListElement: startSuggestions,
@@ -414,20 +405,15 @@ async function initializeHomePage(): Promise<void> {
     targetRandomController.setValue(startTitle);
   });
 
-  setStatus(statusElement, "Connecting", "loading");
-
   try {
     const meta = await loadMeta();
     heroSnapshotElement.textContent = meta.snapshot_id;
     heroNodeCountElement.textContent = `${formatInteger(meta.node_count)} pages`;
     heroEdgeCountElement.textContent = `${formatInteger(meta.edge_count)} links`;
-    setStatus(statusElement, formatServiceVersion(meta.service_version), "ready");
   } catch (error) {
     heroSnapshotElement.textContent = "Snapshot unavailable";
     heroNodeCountElement.textContent = "Graph unavailable";
     heroEdgeCountElement.textContent = "API unavailable";
-    const message = error instanceof ApiError ? error.message : "Metadata unavailable";
-    setStatus(statusElement, message, "error");
   }
 
   async function executeSolve(articlePair: ArticlePair): Promise<void> {
@@ -442,9 +428,13 @@ async function initializeHomePage(): Promise<void> {
     void sharedRandomService.refreshRandomTitlesInBackground();
 
     try {
+      const resolvedArticlePair = await resolveArticlePair(articlePair);
+      startRandomController.setValue(resolvedArticlePair.startTitle);
+      targetRandomController.setValue(resolvedArticlePair.targetTitle);
+
       const solveResponse = await solvePath(
-        articlePair.startTitle,
-        articlePair.targetTitle,
+        resolvedArticlePair.startTitle,
+        resolvedArticlePair.targetTitle,
       );
       startRandomController.setValue(solveResponse.start_title);
       targetRandomController.setValue(solveResponse.target_title);

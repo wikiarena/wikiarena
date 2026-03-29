@@ -13,6 +13,13 @@ export interface SolveResponse {
   path_length: number | null;
   paths: string[][];
   solve_ms: number;
+  pages_visited: number;
+  links_scanned: number;
+}
+
+export interface RandomPageTitlesResponse {
+  snapshot_id: string;
+  titles: string[];
 }
 
 interface ErrorResponse {
@@ -95,6 +102,13 @@ export async function solvePath(startTitle: string, targetTitle: string): Promis
       target_title: targetTitle,
     }),
   });
+}
+
+export async function loadRandomPageTitles(count: number): Promise<RandomPageTitlesResponse> {
+  const searchParams = new URLSearchParams({
+    count: String(count),
+  });
+  return requestJson<RandomPageTitlesResponse>(`/v1/random-page-titles?${searchParams.toString()}`);
 }
 
 export function getApiBaseUrl(): string {
