@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
 import re
 import time
 from pathlib import Path
@@ -11,10 +12,14 @@ from typing import Protocol
 from wikiarena.graph import parse_standard_graph_file_name
 from wikiarena.server.config import ServerConfig
 from wikiarena.server.errors import GraphNotReadyError, UnknownTitleError
-from wikiarena.server.models import MetaResponse, SolveResponse
+from wikiarena.server.models import (
+    MetaResponse,
+    RandomPageTitlesResponse,
+    SolveResponse,
+)
 from wikiarena.solver.binary import (
     MappedBinarySolverGraph,
-    find_shortest_path_by_node_ids,
+    search_shortest_path_by_node_ids,
 )
 
 logger = logging.getLogger(
@@ -46,6 +51,12 @@ class SolverRuntime(Protocol):
     def get_meta(
         self,
     ) -> MetaResponse: ...
+
+    async def random_page_titles(
+        self,
+        *,
+        count: int,
+    ) -> RandomPageTitlesResponse: ...
 
     async def solve(
         self,
@@ -126,6 +137,20 @@ class GraphSolverRuntime:
             )
         return self._meta_response
 
+    async def random_page_titles(
+        self,
+        *,
+        count: int,
+    ) -> RandomPageTitlesResponse:
+        if self._graph is None or self._meta_response is None:
+            raise GraphNotReadyError(
+                "Graph is not ready.",
+            )
+        return await asyncio.to_thread(
+            self._random_page_titles_sync,
+            count,
+        )
+
     async def solve(
         self,
         *,
@@ -176,14 +201,14 @@ class GraphSolverRuntime:
         )
 
         started_at = time.perf_counter()
-        path_node_ids = find_shortest_path_by_node_ids(
+        search_result = search_shortest_path_by_node_ids(
             graph,
             start_node_id=start_node_id,
             target_node_id=target_node_id,
         )
         solve_ms = (time.perf_counter() - started_at) * 1000.0
 
-        if path_node_ids is None:
+        if search_result.path_node_ids is None:
             return SolveResponse(
                 snapshot_id=meta_response.snapshot_id,
                 start_title=canonical_start_title,
@@ -191,13 +216,15 @@ class GraphSolverRuntime:
                 path_length=None,
                 paths=[],
                 solve_ms=solve_ms,
+                pages_visited=search_result.pages_visited,
+                links_scanned=search_result.links_scanned,
             )
 
         path_titles = [
             graph.title_for_node_id(
                 node_id,
             )
-            for node_id in path_node_ids
+            for node_id in search_result.path_node_ids
         ]
         return SolveResponse(
             snapshot_id=meta_response.snapshot_id,
@@ -206,6 +233,36 @@ class GraphSolverRuntime:
             path_length=len(path_titles) - 1,
             paths=[path_titles],
             solve_ms=solve_ms,
+            pages_visited=search_result.pages_visited,
+            links_scanned=search_result.links_scanned,
+        )
+
+    def _random_page_titles_sync(
+        self,
+        count: int,
+    ) -> RandomPageTitlesResponse:
+        graph = self._require_graph()
+        meta_response = self._require_meta()
+
+        sample_size = min(
+            count,
+            graph.node_count,
+        )
+        sampled_node_ids = random.sample(
+            range(
+                graph.node_count,
+            ),
+            sample_size,
+        )
+        sampled_titles = [
+            graph.title_for_node_id(
+                node_id,
+            )
+            for node_id in sampled_node_ids
+        ]
+        return RandomPageTitlesResponse(
+            snapshot_id=meta_response.snapshot_id,
+            titles=sampled_titles,
         )
 
     def _load_graph_resources(
@@ -318,6 +375,8 @@ def _resolve_public_snapshot_id(
         and parsed_metadata[1] is not None
     ):
         wiki, dump_date = parsed_metadata
+        assert wiki is not None
+        assert dump_date is not None
         return _build_public_snapshot_id(
             wiki=wiki,
             dump_date=dump_date,
@@ -364,6 +423,7 @@ def _resolve_dump_date(
     )
     if parsed_metadata is not None and parsed_metadata[1] is not None:
         _, dump_date = parsed_metadata
+        assert dump_date is not None
         return dump_date
 
     inferred_dump_date = _parse_snapshot_id(

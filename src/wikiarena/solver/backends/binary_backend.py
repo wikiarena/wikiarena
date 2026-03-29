@@ -5,7 +5,7 @@ from pathlib import Path
 
 from wikiarena.solver.backend import SolverCapabilities, SolverTargetSession
 from wikiarena.solver.binary.mapped_graph import MappedBinarySolverGraph
-from wikiarena.solver.binary.search import find_shortest_path_by_titles
+from wikiarena.solver.binary.search import search_shortest_path_by_node_ids
 from wikiarena.solver.models import SolverResponse
 
 
@@ -71,29 +71,54 @@ class BinarySolverBackend:
         start_page: str,
         target_page: str,
     ) -> SolverResponse:
+        start_node_id = self.graph.find_node_id(
+            start_page,
+        )
+        if start_node_id is None:
+            raise ValueError(
+                f"unknown start title: {start_page}",
+            )
+
+        target_node_id = self.graph.find_node_id(
+            target_page,
+        )
+        if target_node_id is None:
+            raise ValueError(
+                f"unknown target title: {target_page}",
+            )
+
         started_at = time.perf_counter()
-        result = find_shortest_path_by_titles(
+        result = search_shortest_path_by_node_ids(
             self.graph,
-            start_title=start_page,
-            target_title=target_page,
+            start_node_id=start_node_id,
+            target_node_id=target_node_id,
         )
         elapsed_ms = (time.perf_counter() - started_at) * 1000.0
 
-        if result is None:
+        if result.path_node_ids is None:
             return SolverResponse(
                 paths=[],
                 path_length=-1,
                 computation_time_ms=elapsed_ms,
+                pages_visited=result.pages_visited,
+                links_scanned=result.links_scanned,
             )
+
+        path_titles = [
+            self.graph.title_for_node_id(
+                node_id,
+            )
+            for node_id in result.path_node_ids
+        ]
 
         return SolverResponse(
             paths=[
-                list(
-                    result.path_titles,
-                ),
+                path_titles,
             ],
             path_length=result.path_length,
             computation_time_ms=elapsed_ms,
+            pages_visited=result.pages_visited,
+            links_scanned=result.links_scanned,
         )
 
     async def create_target_session(

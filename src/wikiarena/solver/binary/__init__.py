@@ -21,8 +21,10 @@ from wikiarena.solver.binary.mapped_graph import (
 )
 from wikiarena.solver.binary.search import (
     BinaryShortestPathResult,
+    BinaryShortestPathSearchResult,
     find_shortest_path_by_node_ids,
     find_shortest_path_by_titles,
+    search_shortest_path_by_node_ids,
 )
 from wikiarena.solver.binary.titles import (
     CanonicalTitleTable,
@@ -44,11 +46,13 @@ __all__ = [
     "build_solver_binary_from_grouped_intermediates",
     "build_solver_binary_from_intermediates",
     "build_solver_binary_from_intermediates_streaming",
+    "BinaryShortestPathSearchResult",
     "decode_canonical_title_table",
     "find_shortest_path_by_node_ids",
     "find_shortest_path_by_titles",
     "load_solver_binary_data_from_intermediates",
     "load_solver_binary",
+    "search_shortest_path_by_node_ids",
     "validate_solver_binary_data",
     "write_solver_binary",
 ]

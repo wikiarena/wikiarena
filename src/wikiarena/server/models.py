@@ -22,6 +22,13 @@ class MetaResponse(BaseModel):
     edge_count: int
 
 
+class RandomPageTitlesResponse(BaseModel):
+    snapshot_id: str
+    titles: list[str] = Field(
+        default_factory=list,
+    )
+
+
 class SolveRequest(BaseModel):
     start_title: Annotated[str, Field(min_length=1)]
     target_title: Annotated[str, Field(min_length=1)]
@@ -52,3 +59,5 @@ class SolveResponse(BaseModel):
         default_factory=list,
     )
     solve_ms: float
+    pages_visited: int
+    links_scanned: int

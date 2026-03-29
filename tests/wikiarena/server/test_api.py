@@ -6,13 +6,19 @@ from fastapi.testclient import TestClient
 
 from wikiarena.server.app import create_app
 from wikiarena.server.errors import GraphNotReadyError, UnknownTitleError
-from wikiarena.server.models import MetaResponse, SolveResponse
+from wikiarena.server.models import (
+    MetaResponse,
+    RandomPageTitlesResponse,
+    SolveResponse,
+)
 
 
 @dataclass
 class StubRuntime:
     health_status: str = "ok"
     meta_response: MetaResponse | None = None
+    random_titles_response: RandomPageTitlesResponse | None = None
+    random_titles_count: int | None = None
     solve_response: SolveResponse | None = None
     solve_exception: Exception | None = None
     started: bool = False
@@ -46,6 +52,18 @@ class StubRuntime:
                 "graph is not ready",
             )
         return self.meta_response
+
+    async def random_page_titles(
+        self,
+        *,
+        count: int,
+    ) -> RandomPageTitlesResponse:
+        self.random_titles_count = count
+        if self.random_titles_response is None:
+            raise GraphNotReadyError(
+                "graph is not ready",
+            )
+        return self.random_titles_response
 
     async def solve(
         self,
@@ -142,6 +160,8 @@ def test_solve_returns_paths_for_successful_query() -> None:
             path_length=2,
             paths=[["Apple", "Fruit", "Banana"]],
             solve_ms=8.7,
+            pages_visited=42,
+            links_scanned=128,
         ),
     )
 
@@ -166,6 +186,65 @@ def test_solve_returns_paths_for_successful_query() -> None:
         "path_length": 2,
         "paths": [["Apple", "Fruit", "Banana"]],
         "solve_ms": 8.7,
+        "pages_visited": 42,
+        "links_scanned": 128,
+    }
+
+
+def test_random_page_titles_returns_requested_title_batch() -> None:
+    runtime = StubRuntime(
+        random_titles_response=RandomPageTitlesResponse(
+            snapshot_id="enwiki-20260301",
+            titles=[
+                "Apple",
+                "Banana",
+                "Cherry",
+            ],
+        ),
+    )
+
+    with TestClient(
+        create_app(
+            runtime=runtime,
+        ),
+    ) as client:
+        response = client.get(
+            "/v1/random-page-titles?count=3",
+        )
+
+    assert response.status_code == 200
+    assert runtime.random_titles_count == 3
+    assert response.json() == {
+        "snapshot_id": "enwiki-20260301",
+        "titles": [
+            "Apple",
+            "Banana",
+            "Cherry",
+        ],
+    }
+
+
+def test_random_page_titles_returns_422_for_invalid_count() -> None:
+    runtime = StubRuntime(
+        random_titles_response=RandomPageTitlesResponse(
+            snapshot_id="enwiki-20260301",
+            titles=["Apple"],
+        ),
+    )
+
+    with TestClient(
+        create_app(
+            runtime=runtime,
+        ),
+    ) as client:
+        response = client.get(
+            "/v1/random-page-titles?count=0",
+        )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "code": "invalid_request",
+        "message": "Invalid request body.",
     }
 
 
@@ -178,6 +257,8 @@ def test_solve_returns_empty_paths_when_no_path_exists() -> None:
             path_length=None,
             paths=[],
             solve_ms=4.1,
+            pages_visited=2,
+            links_scanned=0,
         ),
     )
 
@@ -202,6 +283,8 @@ def test_solve_returns_empty_paths_when_no_path_exists() -> None:
         "path_length": None,
         "paths": [],
         "solve_ms": 4.1,
+        "pages_visited": 2,
+        "links_scanned": 0,
     }
 
 

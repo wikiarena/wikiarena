@@ -30,6 +30,8 @@ class BinarySearchGraph(Protocol):
 class BinaryShortestPathResult:
     path_node_ids: tuple[int, ...]
     path_titles: tuple[str, ...]
+    pages_visited: int
+    links_scanned: int
 
     @property
     def path_length(
@@ -41,6 +43,32 @@ class BinaryShortestPathResult:
             )
             - 1
         )
+
+
+@dataclass(frozen=True)
+class BinaryShortestPathSearchResult:
+    path_node_ids: tuple[int, ...] | None
+    pages_visited: int
+    links_scanned: int
+
+    @property
+    def path_length(
+        self,
+    ) -> int | None:
+        if self.path_node_ids is None:
+            return None
+        return (
+            len(
+                self.path_node_ids,
+            )
+            - 1
+        )
+
+
+@dataclass
+class _BinarySearchCounter:
+    pages_visited: int
+    links_scanned: int
 
 
 def find_shortest_path_by_titles(
@@ -65,22 +93,24 @@ def find_shortest_path_by_titles(
             f"unknown target title: {target_title}",
         )
 
-    path_node_ids = find_shortest_path_by_node_ids(
+    search_result = search_shortest_path_by_node_ids(
         graph,
         start_node_id=start_node_id,
         target_node_id=target_node_id,
     )
-    if path_node_ids is None:
+    if search_result.path_node_ids is None:
         return None
 
     return BinaryShortestPathResult(
-        path_node_ids=path_node_ids,
+        path_node_ids=search_result.path_node_ids,
         path_titles=tuple(
             graph.title_for_node_id(
                 node_id,
             )
-            for node_id in path_node_ids
+            for node_id in search_result.path_node_ids
         ),
+        pages_visited=search_result.pages_visited,
+        links_scanned=search_result.links_scanned,
     )
 
 
@@ -90,8 +120,25 @@ def find_shortest_path_by_node_ids(
     start_node_id: int,
     target_node_id: int,
 ) -> tuple[int, ...] | None:
+    return search_shortest_path_by_node_ids(
+        graph,
+        start_node_id=start_node_id,
+        target_node_id=target_node_id,
+    ).path_node_ids
+
+
+def search_shortest_path_by_node_ids(
+    graph: BinarySearchGraph,
+    *,
+    start_node_id: int,
+    target_node_id: int,
+) -> BinaryShortestPathSearchResult:
     if start_node_id == target_node_id:
-        return (start_node_id,)
+        return BinaryShortestPathSearchResult(
+            path_node_ids=(start_node_id,),
+            pages_visited=1,
+            links_scanned=0,
+        )
 
     forward_frontier = {
         start_node_id,
@@ -105,6 +152,10 @@ def find_shortest_path_by_node_ids(
     backward_parents: dict[int, int | None] = {
         target_node_id: None,
     }
+    search_counter = _BinarySearchCounter(
+        pages_visited=2,
+        links_scanned=0,
+    )
 
     while forward_frontier and backward_frontier:
         if len(forward_frontier) < len(backward_frontier):
@@ -113,14 +164,19 @@ def find_shortest_path_by_node_ids(
                 frontier_node_ids=forward_frontier,
                 forward_parents=forward_parents,
                 backward_parents=backward_parents,
+                search_counter=search_counter,
             )
             if meeting_node_ids:
-                return _reconstruct_path(
-                    meeting_node_id=min(
-                        meeting_node_ids,
+                return BinaryShortestPathSearchResult(
+                    path_node_ids=_reconstruct_path(
+                        meeting_node_id=min(
+                            meeting_node_ids,
+                        ),
+                        forward_parents=forward_parents,
+                        backward_parents=backward_parents,
                     ),
-                    forward_parents=forward_parents,
-                    backward_parents=backward_parents,
+                    pages_visited=search_counter.pages_visited,
+                    links_scanned=search_counter.links_scanned,
                 )
             forward_frontier = next_forward_frontier
         else:
@@ -129,18 +185,27 @@ def find_shortest_path_by_node_ids(
                 frontier_node_ids=backward_frontier,
                 backward_parents=backward_parents,
                 forward_parents=forward_parents,
+                search_counter=search_counter,
             )
             if meeting_node_ids:
-                return _reconstruct_path(
-                    meeting_node_id=min(
-                        meeting_node_ids,
+                return BinaryShortestPathSearchResult(
+                    path_node_ids=_reconstruct_path(
+                        meeting_node_id=min(
+                            meeting_node_ids,
+                        ),
+                        forward_parents=forward_parents,
+                        backward_parents=backward_parents,
                     ),
-                    forward_parents=forward_parents,
-                    backward_parents=backward_parents,
+                    pages_visited=search_counter.pages_visited,
+                    links_scanned=search_counter.links_scanned,
                 )
             backward_frontier = next_backward_frontier
 
-    return None
+    return BinaryShortestPathSearchResult(
+        path_node_ids=None,
+        pages_visited=search_counter.pages_visited,
+        links_scanned=search_counter.links_scanned,
+    )
 
 
 def _expand_forward_frontier(
@@ -149,6 +214,7 @@ def _expand_forward_frontier(
     frontier_node_ids: set[int],
     forward_parents: dict[int, int | None],
     backward_parents: dict[int, int | None],
+    search_counter: _BinarySearchCounter,
 ) -> tuple[set[int], set[int]]:
     next_frontier: set[int] = set()
     meeting_node_ids: set[int] = set()
@@ -159,13 +225,17 @@ def _expand_forward_frontier(
         for neighbor_id in graph.iter_outgoing_neighbors(
             node_id,
         ):
+            search_counter.links_scanned += 1
             if neighbor_id in forward_parents:
                 continue
+            neighbor_seen_by_backward = neighbor_id in backward_parents
+            if not neighbor_seen_by_backward:
+                search_counter.pages_visited += 1
             forward_parents[neighbor_id] = node_id
             next_frontier.add(
                 neighbor_id,
             )
-            if neighbor_id in backward_parents:
+            if neighbor_seen_by_backward:
                 meeting_node_ids.add(
                     neighbor_id,
                 )
@@ -179,6 +249,7 @@ def _expand_backward_frontier(
     frontier_node_ids: set[int],
     backward_parents: dict[int, int | None],
     forward_parents: dict[int, int | None],
+    search_counter: _BinarySearchCounter,
 ) -> tuple[set[int], set[int]]:
     next_frontier: set[int] = set()
     meeting_node_ids: set[int] = set()
@@ -189,13 +260,17 @@ def _expand_backward_frontier(
         for neighbor_id in graph.iter_incoming_neighbors(
             node_id,
         ):
+            search_counter.links_scanned += 1
             if neighbor_id in backward_parents:
                 continue
+            neighbor_seen_by_forward = neighbor_id in forward_parents
+            if not neighbor_seen_by_forward:
+                search_counter.pages_visited += 1
             backward_parents[neighbor_id] = node_id
             next_frontier.add(
                 neighbor_id,
             )
-            if neighbor_id in forward_parents:
+            if neighbor_seen_by_forward:
                 meeting_node_ids.add(
                     neighbor_id,
                 )

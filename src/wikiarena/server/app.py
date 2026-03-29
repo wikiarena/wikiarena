@@ -14,6 +14,9 @@ from wikiarena.server.graph_runtime import GraphSolverRuntime, SolverRuntime
 from wikiarena.server.models import ErrorResponse
 from wikiarena.server.routers.health import router as health_router
 from wikiarena.server.routers.meta import router as meta_router
+from wikiarena.server.routers.random_page_titles import (
+    router as random_page_titles_router,
+)
 from wikiarena.server.routers.solve import router as solve_router
 
 logger = logging.getLogger(
@@ -64,6 +67,9 @@ def create_app(
     )
     app.include_router(
         meta_router,
+    )
+    app.include_router(
+        random_page_titles_router,
     )
     app.include_router(
         solve_router,

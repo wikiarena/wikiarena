@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -101,6 +102,8 @@ async def test_graph_solver_runtime_loads_metadata_and_solves_queries(
     assert solve_response.target_title == "Echo"
     assert solve_response.path_length == 3
     assert solve_response.paths == [["Alpha", "Bravo", "Delta", "Echo"]]
+    assert solve_response.pages_visited == 5
+    assert solve_response.links_scanned == 5
     assert solve_response.solve_ms >= 0.0
 
     await runtime.shutdown()
@@ -136,6 +139,8 @@ async def test_graph_solver_runtime_returns_empty_paths_for_disconnected_titles(
     )
     assert solve_response.path_length is None
     assert solve_response.paths == []
+    assert solve_response.pages_visited == 2
+    assert solve_response.links_scanned == 0
 
     await runtime.shutdown()
 
@@ -174,5 +179,47 @@ async def test_graph_solver_runtime_raises_unknown_title_for_missing_start_page(
 
     assert error_info.value.title_role == "start"
     assert error_info.value.title == "Not A Page"
+
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_graph_solver_runtime_returns_random_page_titles(
+    tmp_path: Path,
+) -> None:
+    binary_path = tmp_path / "wikiarena_graph.bin"
+    metadata_path = tmp_path / "wikiarena_graph.metadata.json"
+    write_solver_binary(
+        file_path=binary_path,
+        data=_make_toy_solver_binary_data(),
+    )
+    _write_graph_metadata(
+        metadata_path,
+    )
+
+    runtime = GraphSolverRuntime(
+        ServerConfig(
+            graph_path=binary_path,
+            graph_metadata_path=metadata_path,
+            service_version="0.1.0",
+        ),
+    )
+
+    await runtime.startup()
+
+    with patch(
+        "wikiarena.server.graph_runtime.random.sample",
+        return_value=[0, 2, 4],
+    ):
+        random_titles_response = await runtime.random_page_titles(
+            count=3,
+        )
+
+    assert random_titles_response.snapshot_id == "enwiki-20260301"
+    assert random_titles_response.titles == [
+        "Alpha",
+        "Charlie",
+        "Echo",
+    ]
 
     await runtime.shutdown()
