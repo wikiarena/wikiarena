@@ -1,8 +1,15 @@
 import "./styles.css";
 
-import { ApiError, loadMeta, solvePath, type SolveResponse } from "./lib/api";
+import {
+  ApiError,
+  loadMeta,
+  solvePath,
+  type SolvePathMode,
+  type SolveResponse,
+} from "./lib/api";
 import { attachTitleAutocomplete } from "./lib/autocomplete";
 import { formatDurationMs, formatInteger } from "./lib/format";
+import { renderPathGraph } from "./lib/path-graph";
 import { WikipediaRandomService } from "./lib/random-pages";
 import { WikipediaSearchService } from "./lib/wikipedia-search";
 
@@ -62,6 +69,33 @@ function pairsMatch(left: ArticlePair | null, right: ArticlePair | null): boolea
     normalizeTitle(left.startTitle) === normalizeTitle(right.startTitle) &&
     normalizeTitle(left.targetTitle) === normalizeTitle(right.targetTitle)
   );
+}
+
+function renderSinglePathTimeline(resultsContainer: HTMLElement, path: string[]): void {
+  const itemMarkup = path
+    .map((title, titleIndex) => {
+      const roleLabel = titleIndex === 0
+        ? "Start"
+        : titleIndex === path.length - 1
+          ? "Target"
+          : `Step ${titleIndex}`;
+      return `
+        <li class="timeline-item">
+          <span class="timeline-index">${titleIndex}</span>
+          <div class="timeline-copy">
+            <span class="timeline-role">${roleLabel}</span>
+            <a class="timeline-link" href="${buildWikipediaUrl(title)}" target="_blank" rel="noreferrer">${escapeHtml(title)}</a>
+          </div>
+        </li>
+      `;
+    })
+    .join("");
+
+  resultsContainer.innerHTML = `
+    <div class="timeline-shell">
+      <ol class="timeline-list">${itemMarkup}</ol>
+    </div>
+  `;
 }
 
 function createRandomFieldController(options: {
@@ -217,53 +251,21 @@ function createRandomFieldController(options: {
   };
 }
 
-function renderPathCards(resultsContainer: HTMLElement, solveResponse: SolveResponse): void {
-  resultsContainer.innerHTML = solveResponse.paths
-    .map((path, pathIndex) => {
-      const itemsMarkup = path
-        .map(
-          (title, titleIndex) => `
-            <li class="path-item">
-              <span class="path-index">${titleIndex}</span>
-              <div class="path-copy">
-                <span class="path-role">${
-                  titleIndex === 0
-                    ? "Start"
-                    : titleIndex === path.length - 1
-                      ? "Target"
-                      : `Step ${titleIndex}`
-                }</span>
-                <a class="path-link" href="${buildWikipediaUrl(title)}" target="_blank" rel="noreferrer">${escapeHtml(title)}</a>
-              </div>
-            </li>
-          `,
-        )
-        .join("");
-
-      return `
-        <article class="path-sheet" style="--path-delay: ${pathIndex};">
-          <header class="path-sheet-header">
-            <span class="path-sheet-label">Path ${pathIndex + 1}</span>
-          </header>
-          <ol class="path-list">${itemsMarkup}</ol>
-        </article>
-      `;
-    })
-    .join("");
-}
-
 function renderSolveResponse(
   solveResponse: SolveResponse,
   solverExperienceElement: HTMLElement,
   resultsPanelElement: HTMLElement,
+  resultsTitleElement: HTMLElement,
   resultsContainer: HTMLElement,
   emptyStateElement: HTMLElement,
   summaryElement: HTMLElement,
 ): void {
   solverExperienceElement.classList.add("is-solved");
   resultsPanelElement.classList.add("is-visible");
+  resultsTitleElement.textContent = solveResponse.paths.length > 1 ? "Shortest Paths" : "Shortest Path";
 
   summaryElement.innerHTML = `
+    <span class="summary-token">${solveResponse.paths.length} path${solveResponse.paths.length === 1 ? "" : "s"}</span>
     <span class="summary-token">${solveResponse.path_length === null ? "No route" : `${solveResponse.path_length} steps`}</span>
     <span class="summary-token">${formatInteger(solveResponse.pages_visited)} pages</span>
     <span class="summary-token">${formatInteger(solveResponse.links_scanned)} links</span>
@@ -282,7 +284,11 @@ function renderSolveResponse(
   }
 
   emptyStateElement.classList.add("hidden");
-  renderPathCards(resultsContainer, solveResponse);
+  if (solveResponse.paths.length <= 1) {
+    renderSinglePathTimeline(resultsContainer, solveResponse.paths[0] ?? []);
+  } else {
+    renderPathGraph(resultsContainer, solveResponse);
+  }
   resultsContainer.classList.remove("hidden");
 }
 
@@ -297,11 +303,14 @@ async function initializeHomePage(): Promise<void> {
   const solveForm = getRequiredElement<HTMLFormElement>("solve-form");
   const solveButton = getRequiredElement<HTMLButtonElement>("solve-button");
   const swapButton = getRequiredElement<HTMLButtonElement>("swap-button");
+  const pathModeSingleButton = getRequiredElement<HTMLButtonElement>("path-mode-single");
+  const pathModeAllButton = getRequiredElement<HTMLButtonElement>("path-mode-all");
   const formErrorElement = getRequiredElement<HTMLElement>("form-error");
   const heroSnapshotElement = getRequiredElement<HTMLElement>("hero-snapshot");
   const heroNodeCountElement = getRequiredElement<HTMLElement>("hero-node-count");
   const heroEdgeCountElement = getRequiredElement<HTMLElement>("hero-edge-count");
   const resultsPanelElement = getRequiredElement<HTMLElement>("results-panel");
+  const resultsTitleElement = getRequiredElement<HTMLElement>("results-title");
   const resultsContainer = getRequiredElement<HTMLElement>("results-container");
   const resultsEmptyState = getRequiredElement<HTMLElement>("results-empty-state");
   const resultSummary = getRequiredElement<HTMLElement>("result-summary");
@@ -316,10 +325,14 @@ async function initializeHomePage(): Promise<void> {
   const startFieldRandomService = new WikipediaRandomService();
   const targetFieldRandomService = new WikipediaRandomService();
   const titleResolutionService = new WikipediaSearchService();
+  const pathModeButtons = [pathModeSingleButton, pathModeAllButton];
 
   let lastSolvedPair: ArticlePair | null = null;
+  let lastSolvedPathMode: SolvePathMode | null = null;
+  let selectedPathMode: SolvePathMode = "all_shortest";
   let solveButtonMode: SolveButtonMode = "solve";
   let isSolving = false;
+  let supportedPathModes = new Set<SolvePathMode>(["single"]);
 
   function getCurrentExplicitPair(): ArticlePair | null {
     const startTitle = startInput.value.trim();
@@ -346,17 +359,32 @@ async function initializeHomePage(): Promise<void> {
     solveButton.textContent = "Solve";
   }
 
+  function syncPathModeButtons(): void {
+    for (const buttonElement of pathModeButtons) {
+      const buttonPathMode = buttonElement.dataset.pathMode as SolvePathMode;
+      const isActive = buttonPathMode === selectedPathMode;
+      const isSupported = supportedPathModes.has(buttonPathMode);
+      buttonElement.classList.toggle("is-active", isActive);
+      buttonElement.classList.toggle("is-disabled", !isSupported);
+      buttonElement.setAttribute("aria-pressed", String(isActive));
+      buttonElement.disabled = isSolving || !isSupported;
+    }
+  }
+
   function updateSolveButtonState(): void {
     if (isSolving) {
+      syncPathModeButtons();
       return;
     }
 
     const currentPair = getCurrentExplicitPair();
-    if (pairsMatch(currentPair, lastSolvedPair)) {
+    if (pairsMatch(currentPair, lastSolvedPair) && selectedPathMode === lastSolvedPathMode) {
       setSolveButtonMode("another");
+      syncPathModeButtons();
       return;
     }
     setSolveButtonMode("solve");
+    syncPathModeButtons();
   }
 
   async function resolveArticlePair(articlePair: ArticlePair): Promise<ArticlePair> {
@@ -405,23 +433,51 @@ async function initializeHomePage(): Promise<void> {
     targetRandomController.setValue(startTitle);
   });
 
+  for (const buttonElement of pathModeButtons) {
+    buttonElement.addEventListener("click", async () => {
+      const requestedPathMode = buttonElement.dataset.pathMode as SolvePathMode;
+      if (isSolving || requestedPathMode === selectedPathMode || !supportedPathModes.has(requestedPathMode)) {
+        return;
+      }
+
+      selectedPathMode = requestedPathMode;
+      updateSolveButtonState();
+
+      const currentPair = getCurrentExplicitPair();
+      if (pairsMatch(currentPair, lastSolvedPair) && currentPair !== null) {
+        await executeSolve(currentPair, requestedPathMode);
+      }
+    });
+  }
+
   try {
     const meta = await loadMeta();
     heroSnapshotElement.textContent = meta.snapshot_id;
     heroNodeCountElement.textContent = `${formatInteger(meta.node_count)} pages`;
     heroEdgeCountElement.textContent = `${formatInteger(meta.edge_count)} links`;
+    supportedPathModes = new Set(meta.supported_path_modes);
+    if (supportedPathModes.has("all_shortest")) {
+      selectedPathMode = "all_shortest";
+    } else if (supportedPathModes.has(meta.default_path_mode)) {
+      selectedPathMode = meta.default_path_mode;
+    } else {
+      selectedPathMode = supportedPathModes.values().next().value ?? "single";
+    }
   } catch (error) {
     heroSnapshotElement.textContent = "Snapshot unavailable";
     heroNodeCountElement.textContent = "Graph unavailable";
     heroEdgeCountElement.textContent = "API unavailable";
   }
 
-  async function executeSolve(articlePair: ArticlePair): Promise<void> {
+  updateSolveButtonState();
+
+  async function executeSolve(articlePair: ArticlePair, pathMode: SolvePathMode): Promise<void> {
     isSolving = true;
     hideFormError(formErrorElement);
     solveButton.disabled = true;
     swapButton.disabled = true;
     setSolveButtonMode("solving");
+    syncPathModeButtons();
     startRandomController.setDisabled(true);
     targetRandomController.setDisabled(true);
     resultSummary.innerHTML = '<span class="summary-token">Working...</span>';
@@ -435,6 +491,7 @@ async function initializeHomePage(): Promise<void> {
       const solveResponse = await solvePath(
         resolvedArticlePair.startTitle,
         resolvedArticlePair.targetTitle,
+        pathMode,
       );
       startRandomController.setValue(solveResponse.start_title);
       targetRandomController.setValue(solveResponse.target_title);
@@ -442,10 +499,12 @@ async function initializeHomePage(): Promise<void> {
         startTitle: solveResponse.start_title,
         targetTitle: solveResponse.target_title,
       };
+      lastSolvedPathMode = pathMode;
       renderSolveResponse(
         solveResponse,
         solverExperienceElement,
         resultsPanelElement,
+        resultsTitleElement,
         resultsContainer,
         resultsEmptyState,
         resultSummary,
@@ -485,7 +544,7 @@ async function initializeHomePage(): Promise<void> {
       };
       startRandomController.setValue(randomPair.startTitle);
       targetRandomController.setValue(randomPair.targetTitle);
-      await executeSolve(randomPair);
+      await executeSolve(randomPair, selectedPathMode);
       return;
     }
 
@@ -496,10 +555,8 @@ async function initializeHomePage(): Promise<void> {
     await executeSolve({
       startTitle,
       targetTitle,
-    });
+    }, selectedPathMode);
   });
-
-  updateSolveButtonState();
 }
 
 void initializeHomePage();

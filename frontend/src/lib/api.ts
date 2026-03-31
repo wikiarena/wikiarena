@@ -1,9 +1,13 @@
+export type SolvePathMode = "single" | "all_shortest";
+
 export interface MetaResponse {
   service_version: string;
   snapshot_id: string;
   dump_date: string;
   node_count: number;
   edge_count: number;
+  default_path_mode: SolvePathMode;
+  supported_path_modes: SolvePathMode[];
 }
 
 export interface SolveResponse {
@@ -94,12 +98,17 @@ export async function loadMeta(): Promise<MetaResponse> {
   return requestJson<MetaResponse>("/v1/meta");
 }
 
-export async function solvePath(startTitle: string, targetTitle: string): Promise<SolveResponse> {
+export async function solvePath(
+  startTitle: string,
+  targetTitle: string,
+  pathMode: SolvePathMode,
+): Promise<SolveResponse> {
   return requestJson<SolveResponse>("/v1/solve", {
     method: "POST",
     body: JSON.stringify({
       start_title: startTitle,
       target_title: targetTitle,
+      path_mode: pathMode,
     }),
   });
 }

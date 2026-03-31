@@ -15,10 +15,12 @@ from wikiarena.server.errors import GraphNotReadyError, UnknownTitleError
 from wikiarena.server.models import (
     MetaResponse,
     RandomPageTitlesResponse,
+    SolvePathMode,
     SolveResponse,
 )
 from wikiarena.solver.binary import (
     MappedBinarySolverGraph,
+    search_all_shortest_paths_by_node_ids,
     search_shortest_path_by_node_ids,
 )
 
@@ -63,6 +65,7 @@ class SolverRuntime(Protocol):
         *,
         start_title: str,
         target_title: str,
+        path_mode: SolvePathMode,
     ) -> SolveResponse: ...
 
 
@@ -156,6 +159,7 @@ class GraphSolverRuntime:
         *,
         start_title: str,
         target_title: str,
+        path_mode: SolvePathMode,
     ) -> SolveResponse:
         if self._graph is None or self._meta_response is None:
             raise GraphNotReadyError(
@@ -165,12 +169,14 @@ class GraphSolverRuntime:
             self._solve_sync,
             start_title,
             target_title,
+            path_mode,
         )
 
     def _solve_sync(
         self,
         start_title: str,
         target_title: str,
+        path_mode: SolvePathMode,
     ) -> SolveResponse:
         graph = self._require_graph()
         meta_response = self._require_meta()
@@ -201,6 +207,45 @@ class GraphSolverRuntime:
         )
 
         started_at = time.perf_counter()
+        if path_mode == "all_shortest":
+            search_result = search_all_shortest_paths_by_node_ids(
+                graph,
+                start_node_id=start_node_id,
+                target_node_id=target_node_id,
+            )
+            solve_ms = (time.perf_counter() - started_at) * 1000.0
+
+            if not search_result.path_node_id_paths:
+                return SolveResponse(
+                    snapshot_id=meta_response.snapshot_id,
+                    start_title=canonical_start_title,
+                    target_title=canonical_target_title,
+                    path_length=None,
+                    paths=[],
+                    solve_ms=solve_ms,
+                    pages_visited=search_result.pages_visited,
+                    links_scanned=search_result.links_scanned,
+                )
+
+            return SolveResponse(
+                snapshot_id=meta_response.snapshot_id,
+                start_title=canonical_start_title,
+                target_title=canonical_target_title,
+                path_length=len(search_result.path_node_id_paths[0]) - 1,
+                paths=[
+                    [
+                        graph.title_for_node_id(
+                            node_id,
+                        )
+                        for node_id in path_node_ids
+                    ]
+                    for path_node_ids in search_result.path_node_id_paths
+                ],
+                solve_ms=solve_ms,
+                pages_visited=search_result.pages_visited,
+                links_scanned=search_result.links_scanned,
+            )
+
         search_result = search_shortest_path_by_node_ids(
             graph,
             start_node_id=start_node_id,
@@ -295,6 +340,11 @@ class GraphSolverRuntime:
                 dump_date=dump_date,
                 node_count=graph.node_count,
                 edge_count=graph.edge_count,
+                default_path_mode="single",
+                supported_path_modes=[
+                    "single",
+                    "all_shortest",
+                ],
             )
         except Exception:
             graph.close()

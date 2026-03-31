@@ -74,6 +74,14 @@
             </div>
 
             <div class="solve-row">
+              <div class="path-mode-toggle" role="group" aria-label="Path mode">
+                <button id="path-mode-single" class="path-mode-button" type="button" data-path-mode="single" aria-pressed="false">
+                  1 path
+                </button>
+                <button id="path-mode-all" class="path-mode-button is-active" type="button" data-path-mode="all_shortest" aria-pressed="true">
+                  all paths
+                </button>
+              </div>
               <button id="solve-button" class="solve-button" type="submit">Solve</button>
             </div>
 
@@ -89,7 +97,7 @@
             </div>
 
             <div id="results-empty-state" class="empty-state hidden"></div>
-            <div id="results-container" class="path-stack hidden"></div>
+            <div id="results-container" class="path-graph-stage hidden"></div>
           </section>
         </section>
       </main>

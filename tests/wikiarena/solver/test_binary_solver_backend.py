@@ -25,6 +25,23 @@ def _make_toy_solver_binary_data() -> SolverBinaryData:
     )
 
 
+def _make_multi_split_solver_binary_data() -> SolverBinaryData:
+    return SolverBinaryData(
+        canonical_titles=(
+            "Alpha",
+            "Bravo",
+            "Charlie",
+            "Delta",
+            "Echo",
+            "Foxtrot",
+        ),
+        out_offsets=(0, 2, 4, 6, 7, 8, 8),
+        out_neighbors=(1, 2, 3, 4, 3, 4, 5, 5),
+        in_offsets=(0, 0, 1, 2, 4, 6, 8),
+        in_neighbors=(0, 0, 1, 2, 1, 2, 3, 4),
+    )
+
+
 @pytest.mark.asyncio
 async def test_binary_solver_backend_finds_shortest_path_from_toy_binary(
     tmp_path: Path,
@@ -106,5 +123,62 @@ async def test_binary_solver_backend_session_wrapper_delegates_to_backend(
     assert session.target_page == "Echo"
     assert response.path_length == 3
     assert response.paths[0] == ["Alpha", "Bravo", "Delta", "Echo"]
+
+    await backend.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_binary_solver_backend_all_shortest_mode_returns_all_paths(
+    tmp_path: Path,
+) -> None:
+    binary_path = tmp_path / "multi_split.solver.bin"
+    write_solver_binary(
+        file_path=binary_path,
+        data=_make_multi_split_solver_binary_data(),
+    )
+
+    backend = BinarySolverBackend.from_file_path(
+        binary_path,
+        path_mode="all_shortest",
+    )
+
+    response = await backend.find_shortest_path(
+        "Alpha",
+        "Foxtrot",
+    )
+
+    assert response.path_length == 3
+    assert response.paths == [
+        ["Alpha", "Bravo", "Delta", "Foxtrot"],
+        ["Alpha", "Bravo", "Echo", "Foxtrot"],
+        ["Alpha", "Charlie", "Delta", "Foxtrot"],
+        ["Alpha", "Charlie", "Echo", "Foxtrot"],
+    ]
+
+    await backend.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_binary_solver_backend_single_mode_still_returns_one_deterministic_path(
+    tmp_path: Path,
+) -> None:
+    binary_path = tmp_path / "multi_split.solver.bin"
+    write_solver_binary(
+        file_path=binary_path,
+        data=_make_multi_split_solver_binary_data(),
+    )
+
+    backend = BinarySolverBackend.from_file_path(
+        binary_path,
+        path_mode="single",
+    )
+
+    response = await backend.find_shortest_path(
+        "Alpha",
+        "Foxtrot",
+    )
+
+    assert response.path_length == 3
+    assert response.paths == [["Alpha", "Bravo", "Delta", "Foxtrot"]]
 
     await backend.shutdown()

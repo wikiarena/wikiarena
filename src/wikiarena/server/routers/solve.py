@@ -22,4 +22,5 @@ async def solve_path(
     return await runtime.solve(
         start_title=solve_request.start_title,
         target_title=solve_request.target_title,
+        path_mode=solve_request.path_mode,
     )

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator
+
+SolvePathMode = Literal["single", "all_shortest"]
 
 
 class HealthResponse(BaseModel):
@@ -20,6 +22,10 @@ class MetaResponse(BaseModel):
     dump_date: str
     node_count: int
     edge_count: int
+    default_path_mode: SolvePathMode
+    supported_path_modes: list[SolvePathMode] = Field(
+        default_factory=list,
+    )
 
 
 class RandomPageTitlesResponse(BaseModel):
@@ -32,6 +38,7 @@ class RandomPageTitlesResponse(BaseModel):
 class SolveRequest(BaseModel):
     start_title: Annotated[str, Field(min_length=1)]
     target_title: Annotated[str, Field(min_length=1)]
+    path_mode: SolvePathMode = "single"
 
     @field_validator(
         "start_title",

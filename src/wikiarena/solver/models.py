@@ -33,8 +33,10 @@ class SolverResponse(BaseModel):
         ..., description="Time taken to compute the path in milliseconds"
     )
     pages_visited: int = Field(
-        ..., description="Number of unique graph pages discovered during the search"
+        default=0,
+        description="Number of unique graph pages discovered during the search",
     )
     links_scanned: int = Field(
-        ..., description="Number of graph links inspected during the search"
+        default=0,
+        description="Number of graph links inspected during the search",
     )

@@ -462,8 +462,54 @@ input {
 
 .solve-row {
   display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
   justify-content: center;
   margin-top: 18px;
+}
+
+.path-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  box-shadow: 4px 4px 0 var(--shadow);
+}
+
+.path-mode-button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-right: 2px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+.path-mode-button:last-child {
+  border-right: 0;
+}
+
+.path-mode-button:hover,
+.path-mode-button:focus-visible {
+  background: var(--surface-alt);
+}
+
+.path-mode-button.is-active {
+  background: var(--text);
+  color: #ffffff;
+}
+
+.path-mode-button.is-disabled,
+.path-mode-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .swap-button {
@@ -544,78 +590,170 @@ input {
   background: var(--surface-alt);
 }
 
-.path-stack {
-  display: grid;
-  gap: 16px;
+.path-graph-stage {
   margin-top: 18px;
 }
 
-.path-sheet {
-  padding: 18px;
-  animation: fade-up 360ms ease both;
-  animation-delay: calc(var(--path-delay, 0) * 80ms);
+.timeline-shell {
+  display: flex;
+  justify-content: center;
+  width: min(100%, 560px);
+  margin: 0 auto;
+  padding: 18px 20px;
+  border: 2px solid var(--border);
+  background: var(--surface-quiet);
+  box-shadow: 6px 6px 0 var(--shadow);
 }
 
-.path-sheet-header {
-  align-items: center;
-}
-
-.path-list {
+.timeline-list {
   list-style: none;
-  margin: 18px 0 0;
+  width: 100%;
+  margin: 0;
   padding: 0;
 }
 
-.path-item {
+.timeline-item {
   position: relative;
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 14px;
-  padding: 0 0 20px;
+  padding: 0 0 18px;
 }
 
-.path-item:last-child {
+.timeline-item:last-child {
   padding-bottom: 0;
 }
 
-.path-item:not(:last-child)::after {
+.timeline-item:not(:last-child)::after {
   content: "";
   position: absolute;
-  top: 32px;
-  left: 13px;
+  top: 30px;
+  left: 12px;
   bottom: 0;
   width: 2px;
-  background: var(--border);
+  background: var(--border-soft);
 }
 
-.path-index {
+.timeline-index {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   border: 2px solid var(--border);
   background: #ffffff;
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   font-weight: 700;
 }
 
-.path-copy {
+.timeline-copy {
   min-width: 0;
+  padding-top: 2px;
 }
 
-.path-role {
+.timeline-role {
   display: block;
-  font-size: 0.78rem;
-  text-transform: uppercase;
+  color: var(--text-muted);
+  font-size: 0.76rem;
   letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-.path-link {
+.timeline-link {
   display: inline-block;
-  margin-top: 5px;
+  margin-top: 4px;
   font-weight: 700;
   word-break: break-word;
+}
+
+.path-graph-shell {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 4px;
+}
+
+.path-graph-svg {
+  display: block;
+  width: auto;
+  max-width: none;
+  height: auto;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.path-graph-edge {
+  stroke: var(--text);
+  stroke-width: 2.1;
+  opacity: 0.24;
+  transition: stroke 120ms ease, opacity 120ms ease, stroke-width 120ms ease;
+}
+
+.path-graph-edge.is-active {
+  stroke: var(--link);
+  stroke-width: 3;
+  opacity: 0.42;
+}
+
+.path-graph-node {
+  cursor: pointer;
+  outline: none;
+}
+
+.path-graph-node-circle {
+  fill: #ffffff;
+  stroke: var(--text);
+  stroke-width: 2.5;
+  transition: fill 120ms ease, stroke 120ms ease, transform 120ms ease;
+}
+
+.path-graph-node.is-active .path-graph-node-circle {
+  fill: rgba(6, 69, 173, 0.14);
+  stroke: var(--link);
+}
+
+.path-graph-node.is-neighbor .path-graph-node-circle {
+  fill: rgba(6, 69, 173, 0.08);
+  stroke: var(--link);
+}
+
+.path-graph-label {
+  fill: var(--text);
+  font-size: 0.82rem;
+  font-weight: 700;
+  opacity: 0;
+  paint-order: stroke;
+  stroke: rgba(255, 255, 255, 0.96);
+  stroke-width: 7px;
+  stroke-linejoin: round;
+  transition: opacity 120ms ease;
+}
+
+.path-graph-label.is-visible,
+.path-graph-label.is-anchor {
+  opacity: 1;
+}
+
+.path-graph-label-stem {
+  stroke: var(--border-soft);
+  stroke-width: 1.5;
+  opacity: 0;
+  transition: opacity 120ms ease, stroke 120ms ease;
+}
+
+.path-graph-label-stem.is-visible {
+  opacity: 1;
+}
+
+.path-graph-node.is-active .path-graph-label,
+.path-graph-node.is-neighbor .path-graph-label,
+.path-graph-node.is-active .path-graph-label-stem,
+.path-graph-node.is-neighbor .path-graph-label-stem {
+  opacity: 1;
+}
+
+.path-graph-node.is-active .path-graph-label-stem,
+.path-graph-node.is-neighbor .path-graph-label-stem {
+  stroke: var(--link);
 }
 
 .about-sheet {
@@ -762,7 +900,6 @@ input {
     width: min(100% - 20px, 1040px);
   }
 
-  .topbar,
   .site-footer,
   .results-header,
   .section-header-simple,
@@ -820,7 +957,6 @@ input {
     padding-top: 12px;
   }
 
-  .topbar,
   .site-footer,
   .solver-experience,
   .about-sheet,
@@ -835,12 +971,38 @@ input {
     font-size: 2.4rem;
   }
 
+  .topbar {
+    padding: 12px 14px;
+    gap: 10px;
+  }
+
+  .brand {
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .brand-mark {
+    width: 36px;
+    height: 36px;
+  }
+
+  .brand-name {
+    font-size: 0.9rem;
+  }
+
+  .brand-tag {
+    display: none;
+  }
+
   .nav-links {
-    width: 100%;
+    flex-wrap: nowrap;
+    gap: 4px;
   }
 
   .nav-link {
-    flex: 1 1 auto;
+    flex: 0 0 auto;
+    padding: 7px 8px;
+    font-size: 0.78rem;
     text-align: center;
   }
 

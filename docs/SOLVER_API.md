@@ -1,6 +1,6 @@
 # Solver API
 
-Last updated: 2026-03-29
+Last updated: 2026-03-30
 
 This doc defines the initial public API for the solver experience on `wikiarena.org`.
 
@@ -25,7 +25,7 @@ Production base URL is expected to be `https://api.wikiarena.org`.
 1. Keep the public product API thinner than the internal benchmark and protocol stack.
 2. Expose the loaded Wikipedia snapshot clearly.
 3. Return paths in a shape that can support one or many shortest paths.
-4. Avoid request parameters we do not need yet.
+4. Keep solve-mode control minimal and explicit.
 5. Do not expose backend-specific implementation details in the primary public contract.
 
 ## Snapshot Semantics
@@ -42,8 +42,10 @@ Solver or graph-format provenance can live in release metadata, deploy config, l
 - `solve_ms` is server-side solve time in milliseconds, not browser round-trip time.
 - `paths` is always a list.
 - All returned paths, when present, have exactly `path_length` steps.
-- Clients must not assume the service returns every possible shortest path.
-- There is no `max_paths` request parameter in v1. The server decides how many shortest paths to return.
+- `POST /v1/solve` supports a small `path_mode` selector.
+- `single` returns one deterministic shortest path.
+- `all_shortest` returns every shortest path for that pair.
+- There is no `max_paths` request parameter in v1.
 
 ## Endpoints
 
@@ -83,7 +85,9 @@ Response `200`:
   "snapshot_id": "enwiki-20260301",
   "dump_date": "20260301",
   "node_count": 7146840,
-  "edge_count": 695099364
+  "edge_count": 695099364,
+  "default_path_mode": "single",
+  "supported_path_modes": ["single", "all_shortest"]
 }
 ```
 
@@ -94,6 +98,8 @@ Field meanings:
 - `dump_date`: Wikimedia dump date for display and debugging
 - `node_count`: canonical article nodes in the loaded graph
 - `edge_count`: directed canonical links in the loaded graph
+- `default_path_mode`: solve mode used when the client omits `path_mode`
+- `supported_path_modes`: solve modes currently supported by the service
 
 ### `GET /v1/random-page-titles`
 
@@ -130,7 +136,8 @@ Request body:
 ```json
 {
   "start_title": "Apple",
-  "target_title": "Banana"
+  "target_title": "Banana",
+  "path_mode": "single"
 }
 ```
 
@@ -138,6 +145,7 @@ Request fields:
 
 - `start_title`: required non-empty string
 - `target_title`: required non-empty string
+- `path_mode`: optional, `single` or `all_shortest`, defaults to `single`
 
 Success response `200`:
 
@@ -153,6 +161,24 @@ Success response `200`:
   "solve_ms": 8.7,
   "pages_visited": 42,
   "links_scanned": 128
+}
+```
+
+Exhaustive response `200`:
+
+```json
+{
+  "snapshot_id": "enwiki-20260301",
+  "start_title": "Alpha",
+  "target_title": "Echo",
+  "path_length": 3,
+  "paths": [
+    ["Alpha", "Bravo", "Delta", "Echo"],
+    ["Alpha", "Charlie", "Delta", "Echo"]
+  ],
+  "solve_ms": 5.4,
+  "pages_visited": 5,
+  "links_scanned": 5
 }
 ```
 
