@@ -68,7 +68,7 @@ jobs:
           if [[ -n "${{ inputs.dump_date }}" ]]; then
             dump_date="${{ inputs.dump_date }}"
           else
-            dump_date=$(curl -L https://dumps.wikimedia.org/index.json | jq --raw-output '.wikis.enwiki.jobs.pagelinkstable.updated | split(" ") | .[0]')
+            dump_date=$(uv run python -c "from wikiarena.graph import resolve_dump_date; print(resolve_dump_date(wiki='${{ env.WIKI }}', requested_dump_date=None))")
           fi
 
           if [[ ! "$dump_date" =~ ^[0-9]{8}$ ]]; then

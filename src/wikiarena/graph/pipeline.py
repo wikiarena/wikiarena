@@ -4,6 +4,7 @@ import gzip
 import hashlib
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -60,13 +61,80 @@ def resolve_dump_date(
         dump_index = json.load(
             response,
         )
-    dump_date = dump_index["wikis"][wiki]["jobs"]["pagelinkstable"]["updated"].split()[
-        0
-    ]
+    dump_date = _resolve_dump_date_from_pagelinkstable_job(
+        dump_index["wikis"][wiki]["jobs"]["pagelinkstable"],
+    )
     _validate_dump_date(
         dump_date,
     )
     return dump_date
+
+
+def _resolve_dump_date_from_pagelinkstable_job(
+    job_payload: dict[str, object],
+) -> str:
+    files_payload = job_payload.get(
+        "files",
+    )
+    if isinstance(
+        files_payload,
+        dict,
+    ):
+        for file_name, file_metadata in files_payload.items():
+            dump_date = _extract_dump_date_from_text(
+                file_name,
+            )
+            if dump_date is not None:
+                return dump_date
+            if not isinstance(
+                file_metadata,
+                dict,
+            ):
+                continue
+            file_url = file_metadata.get(
+                "url",
+            )
+            if not isinstance(
+                file_url,
+                str,
+            ):
+                continue
+            dump_date = _extract_dump_date_from_text(
+                file_url,
+            )
+            if dump_date is not None:
+                return dump_date
+
+    updated_value = job_payload.get(
+        "updated",
+    )
+    if isinstance(
+        updated_value,
+        str,
+    ):
+        dump_date = _extract_dump_date_from_text(
+            updated_value,
+        )
+        if dump_date is not None:
+            return dump_date
+
+    raise ValueError(
+        "could not resolve pagelinkstable dump date from Wikimedia dump index",
+    )
+
+
+def _extract_dump_date_from_text(
+    text: str,
+) -> str | None:
+    match = re.search(
+        r"(?<!\d)(\d{8})(?!\d)",
+        text,
+    )
+    if match is None:
+        return None
+    return match.group(
+        1,
+    )
 
 
 def prepare_graph_inputs(
@@ -349,22 +417,28 @@ def _download_file_if_missing(
         "aria2c",
     )
     if use_torrent and aria2c_path is not None:
-        with _progress_step(
-            progress_reporter,
-            f"download {output_file_path.name} via torrent",
-        ):
-            subprocess.run(
-                [
-                    aria2c_path,
-                    "--summary-interval=0",
-                    "--console-log-level=warn",
-                    "--seed-time=0",
-                    f"{torrent_url}/{output_file_path.name}.torrent",
-                ],
-                check=True,
-                cwd=output_file_path.parent,
+        try:
+            with _progress_step(
+                progress_reporter,
+                f"download {output_file_path.name} via torrent",
+            ):
+                subprocess.run(
+                    [
+                        aria2c_path,
+                        "--summary-interval=0",
+                        "--console-log-level=warn",
+                        "--seed-time=0",
+                        f"{torrent_url}/{output_file_path.name}.torrent",
+                    ],
+                    check=True,
+                    cwd=output_file_path.parent,
+                )
+            return
+        except subprocess.CalledProcessError:
+            _log_progress(
+                progress_reporter,
+                f"torrent download failed for {output_file_path.name}; retry via direct download",
             )
-        return
 
     wget_path = shutil.which(
         "wget",
