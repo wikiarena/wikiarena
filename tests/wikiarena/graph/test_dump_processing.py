@@ -9,6 +9,7 @@ from wikiarena.graph import (
     iter_normalized_link_rows,
     iter_pruned_page_rows,
     iter_resolved_redirect_rows,
+    iter_trimmed_dump_rows,
     write_trimmed_dump,
 )
 
@@ -81,6 +82,64 @@ def test_write_trimmed_dump_unescapes_sql_escaped_page_titles(
             "1\t0\tGirls'_Generation_(2011_album)\t0",
             "2\t0\tSt_Clement's_Church,_Sutton-on-Sea\t0",
         ]
+
+
+def test_iter_trimmed_dump_rows_preserves_page_titles_containing_tuple_separator_text() -> (
+    None
+):
+    raw_line = (
+        "INSERT INTO `page` VALUES "
+        "(71701640,0,'104-2,3,(6),(7),11',0,'x'),"
+        "(71701649,0,'2022_Binh_Duong_karaoke_bar_fire',0,'y');\n"
+    )
+
+    assert list(
+        iter_trimmed_dump_rows(
+            kind=DumpTrimKind.PAGES,
+            raw_lines=[raw_line],
+        ),
+    ) == [
+        "71701640\t0\t104-2,3,(6),(7),11\t0",
+        "71701649\t0\t2022_Binh_Duong_karaoke_bar_fire\t0",
+    ]
+
+
+def test_iter_trimmed_dump_rows_preserves_redirect_titles_containing_tuple_separator_text() -> (
+    None
+):
+    raw_line = (
+        "INSERT INTO `redirect` VALUES "
+        "(5,0,'104-2,3,(6),(7),11',NULL,NULL),"
+        "(6,0,'Fruit',NULL,NULL);\n"
+    )
+
+    assert list(
+        iter_trimmed_dump_rows(
+            kind=DumpTrimKind.REDIRECTS,
+            raw_lines=[raw_line],
+        ),
+    ) == [
+        "5\t0\t104-2,3,(6),(7),11",
+        "6\t0\tFruit",
+    ]
+
+
+def test_iter_trimmed_dump_rows_preserves_linktarget_titles_containing_tuple_separator_text() -> (
+    None
+):
+    raw_line = (
+        "INSERT INTO `linktarget` VALUES (11,0,'104-2,3,(6),(7),11'),(12,0,'Fruit');\n"
+    )
+
+    assert list(
+        iter_trimmed_dump_rows(
+            kind=DumpTrimKind.TARGETS,
+            raw_lines=[raw_line],
+        ),
+    ) == [
+        "11\t0\t104-2,3,(6),(7),11",
+        "12\t0\tFruit",
+    ]
 
 
 def test_iter_combined_grouped_link_rows_merges_sorted_inputs(

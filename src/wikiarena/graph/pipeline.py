@@ -12,7 +12,8 @@ import tempfile
 from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.request import urlopen
+
+import requests
 
 from wikiarena.graph.build import build_graph_binary
 from wikiarena.graph.dump_processing import (
@@ -44,6 +45,42 @@ class GraphPreparationArtifacts:
     grouped_links_by_target_file_path: Path
 
 
+@dataclass(frozen=True)
+class DumpFileMetadata:
+    file_name: str
+    url: str
+    size_bytes: int
+    sha1: str
+
+
+WIKIMEDIA_DUMP_INDEX_URL = "https://dumps.wikimedia.org/index.json"
+HTTP_TIMEOUT_SECONDS = 60
+HTTP_DOWNLOAD_CHUNK_SIZE_BYTES = 1024 * 1024
+SQL_TRIMMER_BIN_ENV_VAR = "WIKIARENA_SQL_TRIMMER_BIN"
+DEFAULT_SQL_TRIMMER_BINARY_PATH = (
+    Path(__file__).resolve().parents[3]
+    / "rust/wikiarena-sql-trimmer/target/release/wikiarena-sql-trimmer"
+)
+REQUIRED_DUMP_FILE_SPECS = {
+    "redirects": (
+        "redirecttable",
+        "redirect.sql.gz",
+    ),
+    "pages": (
+        "pagetable",
+        "page.sql.gz",
+    ),
+    "links": (
+        "pagelinkstable",
+        "pagelinks.sql.gz",
+    ),
+    "targets": (
+        "linktargettable",
+        "linktarget.sql.gz",
+    ),
+}
+
+
 def resolve_dump_date(
     *,
     wiki: str,
@@ -55,19 +92,90 @@ def resolve_dump_date(
         )
         return requested_dump_date
 
-    with urlopen(
-        "https://dumps.wikimedia.org/index.json",
-    ) as response:
-        dump_index = json.load(
-            response,
+    dump_index = _fetch_dump_index_payload()
+    wikis_payload = dump_index.get(
+        "wikis",
+    )
+    if not isinstance(
+        wikis_payload,
+        dict,
+    ):
+        raise ValueError(
+            "dump index payload is missing wikis metadata",
+        )
+    wiki_payload = wikis_payload.get(
+        wiki,
+    )
+    if not isinstance(
+        wiki_payload,
+        dict,
+    ):
+        raise ValueError(
+            f"dump index payload is missing wiki {wiki}",
+        )
+    jobs_payload = wiki_payload.get(
+        "jobs",
+    )
+    if not isinstance(
+        jobs_payload,
+        dict,
+    ):
+        raise ValueError(
+            f"dump index payload is missing jobs for wiki {wiki}",
+        )
+    pagelinkstable_payload = jobs_payload.get(
+        "pagelinkstable",
+    )
+    if not isinstance(
+        pagelinkstable_payload,
+        dict,
+    ):
+        raise ValueError(
+            f"dump index payload is missing pagelinkstable for wiki {wiki}",
         )
     dump_date = _resolve_dump_date_from_pagelinkstable_job(
-        dump_index["wikis"][wiki]["jobs"]["pagelinkstable"],
+        pagelinkstable_payload,
     )
     _validate_dump_date(
         dump_date,
     )
     return dump_date
+
+
+def _fetch_dump_index_payload() -> dict[str, object]:
+    return _fetch_json_payload(
+        WIKIMEDIA_DUMP_INDEX_URL,
+    )
+
+
+def _fetch_dump_status_payload(
+    *,
+    wiki: str,
+    dump_date: str,
+) -> dict[str, object]:
+    return _fetch_json_payload(
+        f"https://dumps.wikimedia.org/{wiki}/{dump_date}/dumpstatus.json",
+    )
+
+
+def _fetch_json_payload(
+    url: str,
+) -> dict[str, object]:
+    with requests.Session() as session:
+        response = session.get(
+            url,
+            timeout=HTTP_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    if not isinstance(
+        payload,
+        dict,
+    ):
+        raise ValueError(
+            f"expected JSON object from {url}",
+        )
+    return payload
 
 
 def _resolve_dump_date_from_pagelinkstable_job(
@@ -142,7 +250,6 @@ def prepare_graph_inputs(
     wiki: str,
     dump_date: str,
     output_dir: Path,
-    merge_engine: str = "sortjoin",
     progress_reporter: ProgressReporter | None = None,
 ) -> GraphPreparationArtifacts:
     _validate_dump_date(
@@ -219,27 +326,13 @@ def prepare_graph_inputs(
 
     raw_edges_path = output_dir_path / "links.raw_ids.txt.gz"
     if not raw_edges_path.exists():
-        if merge_engine == "duckdb":
-            _merge_links_with_duckdb(
-                pages_trimmed_path=pages_trimmed_path,
-                linktarget_trimmed_path=targets_trimmed_path,
-                links_trimmed_path=links_trimmed_path,
-                output_file_path=raw_edges_path,
-                temp_db_path=output_dir_path / "wikiarena_graph_build.duckdb",
-                progress_reporter=progress_reporter,
-            )
-        elif merge_engine == "sortjoin":
-            _merge_links_with_sort_join(
-                pages_trimmed_path=pages_trimmed_path,
-                linktarget_trimmed_path=targets_trimmed_path,
-                links_trimmed_path=links_trimmed_path,
-                output_file_path=raw_edges_path,
-                progress_reporter=progress_reporter,
-            )
-        else:
-            raise ValueError(
-                f"unsupported merge engine: {merge_engine}",
-            )
+        _merge_links_with_sort_join(
+            pages_trimmed_path=pages_trimmed_path,
+            linktarget_trimmed_path=targets_trimmed_path,
+            links_trimmed_path=links_trimmed_path,
+            output_file_path=raw_edges_path,
+            progress_reporter=progress_reporter,
+        )
     else:
         _log_progress(
             progress_reporter,
@@ -311,14 +404,12 @@ def build_graph_from_dump(
     dump_date: str,
     output_dir: Path,
     output_file_path: Path,
-    merge_engine: str = "sortjoin",
     progress_reporter: ProgressReporter | None = None,
 ) -> GraphBuildPaths:
     preparation = prepare_graph_inputs(
         wiki=wiki,
         dump_date=dump_date,
         output_dir=output_dir,
-        merge_engine=merge_engine,
         progress_reporter=progress_reporter,
     )
     if progress_reporter is None:
@@ -365,149 +456,219 @@ def _download_raw_dump_files(
     output_dir: Path,
     progress_reporter: ProgressReporter | None,
 ) -> dict[str, Path]:
-    download_url = f"https://dumps.wikimedia.org/{wiki}/{dump_date}"
-    torrent_url = f"https://tools.wmflabs.org/dump-torrents/{wiki}/{dump_date}"
-    sha1sums_path = output_dir / f"{wiki}-{dump_date}-sha1sums.txt"
-    _download_file_if_missing(
-        url=f"{download_url}/{sha1sums_path.name}",
-        output_file_path=sha1sums_path,
-        use_torrent=False,
-        torrent_url=torrent_url,
-        progress_reporter=progress_reporter,
+    dump_files = _discover_dump_file_metadata(
+        wiki=wiki,
+        dump_date=dump_date,
     )
 
-    file_map = {
-        "redirects": output_dir / f"{wiki}-{dump_date}-redirect.sql.gz",
-        "pages": output_dir / f"{wiki}-{dump_date}-page.sql.gz",
-        "links": output_dir / f"{wiki}-{dump_date}-pagelinks.sql.gz",
-        "targets": output_dir / f"{wiki}-{dump_date}-linktarget.sql.gz",
-    }
-    for file_path in file_map.values():
+    file_map: dict[str, Path] = {}
+    for file_label, dump_file in dump_files.items():
+        file_path = output_dir / dump_file.file_name
         _download_file_if_missing(
-            url=f"{download_url}/{file_path.name}",
+            url=dump_file.url,
             output_file_path=file_path,
-            use_torrent=True,
-            torrent_url=torrent_url,
+            expected_size_bytes=dump_file.size_bytes,
             progress_reporter=progress_reporter,
         )
         _verify_sha1(
             file_path=file_path,
-            sha1sums_path=sha1sums_path,
+            expected_sha1=dump_file.sha1,
             progress_reporter=progress_reporter,
         )
+        file_map[file_label] = file_path
     return file_map
+
+
+def _discover_dump_file_metadata(
+    *,
+    wiki: str,
+    dump_date: str,
+) -> dict[str, DumpFileMetadata]:
+    dump_status_payload = _fetch_dump_status_payload(
+        wiki=wiki,
+        dump_date=dump_date,
+    )
+    jobs_payload = dump_status_payload.get(
+        "jobs",
+    )
+    if not isinstance(
+        jobs_payload,
+        dict,
+    ):
+        raise ValueError(
+            "dumpstatus payload is missing a jobs object",
+        )
+
+    dump_files: dict[str, DumpFileMetadata] = {}
+    for file_label, (job_name, file_suffix) in REQUIRED_DUMP_FILE_SPECS.items():
+        job_payload = jobs_payload.get(
+            job_name,
+        )
+        if not isinstance(
+            job_payload,
+            dict,
+        ):
+            raise ValueError(
+                f"dumpstatus payload is missing job {job_name}",
+            )
+        if job_payload.get("status") != "done":
+            raise ValueError(
+                f"dumpstatus job {job_name} is not done for {wiki}-{dump_date}",
+            )
+
+        files_payload = job_payload.get(
+            "files",
+        )
+        if not isinstance(
+            files_payload,
+            dict,
+        ):
+            raise ValueError(
+                f"dumpstatus job {job_name} is missing files metadata",
+            )
+
+        file_name = f"{wiki}-{dump_date}-{file_suffix}"
+        file_payload = files_payload.get(
+            file_name,
+        )
+        if not isinstance(
+            file_payload,
+            dict,
+        ):
+            raise ValueError(
+                f"dumpstatus job {job_name} is missing file {file_name}",
+            )
+
+        file_url = file_payload.get(
+            "url",
+        )
+        file_size = file_payload.get(
+            "size",
+        )
+        file_sha1 = file_payload.get(
+            "sha1",
+        )
+        if (
+            not isinstance(
+                file_url,
+                str,
+            )
+            or not isinstance(
+                file_size,
+                int,
+            )
+            or not isinstance(
+                file_sha1,
+                str,
+            )
+        ):
+            raise ValueError(
+                f"dumpstatus file metadata is incomplete for {file_name}",
+            )
+
+        dump_files[file_label] = DumpFileMetadata(
+            file_name=file_name,
+            url=_absolute_dump_url(
+                file_url,
+            ),
+            size_bytes=file_size,
+            sha1=file_sha1,
+        )
+
+    return dump_files
+
+
+def _absolute_dump_url(
+    url: str,
+) -> str:
+    if url.startswith(
+        "http://",
+    ) or url.startswith(
+        "https://",
+    ):
+        return url
+    return f"https://dumps.wikimedia.org{url}"
 
 
 def _download_file_if_missing(
     *,
     url: str,
     output_file_path: Path,
-    use_torrent: bool,
-    torrent_url: str,
+    expected_size_bytes: int,
     progress_reporter: ProgressReporter | None,
 ) -> None:
+    existing_size_bytes = 0
     if output_file_path.exists():
+        existing_size_bytes = output_file_path.stat().st_size
+    if existing_size_bytes == expected_size_bytes:
         _log_progress(
             progress_reporter,
             f"skip download {output_file_path.name} (already exists)",
         )
         return
 
-    aria2c_path = shutil.which(
-        "aria2c",
-    )
-    if use_torrent and aria2c_path is not None:
-        try:
-            with _progress_step(
-                progress_reporter,
-                f"download {output_file_path.name} via torrent",
-            ):
-                subprocess.run(
-                    [
-                        aria2c_path,
-                        "--summary-interval=0",
-                        "--console-log-level=warn",
-                        "--seed-time=0",
-                        f"{torrent_url}/{output_file_path.name}.torrent",
-                    ],
-                    check=True,
-                    cwd=output_file_path.parent,
-                )
-            return
-        except subprocess.CalledProcessError:
-            _log_progress(
-                progress_reporter,
-                f"torrent download failed for {output_file_path.name}; retry via direct download",
-            )
-
-    wget_path = shutil.which(
-        "wget",
-    )
-    if wget_path is not None:
-        with _progress_step(
+    if existing_size_bytes > expected_size_bytes:
+        _log_progress(
             progress_reporter,
-            f"download {output_file_path.name} via wget",
-        ):
-            subprocess.run(
-                [
-                    wget_path,
-                    "--progress=dot:giga",
-                    "-O",
-                    str(output_file_path),
-                    url,
-                ],
-                check=True,
-            )
-        return
+            f"restart download {output_file_path.name} (local file is larger than expected)",
+        )
+        existing_size_bytes = 0
 
-    curl_path = shutil.which(
-        "curl",
-    )
-    if curl_path is not None:
-        with _progress_step(
-            progress_reporter,
-            f"download {output_file_path.name} via curl",
-        ):
-            subprocess.run(
-                [
-                    curl_path,
-                    "--fail",
-                    "--location",
-                    "--progress-bar",
-                    "-o",
-                    str(output_file_path),
-                    url,
-                ],
-                check=True,
-            )
-        return
+    with _progress_step(
+        progress_reporter,
+        f"download {output_file_path.name} via python http",
+    ):
+        request_headers: dict[str, str] | None = None
+        if existing_size_bytes > 0:
+            request_headers = {
+                "Range": f"bytes={existing_size_bytes}-",
+            }
 
-    raise RuntimeError(
-        "neither aria2c, wget, nor curl is available for downloads",
-    )
+        with requests.Session() as session:
+            with session.get(
+                url,
+                headers=request_headers,
+                stream=True,
+                timeout=HTTP_TIMEOUT_SECONDS,
+            ) as response:
+                response.raise_for_status()
+
+                write_mode = "ab"
+                if existing_size_bytes > 0 and response.status_code != 206:
+                    _log_progress(
+                        progress_reporter,
+                        f"resume unsupported for {output_file_path.name}; restarting full download",
+                    )
+                    existing_size_bytes = 0
+                    write_mode = "wb"
+                elif existing_size_bytes == 0:
+                    write_mode = "wb"
+
+                with output_file_path.open(
+                    write_mode,
+                ) as file_handle:
+                    for chunk in response.iter_content(
+                        chunk_size=HTTP_DOWNLOAD_CHUNK_SIZE_BYTES,
+                    ):
+                        if not chunk:
+                            continue
+                        file_handle.write(
+                            chunk,
+                        )
+
+    final_size_bytes = output_file_path.stat().st_size
+    if final_size_bytes != expected_size_bytes:
+        raise ValueError(
+            f"download size mismatch for {output_file_path.name}: expected {expected_size_bytes}, got {final_size_bytes}",
+        )
 
 
 def _verify_sha1(
     *,
     file_path: Path,
-    sha1sums_path: Path,
+    expected_sha1: str,
     progress_reporter: ProgressReporter | None,
 ) -> None:
-    expected_sha1 = None
-    with sha1sums_path.open(
-        "rt",
-        encoding="utf-8",
-    ) as file_handle:
-        for raw_line in file_handle:
-            if file_path.name not in raw_line:
-                continue
-            expected_sha1 = raw_line.split()[0]
-            break
-    if expected_sha1 is None:
-        raise ValueError(
-            f"missing SHA-1 entry for {file_path.name}",
-        )
-
     digest = hashlib.sha1()
     with file_path.open(
         "rb",
@@ -548,19 +709,126 @@ def _trim_dump_if_missing(
         progress_reporter,
         f"trim {kind.value}",
     ):
-        processed_lines, written_rows = write_trimmed_dump(
-            kind=kind,
-            input_file_path=input_file_path,
-            output_file_path=output_file_path,
-            progress_callback=(
-                progress_reporter.log if progress_reporter is not None else None
-            ),
-            progress_label=f"trim {kind.value}",
-        )
+        sql_trimmer_binary_path = _resolve_sql_trimmer_binary_path()
+        if sql_trimmer_binary_path is None:
+            processed_lines, written_rows = write_trimmed_dump(
+                kind=kind,
+                input_file_path=input_file_path,
+                output_file_path=output_file_path,
+                progress_callback=(
+                    progress_reporter.log if progress_reporter is not None else None
+                ),
+                progress_label=f"trim {kind.value}",
+            )
+        else:
+            processed_lines, written_rows = _write_trimmed_dump_with_rust(
+                kind=kind,
+                input_file_path=input_file_path,
+                output_file_path=output_file_path,
+                sql_trimmer_binary_path=sql_trimmer_binary_path,
+            )
     _log_progress(
         progress_reporter,
         f"trim {kind.value}: processed {processed_lines:,} SQL lines and wrote {written_rows:,} rows",
     )
+
+
+def _resolve_sql_trimmer_binary_path() -> Path | None:
+    configured_binary_path = os.getenv(
+        SQL_TRIMMER_BIN_ENV_VAR,
+    )
+    if configured_binary_path:
+        resolved_binary_path = Path(
+            configured_binary_path,
+        ).expanduser()
+        if not resolved_binary_path.exists():
+            raise FileNotFoundError(
+                f"configured SQL trimmer binary does not exist: {resolved_binary_path}",
+            )
+        return resolved_binary_path
+
+    if DEFAULT_SQL_TRIMMER_BINARY_PATH.exists():
+        return DEFAULT_SQL_TRIMMER_BINARY_PATH
+    return None
+
+
+def _write_trimmed_dump_with_rust(
+    *,
+    kind: DumpTrimKind,
+    input_file_path: Path,
+    output_file_path: Path,
+    sql_trimmer_binary_path: Path,
+) -> tuple[int, int]:
+    gzip_tool = shutil.which("pigz") or shutil.which("gzip")
+    if gzip_tool is None:
+        raise RuntimeError(
+            "gzip/pigz is required to run the Rust SQL trimmer",
+        )
+
+    temp_output_path = output_file_path.with_suffix(
+        output_file_path.suffix + ".tmp",
+    )
+    with tempfile.NamedTemporaryFile(
+        mode="wt",
+        encoding="utf-8",
+        suffix=".json",
+        delete=False,
+    ) as stats_file_handle:
+        stats_file_path = Path(
+            stats_file_handle.name,
+        )
+
+    command = f"""
+set -euo pipefail
+{shlex.quote(gzip_tool)} -dc {shlex.quote(str(input_file_path))} |
+{shlex.quote(str(sql_trimmer_binary_path))} \
+  --kind {shlex.quote(kind.value)} \
+  --stats-path {shlex.quote(str(stats_file_path))} |
+{shlex.quote(gzip_tool)} -c > {shlex.quote(str(temp_output_path))}
+"""
+
+    try:
+        result = subprocess.run(
+            ["bash", "-lc", command],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                "Rust SQL trimmer failed: "
+                f"{result.stderr.strip() or result.stdout.strip() or 'unknown error'}",
+            )
+
+        stats_payload = json.loads(
+            stats_file_path.read_text(
+                encoding="utf-8",
+            ),
+        )
+        processed_lines = stats_payload["processed_lines"]
+        written_rows = stats_payload["written_rows"]
+        if not isinstance(
+            processed_lines,
+            int,
+        ) or not isinstance(
+            written_rows,
+            int,
+        ):
+            raise ValueError(
+                "Rust SQL trimmer stats file is missing integer counters",
+            )
+        os.replace(
+            temp_output_path,
+            output_file_path,
+        )
+        return processed_lines, written_rows
+    finally:
+        temp_output_path.unlink(
+            missing_ok=True,
+        )
+        stats_file_path.unlink(
+            missing_ok=True,
+        )
 
 
 def _write_gzip_rows_if_missing(
@@ -656,113 +924,6 @@ def _write_gzip_rows_if_missing(
     )
 
 
-def _merge_links_with_duckdb(
-    *,
-    pages_trimmed_path: Path,
-    linktarget_trimmed_path: Path,
-    links_trimmed_path: Path,
-    output_file_path: Path,
-    temp_db_path: Path,
-    progress_reporter: ProgressReporter | None,
-) -> None:
-    try:
-        import duckdb
-    except ModuleNotFoundError as exc:
-        raise RuntimeError(
-            "duckdb is required to prepare graph inputs; install dev dependencies with uv sync --all-groups",
-        ) from exc
-
-    temp_db_path.unlink(
-        missing_ok=True,
-    )
-    with _progress_step(
-        progress_reporter,
-        f"merge raw article edge ids with DuckDB -> {output_file_path.name}",
-    ):
-        connection = duckdb.connect(
-            str(temp_db_path),
-        )
-        try:
-            connection.execute(
-                "PRAGMA disable_progress_bar;",
-            )
-            connection.execute(
-                f"""
-            CREATE OR REPLACE TABLE pages AS
-            SELECT
-              page_id,
-              ns,
-              title
-            FROM read_csv('{pages_trimmed_path}',
-                          compression='gzip',
-                          header=false,
-                          delim='\t',
-                          columns={{
-                            'page_id': 'UBIGINT',
-                            'ns': 'INTEGER',
-                            'title': 'VARCHAR',
-                            'is_redirect': 'INTEGER'
-                          }})
-            WHERE ns = 0;
-                """,
-            )
-            connection.execute(
-                "CREATE INDEX pages_page_id ON pages(page_id);",
-            )
-            connection.execute(
-                "CREATE INDEX pages_ns_title ON pages(ns, title);",
-            )
-            connection.execute(
-                f"""
-            CREATE OR REPLACE TABLE linktargets AS
-            SELECT
-              lt_id,
-              ns,
-              title
-            FROM read_csv('{linktarget_trimmed_path}',
-                          compression='gzip',
-                          header=false,
-                          delim='\t',
-                          columns={{
-                            'lt_id': 'UBIGINT',
-                            'ns': 'INTEGER',
-                            'title': 'VARCHAR'
-                          }})
-            WHERE ns = 0;
-                """,
-            )
-            connection.execute(
-                "CREATE INDEX linktargets_lt_id ON linktargets(lt_id);",
-            )
-            connection.execute(
-                "CREATE INDEX linktargets_ns_title ON linktargets(ns, title);",
-            )
-            connection.execute(
-                f"""
-            COPY (
-                SELECT
-                    l.src_id AS src_id,
-                    tgt.page_id AS tgt_id
-                FROM read_csv('{links_trimmed_path}',
-                              compression='gzip',
-                              header=false,
-                              delim='\t',
-                              columns={{
-                                'src_id': 'UBIGINT',
-                                'src_ns': 'INTEGER',
-                                'tgt_lt_id': 'UBIGINT'
-                              }}) AS l
-                JOIN linktargets AS lt ON lt.lt_id = l.tgt_lt_id
-                JOIN pages AS tgt ON (tgt.ns, tgt.title) = (lt.ns, lt.title)
-                WHERE l.src_ns = 0
-            )
-            TO '{output_file_path}' (DELIMITER '\t', HEADER false, COMPRESSION 'gzip');
-                """,
-            )
-        finally:
-            connection.close()
-
-
 def _merge_links_with_sort_join(
     *,
     pages_trimmed_path: Path,
@@ -776,7 +937,7 @@ def _merge_links_with_sort_join(
     gzip_tool = shutil.which("pigz") or shutil.which("gzip")
     if join_tool is None or sort_tool is None or gzip_tool is None:
         raise RuntimeError(
-            "GNU join, GNU sort, and gzip/pigz are required for merge_engine=sortjoin",
+            "GNU join, GNU sort, and gzip/pigz are required to prepare graph inputs",
         )
 
     gzip_compress_flag = "--fast" if os.path.basename(gzip_tool) == "pigz" else "-1"

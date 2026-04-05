@@ -88,12 +88,6 @@ def parse_args() -> argparse.Namespace:
         help="Working directory for downloaded dumps and intermediates",
     )
     parser.add_argument(
-        "--merge-engine",
-        type=str,
-        default="sortjoin",
-        help="Edge merge engine for raw dump preparation (recommended: sortjoin using GNU sort/join)",
-    )
-    parser.add_argument(
         "--quiet",
         action="store_true",
         help="Suppress progress output",
@@ -167,7 +161,6 @@ def main() -> None:
         dump_date=dump_date,
         output_dir=args.work_dir,
         output_file_path=args.output,
-        merge_engine=args.merge_engine,
         progress_reporter=progress_reporter,
     )
     print(

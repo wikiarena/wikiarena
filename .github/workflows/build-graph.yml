@@ -49,7 +49,7 @@ jobs:
       - name: Install OS dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq pigz xz-utils
+          sudo apt-get install -y cargo pigz xz-utils
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -82,7 +82,13 @@ jobs:
           echo "snapshot_id=enwiki-${dump_date}" >> "$GITHUB_OUTPUT"
           echo "release_tag=graph-enwiki-${dump_date}" >> "$GITHUB_OUTPUT"
 
+      - name: Build Rust SQL trimmer
+        run: |
+          cargo build --release --manifest-path rust/wikiarena-sql-trimmer/Cargo.toml
+
       - name: Build raw graph binary
+        env:
+          WIKIARENA_SQL_TRIMMER_BIN: ${{ github.workspace }}/rust/wikiarena-sql-trimmer/target/release/wikiarena-sql-trimmer
         run: |
           uv run python scripts/build_graph.py \
             --wiki "${{ env.WIKI }}" \

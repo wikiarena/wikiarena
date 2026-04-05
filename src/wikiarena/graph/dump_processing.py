@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import gzip
-import re
 from collections.abc import Iterable, Iterator
 from enum import StrEnum
 from pathlib import Path
@@ -17,22 +16,22 @@ class DumpTrimKind(StrEnum):
     TARGETS = "targets"
 
 
-TRIM_PATTERNS = {
+TRIM_SPECS = {
     DumpTrimKind.PAGES: {
-        "insert": re.compile(r"^INSERT INTO `page` VALUES (.+);$"),
-        "record": re.compile(r"(\d+),(\d+),'((?:[^'\\]|\\.)*)',([01]),"),
+        "insert_prefix": "INSERT INTO `page` VALUES ",
+        "selected_fields": (0, 1, 2, 3),
     },
     DumpTrimKind.LINKS: {
-        "insert": re.compile(r"^INSERT INTO `pagelinks` VALUES (.+);$"),
-        "record": re.compile(r"(\d+),(\d+),(\d+)\)?$"),
+        "insert_prefix": "INSERT INTO `pagelinks` VALUES ",
+        "selected_fields": (0, 1, 2),
     },
     DumpTrimKind.REDIRECTS: {
-        "insert": re.compile(r"^INSERT INTO `redirect` VALUES (.+);$"),
-        "record": re.compile(r"(\d+),(\d+),'((?:[^'\\]|\\.)*)',"),
+        "insert_prefix": "INSERT INTO `redirect` VALUES ",
+        "selected_fields": (0, 1, 2),
     },
     DumpTrimKind.TARGETS: {
-        "insert": re.compile(r"^INSERT INTO `linktarget` VALUES (.+);$"),
-        "record": re.compile(r"(\d+),(\d+),'((?:[^'\\]|\\.)*)'"),
+        "insert_prefix": "INSERT INTO `linktarget` VALUES ",
+        "selected_fields": (0, 1, 2),
     },
 }
 
@@ -63,8 +62,8 @@ def write_trimmed_dump(
             encoding="utf-8",
         ) as output_file_handle,
     ):
-        insert_re = TRIM_PATTERNS[kind]["insert"]
-        record_re = TRIM_PATTERNS[kind]["record"]
+        insert_prefix = TRIM_SPECS[kind]["insert_prefix"]
+        selected_fields = TRIM_SPECS[kind]["selected_fields"]
         for raw_line in input_file_handle:
             processed_lines += 1
             if progress_callback is not None and processed_lines % 250_000 == 0:
@@ -73,8 +72,8 @@ def write_trimmed_dump(
                     f"{label}: processed {processed_lines:,} SQL lines",
                 )
             for trimmed_row in _iter_trimmed_rows_from_sql_line(
-                insert_re=insert_re,
-                record_re=record_re,
+                insert_prefix=insert_prefix,
+                selected_fields=selected_fields,
                 raw_line=raw_line,
             ):
                 output_file_handle.write(
@@ -91,63 +90,239 @@ def iter_trimmed_dump_rows(
     kind: DumpTrimKind,
     raw_lines: Iterable[str],
 ) -> Iterator[str]:
-    insert_re = TRIM_PATTERNS[kind]["insert"]
-    record_re = TRIM_PATTERNS[kind]["record"]
+    insert_prefix = TRIM_SPECS[kind]["insert_prefix"]
+    selected_fields = TRIM_SPECS[kind]["selected_fields"]
 
     for raw_line in raw_lines:
         yield from _iter_trimmed_rows_from_sql_line(
-            insert_re=insert_re,
-            record_re=record_re,
+            insert_prefix=insert_prefix,
+            selected_fields=selected_fields,
             raw_line=raw_line,
         )
 
 
 def _iter_trimmed_rows_from_sql_line(
     *,
-    insert_re: re.Pattern[str],
-    record_re: re.Pattern[str],
+    insert_prefix: str,
+    selected_fields: tuple[int, ...],
     raw_line: str,
 ) -> Iterator[str]:
-    match = insert_re.match(
-        raw_line.strip(),
+    values_payload = _extract_insert_values_payload(
+        insert_prefix=insert_prefix,
+        raw_line=raw_line,
     )
-    if not match:
+    if values_payload is None:
         return
 
-    tuples = re.split(
-        r"\),\(",
-        match.group(1),
-    )
-    for tuple_payload in tuples:
-        record_match = record_re.search(
-            tuple_payload,
-        )
-        if not record_match:
-            continue
-        yield "\t".join(
-            _unescape_sql_field(
-                field_value,
+    for tuple_fields in _iter_sql_tuple_fields(
+        values_payload,
+    ):
+        yield "\t".join(tuple_fields[field_index] for field_index in selected_fields)
+
+
+def _extract_insert_values_payload(
+    *,
+    insert_prefix: str,
+    raw_line: str,
+) -> str | None:
+    stripped_line = raw_line.strip()
+    if not stripped_line.startswith(
+        insert_prefix,
+    ):
+        return None
+    if not stripped_line.endswith(";"):
+        return None
+    return stripped_line[len(insert_prefix) : -1]
+
+
+def _iter_sql_tuple_fields(
+    values_payload: str,
+) -> Iterator[list[str]]:
+    tuple_characters: list[str] = []
+    tuple_depth = 0
+    inside_string = False
+    escape_next = False
+
+    for character in values_payload:
+        if inside_string:
+            tuple_characters.append(
+                character,
             )
-            for field_value in record_match.groups()
+            if escape_next:
+                escape_next = False
+                continue
+            if character == "\\":
+                escape_next = True
+                continue
+            if character == "'":
+                inside_string = False
+            continue
+
+        if character == "'":
+            inside_string = True
+            tuple_characters.append(
+                character,
+            )
+            continue
+
+        if character == "(":
+            if tuple_depth > 0:
+                tuple_characters.append(
+                    character,
+                )
+            tuple_depth += 1
+            continue
+
+        if character == ")":
+            tuple_depth -= 1
+            if tuple_depth < 0:
+                raise ValueError(
+                    "unexpected closing parenthesis while parsing SQL insert tuples",
+                )
+            if tuple_depth == 0:
+                yield _parse_sql_tuple_fields(
+                    "".join(tuple_characters),
+                )
+                tuple_characters = []
+            else:
+                tuple_characters.append(
+                    character,
+                )
+            continue
+
+        if tuple_depth == 0:
+            if character == "," or character.isspace():
+                continue
+            raise ValueError(
+                f"unexpected character outside SQL tuple payload: {character!r}",
+            )
+
+        tuple_characters.append(
+            character,
         )
+
+    if tuple_depth != 0 or inside_string:
+        raise ValueError(
+            "unterminated SQL tuple payload",
+        )
+
+
+def _parse_sql_tuple_fields(
+    tuple_payload: str,
+) -> list[str]:
+    field_values: list[str] = []
+    field_characters: list[str] = []
+    inside_string = False
+    escape_next = False
+    field_is_quoted = False
+
+    def flush_field() -> None:
+        raw_field_value = "".join(
+            field_characters,
+        )
+        if field_is_quoted:
+            field_values.append(
+                _unescape_sql_field(
+                    raw_field_value,
+                ),
+            )
+        else:
+            field_values.append(
+                raw_field_value.strip(),
+            )
+
+    for character in tuple_payload:
+        if inside_string:
+            if escape_next:
+                field_characters.append(
+                    character,
+                )
+                escape_next = False
+                continue
+            if character == "\\":
+                field_characters.append(
+                    character,
+                )
+                escape_next = True
+                continue
+            if character == "'":
+                inside_string = False
+                continue
+            field_characters.append(
+                character,
+            )
+            continue
+
+        if character == "'":
+            if field_characters and any(
+                not existing_character.isspace()
+                for existing_character in field_characters
+            ):
+                raise ValueError(
+                    "unexpected quoted string start inside unquoted SQL field",
+                )
+            inside_string = True
+            field_is_quoted = True
+            continue
+
+        if character == ",":
+            flush_field()
+            field_characters = []
+            field_is_quoted = False
+            continue
+
+        field_characters.append(
+            character,
+        )
+
+    if inside_string:
+        raise ValueError(
+            "unterminated SQL string field",
+        )
+
+    flush_field()
+    return field_values
 
 
 def _unescape_sql_field(
     field_value: str,
 ) -> str:
-    return (
-        field_value.replace(
-            '\\"',
-            '"',
+    escape_map = {
+        "0": "\0",
+        "b": "\b",
+        "n": "\n",
+        "r": "\r",
+        "t": "\t",
+        "Z": "\x1a",
+        '"': '"',
+        "'": "'",
+        "\\": "\\",
+    }
+    unescaped_characters: list[str] = []
+    escape_next = False
+
+    for character in field_value:
+        if escape_next:
+            unescaped_characters.append(
+                escape_map.get(
+                    character,
+                    character,
+                ),
+            )
+            escape_next = False
+            continue
+        if character == "\\":
+            escape_next = True
+            continue
+        unescaped_characters.append(
+            character,
         )
-        .replace(
-            "\\'",
-            "'",
-        )
-        .replace(
-            "\\\\",
-            "\\",
-        )
+
+    if escape_next:
+        unescaped_characters.append("\\")
+
+    return "".join(
+        unescaped_characters,
     )
 
 
