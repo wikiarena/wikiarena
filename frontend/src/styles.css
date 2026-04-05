@@ -707,12 +707,12 @@ input {
 }
 
 .path-graph-node.is-active .path-graph-node-circle {
-  fill: rgba(6, 69, 173, 0.14);
+  fill: #dce5f4;
   stroke: var(--link);
 }
 
 .path-graph-node.is-neighbor .path-graph-node-circle {
-  fill: rgba(6, 69, 173, 0.08);
+  fill: #ebf0f8;
   stroke: var(--link);
 }
 

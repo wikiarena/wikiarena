@@ -150,32 +150,76 @@ function orderLevels(levelNodeIds: string[][], nodesById: Map<string, GraphNode>
   }
 
   for (let iterationIndex = 0; iterationIndex < 3; iterationIndex += 1) {
+    let didChangeLevelOrder = false;
+
     for (let levelIndex = 1; levelIndex < orderedLevels.length - 1; levelIndex += 1) {
-      const previousRowOrder = new Map(orderedLevels[levelIndex - 1].map((nodeId, nodeIndex) => [nodeId, nodeIndex]));
-      orderedLevels[levelIndex].sort((leftNodeId, rightNodeId) => {
-        const leftScore = computeBarycenterScore(leftNodeId, nodesById, previousRowOrder, "incoming");
-        const rightScore = computeBarycenterScore(rightNodeId, nodesById, previousRowOrder, "incoming");
-        if (leftScore !== rightScore) {
-          return leftScore - rightScore;
-        }
-        return compareTitles(leftNodeId, rightNodeId, nodesById);
-      });
+      const nextLevelOrder = sortLevelByBarycenter(
+        orderedLevels[levelIndex],
+        nodesById,
+        new Map(orderedLevels[levelIndex - 1].map((nodeId, nodeIndex) => [nodeId, nodeIndex])),
+        "incoming",
+      );
+
+      if (!doNodeOrdersMatch(orderedLevels[levelIndex], nextLevelOrder)) {
+        orderedLevels[levelIndex] = nextLevelOrder;
+        didChangeLevelOrder = true;
+      }
     }
 
     for (let levelIndex = orderedLevels.length - 2; levelIndex >= 1; levelIndex -= 1) {
-      const nextRowOrder = new Map(orderedLevels[levelIndex + 1].map((nodeId, nodeIndex) => [nodeId, nodeIndex]));
-      orderedLevels[levelIndex].sort((leftNodeId, rightNodeId) => {
-        const leftScore = computeBarycenterScore(leftNodeId, nodesById, nextRowOrder, "outgoing");
-        const rightScore = computeBarycenterScore(rightNodeId, nodesById, nextRowOrder, "outgoing");
-        if (leftScore !== rightScore) {
-          return leftScore - rightScore;
-        }
-        return compareTitles(leftNodeId, rightNodeId, nodesById);
-      });
+      const nextLevelOrder = sortLevelByBarycenter(
+        orderedLevels[levelIndex],
+        nodesById,
+        new Map(orderedLevels[levelIndex + 1].map((nodeId, nodeIndex) => [nodeId, nodeIndex])),
+        "outgoing",
+      );
+
+      if (!doNodeOrdersMatch(orderedLevels[levelIndex], nextLevelOrder)) {
+        orderedLevels[levelIndex] = nextLevelOrder;
+        didChangeLevelOrder = true;
+      }
+    }
+
+    if (!didChangeLevelOrder) {
+      break;
     }
   }
 
   return orderedLevels;
+}
+
+function sortLevelByBarycenter(
+  levelNodeIds: string[],
+  nodesById: Map<string, GraphNode>,
+  referenceOrder: Map<string, number>,
+  direction: "incoming" | "outgoing",
+): string[] {
+  const barycenterScores = new Map(
+    levelNodeIds.map((nodeId) => [nodeId, computeBarycenterScore(nodeId, nodesById, referenceOrder, direction)]),
+  );
+
+  return [...levelNodeIds].sort((leftNodeId, rightNodeId) => {
+    const leftScore = barycenterScores.get(leftNodeId) ?? Number.POSITIVE_INFINITY;
+    const rightScore = barycenterScores.get(rightNodeId) ?? Number.POSITIVE_INFINITY;
+    if (leftScore !== rightScore) {
+      return leftScore - rightScore;
+    }
+    return compareTitles(leftNodeId, rightNodeId, nodesById);
+  });
+}
+
+function doNodeOrdersMatch(leftNodeIds: string[], rightNodeIds: string[]): boolean {
+  if (leftNodeIds.length !== rightNodeIds.length) {
+    return false;
+  }
+
+  for (let nodeIndex = 0; nodeIndex < leftNodeIds.length; nodeIndex += 1) {
+    if (leftNodeIds[nodeIndex] !== rightNodeIds[nodeIndex]) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function computeBarycenterScore(
