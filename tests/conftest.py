@@ -1,96 +1,82 @@
-"""
-Pytest configuration and shared fixtures for backend testing.
-"""
+from __future__ import annotations
+
+from pathlib import Path
 
 import pytest
-import asyncio
-import logging
-from typing import AsyncGenerator
 
-from wiki_arena import EventBus, GameEvent
-from wiki_arena.solver import WikiTaskSolver,wiki_task_solver
-from wiki_arena.types import GameState, GameConfig, ModelConfig, Page, Move, GameStatus
-from backend.handlers.solver_handler import SolverHandler
 
-# Configure logging for tests
-logging.basicConfig(level=logging.INFO)
+_VNEXT_TEST_ROOT = (Path(__file__).parent / "wikiarena").resolve()
 
-@pytest.fixture
-def event_bus() -> EventBus:
-    """Create a fresh EventBus for each test."""
-    return EventBus()
 
-@pytest.fixture
-def solver_handler(event_bus: EventBus, solver: WikiTaskSolver = wiki_task_solver) -> SolverHandler:
-    """Create SolverHandler with initialized solver."""
-    return SolverHandler(event_bus, solver)
-
-@pytest.fixture
-def sample_game_config() -> GameConfig:
-    """Standard game configuration for testing."""
-    return GameConfig(
-        start_page_title="Python (programming language)",
-        target_page_title="JavaScript",
-        max_steps=10
+def pytest_addoption(
+    parser: pytest.Parser,
+) -> None:
+    parser.addoption(
+        "--run-legacy",
+        action="store_true",
+        default=False,
+        help="Run deprecated legacy tests outside tests/wikiarena",
     )
 
-@pytest.fixture
-def sample_page() -> Page:
-    """Sample Wikipedia page for testing."""
-    return Page(
-        title="Programming language",
-        url="https://en.wikipedia.org/wiki/Programming_language", 
-        text="A programming language is a formal language...",
-        links=["JavaScript", "Computer science", "Software"]
+
+def pytest_collection_modifyitems(
+    config: pytest.Config,
+    items: list[pytest.Item],
+) -> None:
+    run_legacy = config.getoption(
+        "--run-legacy",
     )
 
-@pytest.fixture
-def sample_game_state(sample_game_config: GameConfig, sample_page: Page) -> GameState:
-    """Sample game state for testing."""
-    return GameState(
-        game_id="test_game",
-        config=sample_game_config,
-        current_page=sample_page,
-        status=GameStatus.IN_PROGRESS,
-        steps=1
+    legacy_skip_marker = pytest.mark.skip(
+        reason=("Legacy tests are deprecated; run with --run-legacy to include them"),
     )
 
-@pytest.fixture
-def sample_move() -> Move:
-    """Sample move for testing."""
-    return Move(
-        step=1,
-        from_page_title="Python (programming language)",
-        to_page_title="Programming language"
+    for item in items:
+        test_path = Path(
+            str(item.fspath),
+        ).resolve()
+        is_vnext_test = _is_path_under(
+            test_path,
+            _VNEXT_TEST_ROOT,
+        )
+        if is_vnext_test:
+            continue
+
+        item.add_marker(
+            "legacy",
+        )
+        if not run_legacy:
+            item.add_marker(
+                legacy_skip_marker,
+            )
+
+
+def pytest_ignore_collect(
+    collection_path: Path,
+    config: pytest.Config,
+) -> bool:
+    if config.getoption(
+        "--run-legacy",
+    ):
+        return False
+
+    resolved_path = Path(
+        collection_path,
+    ).resolve()
+    return not _is_path_under(
+        resolved_path,
+        _VNEXT_TEST_ROOT,
     )
 
-@pytest.fixture
-def move_completed_event(sample_game_state: GameState, sample_move: Move) -> GameEvent:
-    """Sample move_completed event for testing."""
-    return GameEvent(
-        type="move_completed",
-        game_id="test_game",
-        data={
-            "game_state": sample_game_state,
-            "move": sample_move
-        }
-    )
 
-@pytest.fixture
-def game_started_event(sample_game_state: GameState) -> GameEvent:
-    """Sample game_started event for testing."""
-    # Modify to be initial state
-    initial_state = sample_game_state.model_copy()
-    initial_state.steps = 0
-    initial_state.current_page = Page(
-        title="Python (programming language)",
-        url="https://en.wikipedia.org/wiki/Python_(programming_language)",
-        text="Python is a programming language...",
-        links=["JavaScript", "Programming", "Computer science"]
-    )
-    
-    return GameEvent(
-        type="game_started",
-        game_id="test_game",
-        data={"game_state": initial_state}
-    ) 
+def _is_path_under(
+    child_path: Path,
+    parent_path: Path,
+) -> bool:
+    try:
+        child_path.relative_to(
+            parent_path,
+        )
+    except ValueError:
+        return False
+    return True

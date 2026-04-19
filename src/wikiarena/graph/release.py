@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any, Mapping
 
 from wikiarena.solver.binary import MappedBinarySolverGraph
 
@@ -38,6 +40,89 @@ class GraphReleaseMetadata:
         return asdict(
             self,
         )
+
+
+def graph_release_metadata_from_dict(
+    payload: Mapping[str, Any],
+) -> GraphReleaseMetadata:
+    graph_payload = _require_mapping(
+        payload,
+        "graph",
+    )
+    compressed_payload = _require_mapping(
+        payload,
+        "compressed",
+    )
+    return GraphReleaseMetadata(
+        wiki=_require_str(
+            payload,
+            "wiki",
+        ),
+        dump_date=_require_str(
+            payload,
+            "dump_date",
+        ),
+        snapshot_id=_optional_str(
+            payload,
+            "snapshot_id",
+        ),
+        generated_at_utc=_require_str(
+            payload,
+            "generated_at_utc",
+        ),
+        git_sha=_optional_str(
+            payload,
+            "git_sha",
+        ),
+        graph=GraphCoreMetadata(
+            file_name=_require_str(
+                graph_payload,
+                "file_name",
+            ),
+            bytes=_require_int(
+                graph_payload,
+                "bytes",
+            ),
+            sha256=_require_str(
+                graph_payload,
+                "sha256",
+            ),
+            node_count=_require_int(
+                graph_payload,
+                "node_count",
+            ),
+            edge_count=_require_int(
+                graph_payload,
+                "edge_count",
+            ),
+        ),
+        compressed=GraphArtifactMetadata(
+            file_name=_require_str(
+                compressed_payload,
+                "file_name",
+            ),
+            bytes=_require_int(
+                compressed_payload,
+                "bytes",
+            ),
+            sha256=_require_str(
+                compressed_payload,
+                "sha256",
+            ),
+        ),
+    )
+
+
+def load_graph_release_metadata(
+    metadata_path: Path,
+) -> GraphReleaseMetadata:
+    return graph_release_metadata_from_dict(
+        json.loads(
+            metadata_path.read_text(
+                encoding="utf-8",
+            ),
+        ),
+    )
 
 
 def build_graph_release_metadata(
@@ -98,3 +183,55 @@ def sha256_file(
                 chunk,
             )
     return digest.hexdigest()
+
+
+def _require_mapping(
+    payload: Mapping[str, Any],
+    key: str,
+) -> Mapping[str, Any]:
+    value = payload.get(
+        key,
+    )
+    if not isinstance(value, Mapping):
+        raise ValueError(f"metadata field {key} must be an object")
+    return value
+
+
+def _require_str(
+    payload: Mapping[str, Any],
+    key: str,
+) -> str:
+    value = payload.get(
+        key,
+    )
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"metadata field {key} must be a non-empty string")
+    return value
+
+
+def _optional_str(
+    payload: Mapping[str, Any],
+    key: str,
+) -> str | None:
+    value = payload.get(
+        key,
+    )
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value:
+        raise ValueError(
+            f"metadata field {key} must be a non-empty string when present",
+        )
+    return value
+
+
+def _require_int(
+    payload: Mapping[str, Any],
+    key: str,
+) -> int:
+    value = payload.get(
+        key,
+    )
+    if not isinstance(value, int):
+        raise ValueError(f"metadata field {key} must be an integer")
+    return value

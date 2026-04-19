@@ -41,7 +41,8 @@ jobs:
           uv run pytest \
             --confcutdir=tests \
             tests/wikiarena/server \
-            tests/wikiarena/graph/test_channel.py
+            tests/wikiarena/graph/test_channel.py \
+            tests/wikiarena/graph/test_release.py
 
       - name: Package API bundle
         id: package
