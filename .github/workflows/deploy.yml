@@ -214,7 +214,18 @@ jobs:
           graph_current_dir="\${WIKIARENA_GRAPH_CURRENT_DIR:-/var/lib/wikiarena/graph/current}"
           metadata_path="\${graph_current_dir}/wikiarena_graph.metadata.json"
           expected_snapshot_id="\$(jq -r '.snapshot_id // (.wiki + "-" + .dump_date)' "\${metadata_path}")"
-          actual_snapshot_id="\$(curl --fail --show-error --silent "http://\${WIKIARENA_SERVER_HOST:-127.0.0.1}:\${WIKIARENA_SERVER_PORT:-8000}/v1/meta" | jq -r '.snapshot_id')"
+          actual_snapshot_id=""
+          for attempt in \$(seq 1 20); do
+            if actual_snapshot_id="\$(curl --fail --show-error --silent "http://\${WIKIARENA_SERVER_HOST:-127.0.0.1}:\${WIKIARENA_SERVER_PORT:-8000}/v1/meta" | jq -r '.snapshot_id')"; then
+              break
+            fi
+            if [[ "\${attempt}" -eq 20 ]]; then
+              systemctl status wikiarena-api.service --no-pager || true
+              journalctl -n 200 -u wikiarena-api.service --no-pager || true
+              exit 1
+            fi
+            sleep 3
+          done
 
           if [[ "\${actual_snapshot_id}" != "\${expected_snapshot_id}" ]]; then
             echo "Graph rollout loaded snapshot \${actual_snapshot_id}, expected \${expected_snapshot_id}" >&2
