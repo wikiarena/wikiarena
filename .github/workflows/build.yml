@@ -37,7 +37,11 @@ jobs:
         run: uv sync --all-groups
 
       - name: Run server tests
-        run: uv run pytest --confcutdir=tests/wikiarena/server tests/wikiarena/server
+        run: |
+          uv run pytest \
+            --confcutdir=tests \
+            tests/wikiarena/server \
+            tests/wikiarena/graph/test_channel.py
 
       - name: Package API bundle
         id: package

@@ -1,10 +1,31 @@
-name: Deploy API
+name: Rollout Graph
 
 on:
   workflow_dispatch:
     inputs:
-      artifact_key:
-        description: 'Artifact key under s3://wikiarena-deployment-production/api/ (leave empty for latest)'
+      channel:
+        description: Graph channel to roll out when graph_channel_key is empty.
+        required: false
+        default: production
+        type: string
+      graph_channel_key:
+        description: Optional explicit graph channel manifest key.
+        required: false
+        type: string
+      graph_s3_bucket:
+        description: Optional graph bucket override.
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      channel:
+        required: false
+        default: production
+        type: string
+      graph_channel_key:
+        required: false
+        type: string
+      graph_s3_bucket:
         required: false
         type: string
 
@@ -16,19 +37,17 @@ env:
   API_DOMAIN_NAME: api.wikiarena.org
   AWS_ACCOUNT_ID: "171436514933"
   AWS_REGION: us-west-2
-  GRAPH_CHANNEL_KEY: graphs/enwiki/channels/production.json
-  GRAPH_S3_BUCKET: wikiarena-graph-production
-  DEPLOYMENT_BUCKET_NAME: wikiarena-deployment-production
-  DEPLOYMENT_ARTIFACT_PREFIX: api
+  DEFAULT_GRAPH_CHANNEL: production
+  DEFAULT_GRAPH_S3_BUCKET: wikiarena-graph-production
   INSTANCE_ENVIRONMENT: production
   INSTANCE_PROJECT: wikiarena
   INSTANCE_ROLE: api
-  PYTHON_VERSION: "3.13"
+  WIKI: enwiki
 
 jobs:
-  deploy:
+  rollout:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -36,30 +55,25 @@ jobs:
           role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/wikiarena-production-github-actions-app
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Determine artifact key
-        id: artifact
+      - name: Resolve graph channel target
+        id: graph
         run: |
-          if [[ -n "${{ github.event.inputs.artifact_key }}" ]]; then
-            ARTIFACT_KEY="${{ github.event.inputs.artifact_key }}"
-          else
-            ARTIFACT_KEY=$(aws s3api list-objects-v2 \
-              --bucket "${{ env.DEPLOYMENT_BUCKET_NAME }}" \
-              --prefix "${{ env.DEPLOYMENT_ARTIFACT_PREFIX }}/" \
-              --query 'reverse(sort_by(Contents, &LastModified))[0].Key' \
-              --output text)
+          graph_s3_bucket="${{ inputs.graph_s3_bucket }}"
+          if [[ -z "${graph_s3_bucket}" ]]; then
+            graph_s3_bucket="${{ env.DEFAULT_GRAPH_S3_BUCKET }}"
           fi
 
-          if [[ -z "$ARTIFACT_KEY" || "$ARTIFACT_KEY" == "None" ]]; then
-            echo "No deployment artifact found in s3://${{ env.DEPLOYMENT_BUCKET_NAME }}/${{ env.DEPLOYMENT_ARTIFACT_PREFIX }}/" >&2
-            exit 1
+          graph_channel_key="${{ inputs.graph_channel_key }}"
+          if [[ -z "${graph_channel_key}" ]]; then
+            channel="${{ inputs.channel }}"
+            if [[ -z "${channel}" ]]; then
+              channel="${{ env.DEFAULT_GRAPH_CHANNEL }}"
+            fi
+            graph_channel_key="graphs/${{ env.WIKI }}/channels/${channel}.json"
           fi
 
-          VERSION_LABEL=$(basename "$ARTIFACT_KEY" .tar.gz)
-          VERSION_LABEL=${VERSION_LABEL#wikiarena-api-}
-
-          echo "artifact_key=$ARTIFACT_KEY" >> "$GITHUB_OUTPUT"
-          echo "version_label=$VERSION_LABEL" >> "$GITHUB_OUTPUT"
-          echo "artifact_uri=s3://${{ env.DEPLOYMENT_BUCKET_NAME }}/$ARTIFACT_KEY" >> "$GITHUB_OUTPUT"
+          echo "graph_s3_bucket=${graph_s3_bucket}" >> "$GITHUB_OUTPUT"
+          echo "graph_channel_key=${graph_channel_key}" >> "$GITHUB_OUTPUT"
 
       - name: Resolve API instance id
         id: instance
@@ -83,7 +97,7 @@ jobs:
             --output text)
 
           if [[ -z "$INSTANCE_ID" || "$INSTANCE_ID" == "None" ]]; then
-            echo "No running API instance found for deployment." >&2
+            echo "No running API instance found for graph rollout." >&2
             exit 1
           fi
 
@@ -95,7 +109,7 @@ jobs:
           echo "instance_id=$INSTANCE_ID" >> "$GITHUB_OUTPUT"
           echo "public_ip=$PUBLIC_IP" >> "$GITHUB_OUTPUT"
 
-      - name: Trigger remote deploy over SSM
+      - name: Trigger remote graph rollout over SSM
         id: command
         run: |
           for attempt in $(seq 1 30); do
@@ -116,11 +130,8 @@ jobs:
             sleep 10
           done
 
-          ARTIFACT_S3_URI='${{ steps.artifact.outputs.artifact_uri }}'
-          RELEASE_VERSION='${{ steps.artifact.outputs.version_label }}'
-          GRAPH_S3_BUCKET='${{ env.GRAPH_S3_BUCKET }}'
-          GRAPH_CHANNEL_KEY='${{ env.GRAPH_CHANNEL_KEY }}'
-          PYTHON_VERSION='${{ env.PYTHON_VERSION }}'
+          GRAPH_S3_BUCKET='${{ steps.graph.outputs.graph_s3_bucket }}'
+          GRAPH_CHANNEL_KEY='${{ steps.graph.outputs.graph_channel_key }}'
 
           REMOTE_SCRIPT=$(cat <<EOF
           set -euo pipefail
@@ -236,28 +247,6 @@ jobs:
           SCRIPT
 
           chmod +x /opt/wikiarena/bin/sync-graph.sh /opt/wikiarena/bin/rollout-graph.sh
-
-          artifact_s3_uri='${ARTIFACT_S3_URI}'
-          release_version='${RELEASE_VERSION}'
-          python_version='${PYTHON_VERSION}'
-          release_dir="/opt/wikiarena/releases/\${release_version}"
-          tmp_dir="\$(mktemp -d)"
-          trap 'rm -rf "\${tmp_dir}"' EXIT
-
-          rm -rf "\${release_dir}"
-          mkdir -p "\${release_dir}"
-
-          aws s3 cp "\${artifact_s3_uri}" "\${tmp_dir}/api.tar.gz"
-          tar -xzf "\${tmp_dir}/api.tar.gz" -C "\${release_dir}"
-          chown -R wikiarena:wikiarena "\${release_dir}"
-
-          runuser -u wikiarena -- /usr/local/bin/uv python install "\${python_version}"
-          runuser -u wikiarena -- /usr/local/bin/uv sync --directory "\${release_dir}" --frozen --no-dev --python "\${python_version}"
-
-          ln -sfn "\${release_dir}" /opt/wikiarena/current
-          printf 'WIKIARENA_SERVICE_VERSION=%s\n' "\${release_version}" >/etc/wikiarena/release.env
-          chmod 640 /etc/wikiarena/release.env
-
           /opt/wikiarena/bin/rollout-graph.sh
           EOF
           )
@@ -269,14 +258,14 @@ jobs:
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "${{ steps.instance.outputs.instance_id }}" \
             --document-name AWS-RunShellScript \
-            --comment "Deploy WikiArena API ${{ steps.artifact.outputs.version_label }}" \
+            --comment "Roll out WikiArena graph via ${{ steps.graph.outputs.graph_channel_key }}" \
             --parameters "$REMOTE_COMMAND" \
             --query 'Command.CommandId' \
             --output text)
 
           echo "command_id=$COMMAND_ID" >> "$GITHUB_OUTPUT"
 
-      - name: Wait for remote deploy to finish
+      - name: Wait for remote graph rollout to finish
         run: |
           for attempt in $(seq 1 60); do
             STATUS=$(aws ssm get-command-invocation \
@@ -306,7 +295,7 @@ jobs:
             esac
           done
 
-          echo "Timed out waiting for remote deploy command to finish." >&2
+          echo "Timed out waiting for remote graph rollout command to finish." >&2
           exit 1
 
       - name: Health check
@@ -318,9 +307,9 @@ jobs:
 
       - name: Deployment summary
         run: |
-          echo "## API Deployment" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Artifact: ${{ steps.artifact.outputs.artifact_uri }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Version: ${{ steps.artifact.outputs.version_label }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Graph Rollout" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Graph bucket: ${{ steps.graph.outputs.graph_s3_bucket }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Graph channel key: ${{ steps.graph.outputs.graph_channel_key }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- Instance: ${{ steps.instance.outputs.instance_id }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- Origin: http://${{ steps.instance.outputs.public_ip }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- URL: https://${{ env.API_DOMAIN_NAME }}" >> "$GITHUB_STEP_SUMMARY"

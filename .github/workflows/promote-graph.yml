@@ -1,0 +1,153 @@
+name: Promote Graph
+
+on:
+  workflow_dispatch:
+    inputs:
+      dump_date:
+        description: Wikimedia dump date in YYYYMMDD format.
+        required: true
+        type: string
+      channel:
+        description: Channel name to update.
+        required: false
+        default: production
+        type: string
+      graph_s3_bucket:
+        description: Optional graph bucket override.
+        required: false
+        type: string
+      rollout_now:
+        description: Roll out the promoted graph immediately.
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_ACCOUNT_ID: "171436514933"
+  AWS_REGION: us-west-2
+  DEFAULT_GRAPH_CHANNEL: production
+  DEFAULT_GRAPH_S3_BUCKET: wikiarena-graph-production
+  PYTHON_VERSION: "3.13"
+  WIKI: enwiki
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    outputs:
+      graph_channel_key: ${{ steps.resolve.outputs.graph_channel_key }}
+      graph_s3_bucket: ${{ steps.resolve.outputs.graph_s3_bucket }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: latest
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Resolve graph artifact target
+        id: resolve
+        run: |
+          dump_date="${{ inputs.dump_date }}"
+          if [[ ! "$dump_date" =~ ^[0-9]{8}$ ]]; then
+            echo "Invalid dump date: $dump_date" >&2
+            exit 1
+          fi
+
+          graph_s3_bucket="${{ inputs.graph_s3_bucket }}"
+          if [[ -z "${graph_s3_bucket}" ]]; then
+            graph_s3_bucket="${{ env.DEFAULT_GRAPH_S3_BUCKET }}"
+          fi
+
+          channel="${{ inputs.channel }}"
+          if [[ -z "${channel}" ]]; then
+            channel="${{ env.DEFAULT_GRAPH_CHANNEL }}"
+          fi
+
+          graph_name="wikiarena_graph_${{ env.WIKI }}_${dump_date}.bin"
+          metadata_name="wikiarena_graph_${{ env.WIKI }}_${dump_date}.metadata.json"
+          checksum_name="${graph_name}.sha256"
+          graph_key="graphs/${{ env.WIKI }}/${dump_date}/${graph_name}"
+          metadata_key="graphs/${{ env.WIKI }}/${dump_date}/${metadata_name}"
+          checksum_key="graphs/${{ env.WIKI }}/${dump_date}/${checksum_name}"
+          graph_channel_key="graphs/${{ env.WIKI }}/channels/${channel}.json"
+
+          echo "dump_date=${dump_date}" >> "$GITHUB_OUTPUT"
+          echo "graph_s3_bucket=${graph_s3_bucket}" >> "$GITHUB_OUTPUT"
+          echo "channel=${channel}" >> "$GITHUB_OUTPUT"
+          echo "graph_key=${graph_key}" >> "$GITHUB_OUTPUT"
+          echo "metadata_key=${metadata_key}" >> "$GITHUB_OUTPUT"
+          echo "checksum_key=${checksum_key}" >> "$GITHUB_OUTPUT"
+          echo "graph_channel_key=${graph_channel_key}" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/wikiarena-production-github-actions-app
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify graph artifacts exist in S3
+        run: |
+          aws s3api head-object \
+            --bucket "${{ steps.resolve.outputs.graph_s3_bucket }}" \
+            --key "${{ steps.resolve.outputs.graph_key }}" >/dev/null
+          aws s3api head-object \
+            --bucket "${{ steps.resolve.outputs.graph_s3_bucket }}" \
+            --key "${{ steps.resolve.outputs.metadata_key }}" >/dev/null
+          aws s3api head-object \
+            --bucket "${{ steps.resolve.outputs.graph_s3_bucket }}" \
+            --key "${{ steps.resolve.outputs.checksum_key }}" >/dev/null
+
+      - name: Download graph metadata
+        run: |
+          mkdir -p dist
+          aws s3 cp \
+            "s3://${{ steps.resolve.outputs.graph_s3_bucket }}/${{ steps.resolve.outputs.metadata_key }}" \
+            "dist/graph.metadata.json"
+
+      - name: Build channel manifest
+        run: |
+          uv run python scripts/promote_graph_channel.py \
+            --channel "${{ steps.resolve.outputs.channel }}" \
+            --metadata dist/graph.metadata.json \
+            --graph-key "${{ steps.resolve.outputs.graph_key }}" \
+            --checksum-key "${{ steps.resolve.outputs.checksum_key }}" \
+            --metadata-key "${{ steps.resolve.outputs.metadata_key }}" \
+            --output dist/channel.json \
+            --promoted-by "${{ github.actor }}" \
+            --source-run-id "${{ github.run_id }}"
+
+      - name: Upload channel manifest to S3
+        run: |
+          aws s3 cp \
+            dist/channel.json \
+            "s3://${{ steps.resolve.outputs.graph_s3_bucket }}/${{ steps.resolve.outputs.graph_channel_key }}"
+
+      - name: Promotion summary
+        run: |
+          echo "## Graph Promotion" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Dump date: ${{ steps.resolve.outputs.dump_date }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Channel: ${{ steps.resolve.outputs.channel }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Graph bucket: ${{ steps.resolve.outputs.graph_s3_bucket }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Channel manifest: s3://${{ steps.resolve.outputs.graph_s3_bucket }}/${{ steps.resolve.outputs.graph_channel_key }}" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "${{ inputs.rollout_now }}" == "true" ]]; then
+            echo "- Immediate rollout: enabled" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- Immediate rollout: skipped" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  rollout:
+    if: ${{ inputs.rollout_now }}
+    needs: promote
+    uses: ./.github/workflows/rollout-graph.yml
+    with:
+      graph_channel_key: ${{ needs.promote.outputs.graph_channel_key }}
+      graph_s3_bucket: ${{ needs.promote.outputs.graph_s3_bucket }}
