@@ -192,34 +192,21 @@ jobs:
           ln -sfn "\${metadata_file_name}" "\${graph_release_dir}/wikiarena_graph.metadata.json"
           rm -rf "\${graph_current_dir}"
           ln -sfn "\${graph_release_dir}" "\${graph_current_dir}"
-
-          graph_path="\${graph_release_dir}/\${graph_file_name}"
-          metadata_path="\${graph_release_dir}/\${metadata_file_name}"
-          if grep -q '^WIKIARENA_GRAPH_PATH=' /etc/wikiarena/wikiarena.env; then
-            sed -i "s|^WIKIARENA_GRAPH_PATH=.*$|WIKIARENA_GRAPH_PATH=\${graph_path}|" /etc/wikiarena/wikiarena.env
-          else
-            printf 'WIKIARENA_GRAPH_PATH=%s\n' "\${graph_path}" >>/etc/wikiarena/wikiarena.env
-          fi
-          if grep -q '^WIKIARENA_GRAPH_METADATA_PATH=' /etc/wikiarena/wikiarena.env; then
-            sed -i "s|^WIKIARENA_GRAPH_METADATA_PATH=.*$|WIKIARENA_GRAPH_METADATA_PATH=\${metadata_path}|" /etc/wikiarena/wikiarena.env
-          else
-            printf 'WIKIARENA_GRAPH_METADATA_PATH=%s\n' "\${metadata_path}" >>/etc/wikiarena/wikiarena.env
-          fi
-          chown root:wikiarena /etc/wikiarena/wikiarena.env
-          chmod 640 /etc/wikiarena/wikiarena.env
-
-          chown -R wikiarena:wikiarena "\${graph_releases_dir}"
           SCRIPT
 
           cat >/opt/wikiarena/bin/rollout-graph.sh <<'SCRIPT'
           #!/bin/bash
           set -euo pipefail
 
-          /opt/wikiarena/bin/sync-graph.sh
+          runuser -u wikiarena -- /opt/wikiarena/bin/sync-graph.sh
 
           systemctl daemon-reload
           systemctl enable wikiarena-api.service
-          systemctl restart wikiarena-api.service
+          if ! systemctl restart wikiarena-api.service; then
+            systemctl status wikiarena-api.service --no-pager || true
+            journalctl -n 200 -u wikiarena-api.service --no-pager || true
+            exit 1
+          fi
           systemctl restart nginx.service
 
           source /etc/wikiarena/wikiarena.env
