@@ -6,7 +6,8 @@ from unittest.mock import patch
 
 import pytest
 
-from wikiarena.server.config import ServerConfig
+import wikiarena.wiki_runtime as wiki_runtime
+from wikiarena.server.config import GRAPH_METADATA_PATH_ENV_VAR, ServerConfig
 from wikiarena.server.errors import UnknownTitleError
 from wikiarena.server.graph_runtime import GraphSolverRuntime
 from wikiarena.solver.binary.io import SolverBinaryData, write_solver_binary
@@ -58,14 +59,46 @@ def _write_graph_metadata(
                 "generated_at_utc": "2026-03-24T00:00:00+00:00",
                 "git_sha": "abc123",
                 "graph": {
-                    "file_name": "wikiarena_graph.bin",
+                    "file_name": "wikiarena_graph_enwiki_20260301.bin",
                     "bytes": 123,
                     "sha256": "graph-sha",
                     "node_count": 6,
                     "edge_count": 5,
                 },
                 "compressed": {
-                    "file_name": "wikiarena_graph.bin.xz",
+                    "file_name": "wikiarena_graph_enwiki_20260301.bin.xz",
+                    "bytes": 99,
+                    "sha256": "compressed-sha",
+                },
+            },
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_dated_graph_metadata(
+    metadata_path: Path,
+    *,
+    graph_file_name: str,
+) -> None:
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "wiki": "enwiki",
+                "dump_date": "20260301",
+                "snapshot_id": "enwiki-20260301",
+                "generated_at_utc": "2026-03-24T00:00:00+00:00",
+                "git_sha": "abc123",
+                "graph": {
+                    "file_name": graph_file_name,
+                    "bytes": 123,
+                    "sha256": "graph-sha",
+                    "node_count": 6,
+                    "edge_count": 5,
+                },
+                "compressed": {
+                    "file_name": f"{graph_file_name}.xz",
                     "bytes": 99,
                     "sha256": "compressed-sha",
                 },
@@ -80,8 +113,8 @@ def _write_graph_metadata(
 async def test_graph_solver_runtime_loads_metadata_and_solves_queries(
     tmp_path: Path,
 ) -> None:
-    binary_path = tmp_path / "wikiarena_graph.bin"
-    metadata_path = tmp_path / "wikiarena_graph.metadata.json"
+    binary_path = tmp_path / "wikiarena_graph_enwiki_20260301.bin"
+    metadata_path = tmp_path / "wikiarena_graph_enwiki_20260301.metadata.json"
     write_solver_binary(
         file_path=binary_path,
         data=_make_toy_solver_binary_data(),
@@ -133,8 +166,8 @@ async def test_graph_solver_runtime_loads_metadata_and_solves_queries(
 async def test_graph_solver_runtime_returns_empty_paths_for_disconnected_titles(
     tmp_path: Path,
 ) -> None:
-    binary_path = tmp_path / "wikiarena_graph.bin"
-    metadata_path = tmp_path / "wikiarena_graph.metadata.json"
+    binary_path = tmp_path / "wikiarena_graph_enwiki_20260301.bin"
+    metadata_path = tmp_path / "wikiarena_graph_enwiki_20260301.metadata.json"
     write_solver_binary(
         file_path=binary_path,
         data=_make_toy_solver_binary_data(),
@@ -170,8 +203,8 @@ async def test_graph_solver_runtime_returns_empty_paths_for_disconnected_titles(
 async def test_graph_solver_runtime_raises_unknown_title_for_missing_start_page(
     tmp_path: Path,
 ) -> None:
-    binary_path = tmp_path / "wikiarena_graph.bin"
-    metadata_path = tmp_path / "wikiarena_graph.metadata.json"
+    binary_path = tmp_path / "wikiarena_graph_enwiki_20260301.bin"
+    metadata_path = tmp_path / "wikiarena_graph_enwiki_20260301.metadata.json"
     write_solver_binary(
         file_path=binary_path,
         data=_make_toy_solver_binary_data(),
@@ -209,8 +242,8 @@ async def test_graph_solver_runtime_raises_unknown_title_for_missing_start_page(
 async def test_graph_solver_runtime_returns_random_page_titles(
     tmp_path: Path,
 ) -> None:
-    binary_path = tmp_path / "wikiarena_graph.bin"
-    metadata_path = tmp_path / "wikiarena_graph.metadata.json"
+    binary_path = tmp_path / "wikiarena_graph_enwiki_20260301.bin"
+    metadata_path = tmp_path / "wikiarena_graph_enwiki_20260301.metadata.json"
     write_solver_binary(
         file_path=binary_path,
         data=_make_toy_solver_binary_data(),
@@ -251,14 +284,15 @@ async def test_graph_solver_runtime_returns_random_page_titles(
 async def test_graph_solver_runtime_returns_all_shortest_paths_when_requested(
     tmp_path: Path,
 ) -> None:
-    binary_path = tmp_path / "multi_split.solver.bin"
-    metadata_path = tmp_path / "wikiarena_graph.metadata.json"
+    binary_path = tmp_path / "wikiarena_graph_enwiki_20260301.bin"
+    metadata_path = tmp_path / "wikiarena_graph_enwiki_20260301.metadata.json"
     write_solver_binary(
         file_path=binary_path,
         data=_make_multi_split_solver_binary_data(),
     )
-    _write_graph_metadata(
+    _write_dated_graph_metadata(
         metadata_path,
+        graph_file_name=binary_path.name,
     )
 
     runtime = GraphSolverRuntime(
@@ -283,5 +317,163 @@ async def test_graph_solver_runtime_returns_all_shortest_paths_when_requested(
         ["Alpha", "Charlie", "Delta", "Foxtrot"],
         ["Alpha", "Charlie", "Echo", "Foxtrot"],
     ]
+
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_graph_solver_runtime_uses_installed_graph_when_config_path_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    install_dir = tmp_path / "graphs"
+    install_dir.mkdir()
+    binary_path = install_dir / "wikiarena_graph_enwiki_20260301.bin"
+    metadata_path = install_dir / "wikiarena_graph_enwiki_20260301.metadata.json"
+    write_solver_binary(
+        file_path=binary_path,
+        data=_make_toy_solver_binary_data(),
+    )
+    _write_dated_graph_metadata(
+        metadata_path,
+        graph_file_name=binary_path.name,
+    )
+    monkeypatch.setattr(
+        wiki_runtime,
+        "get_default_graph_install_dir",
+        lambda: install_dir,
+    )
+    monkeypatch.delenv(wiki_runtime.GRAPH_PATH_ENV_VAR, raising=False)
+
+    runtime = GraphSolverRuntime(
+        ServerConfig(
+            service_version="0.1.0",
+        ),
+    )
+
+    await runtime.startup()
+
+    assert runtime.is_ready() is True
+    meta_response = runtime.get_meta()
+    assert meta_response.snapshot_id == "enwiki-20260301"
+    assert meta_response.dump_date == "20260301"
+    assert meta_response.node_count == 6
+    assert meta_response.edge_count == 5
+
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_graph_solver_runtime_uses_installed_graph_when_graph_env_is_blank(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    install_dir = tmp_path / "graphs"
+    install_dir.mkdir()
+    binary_path = install_dir / "wikiarena_graph_enwiki_20260301.bin"
+    metadata_path = install_dir / "wikiarena_graph_enwiki_20260301.metadata.json"
+    write_solver_binary(
+        file_path=binary_path,
+        data=_make_toy_solver_binary_data(),
+    )
+    _write_dated_graph_metadata(
+        metadata_path,
+        graph_file_name=binary_path.name,
+    )
+    monkeypatch.setattr(
+        wiki_runtime,
+        "get_default_graph_install_dir",
+        lambda: install_dir,
+    )
+    monkeypatch.setenv(wiki_runtime.GRAPH_PATH_ENV_VAR, "   ")
+    monkeypatch.delenv(GRAPH_METADATA_PATH_ENV_VAR, raising=False)
+
+    runtime = GraphSolverRuntime(
+        ServerConfig.from_env(),
+    )
+
+    await runtime.startup()
+
+    assert runtime.is_ready() is True
+    assert runtime.get_meta().snapshot_id == "enwiki-20260301"
+
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_graph_solver_runtime_accepts_legacy_symlink_alias_paths(
+    tmp_path: Path,
+) -> None:
+    release_dir = tmp_path / "releases" / "enwiki-20260301"
+    current_dir = tmp_path / "current"
+    release_dir.mkdir(parents=True)
+    current_dir.mkdir()
+
+    binary_path = release_dir / "wikiarena_graph_enwiki_20260301.bin"
+    metadata_path = release_dir / "wikiarena_graph_enwiki_20260301.metadata.json"
+    alias_graph_path = current_dir / "wikiarena_graph.bin"
+    alias_metadata_path = current_dir / "wikiarena_graph.metadata.json"
+    write_solver_binary(
+        file_path=binary_path,
+        data=_make_toy_solver_binary_data(),
+    )
+    _write_dated_graph_metadata(
+        metadata_path,
+        graph_file_name=binary_path.name,
+    )
+    alias_graph_path.symlink_to(binary_path)
+    alias_metadata_path.symlink_to(metadata_path)
+
+    runtime = GraphSolverRuntime(
+        ServerConfig(
+            graph_path=alias_graph_path,
+            graph_metadata_path=alias_metadata_path,
+            service_version="0.1.0",
+        ),
+    )
+
+    await runtime.startup()
+
+    assert runtime.is_ready() is True
+    assert runtime.get_meta().snapshot_id == "enwiki-20260301"
+    assert runtime.get_meta().dump_date == "20260301"
+
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_graph_solver_runtime_rejects_mismatched_metadata_for_resolved_graph(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    install_dir = tmp_path / "graphs"
+    install_dir.mkdir()
+    binary_path = install_dir / "wikiarena_graph_enwiki_20260301.bin"
+    stale_metadata_path = tmp_path / "wikiarena_graph_enwiki_20260201.metadata.json"
+    write_solver_binary(
+        file_path=binary_path,
+        data=_make_toy_solver_binary_data(),
+    )
+    _write_dated_graph_metadata(
+        stale_metadata_path,
+        graph_file_name="wikiarena_graph_enwiki_20260201.bin",
+    )
+    monkeypatch.setattr(
+        wiki_runtime,
+        "get_default_graph_install_dir",
+        lambda: install_dir,
+    )
+
+    runtime = GraphSolverRuntime(
+        ServerConfig(
+            graph_metadata_path=stale_metadata_path,
+            service_version="0.1.0",
+        ),
+    )
+
+    await runtime.startup()
+
+    assert runtime.is_ready() is False
+    assert runtime.get_health_status() == "error"
 
     await runtime.shutdown()

@@ -51,13 +51,13 @@ class TerminationReason(str, Enum):
     CANCELLED = "cancelled"
 
 
-class SolverMode(str, Enum):
+class SolverBackend(str, Enum):
     NONE = "none"
-    LOCAL_SQLITE = "local_sqlite"
+    LOCAL = "local"
     REMOTE = "remote"
 
 
-class WikiBackend(str, Enum):
+class NavigationBackend(str, Enum):
     LIVE = "live"
     GRAPH = "graph"
 
@@ -83,14 +83,22 @@ class PathKind(str, Enum):
 
 
 class PathSource(str, Enum):
-    LOCAL_SQLITE = "local_sqlite"
+    LOCAL_GRAPH = "local_graph"
     REMOTE_SOLVER = "remote_solver"
     LIVE_SOLVER = "live_solver"
     RUN_TRACE = "run_trace"
+
+
+class TaskExecutionAnnotationStatus(str, Enum):
+    OK = "ok"
+    START_MISSING_IN_SOLVER = "start_missing_in_solver"
+    TARGET_MISSING_IN_SOLVER = "target_missing_in_solver"
+    UNREACHABLE_IN_SOLVER = "unreachable_in_solver"
 
 
 class RunEventType(str, Enum):
     RUN_STARTED = "run_started"
     STEP_ATTEMPT_RECORDED = "step_attempt_recorded"
     MOVE_COMMITTED = "move_committed"
+    POSITION_SOLVER_FACTS_RECORDED = "position_solver_facts_recorded"
     RUN_TERMINATED = "run_terminated"

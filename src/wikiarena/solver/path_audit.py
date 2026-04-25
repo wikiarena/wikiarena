@@ -249,6 +249,8 @@ def _dedupe_titles_preserving_order(
 def _normalize_live_wikipedia_title(
     title: str,
 ) -> str:
+    # TODO: Remove this legacy SQL-unescape cleanup once snapshots before
+    # 20260401 are no longer supported.
     return title.replace(
         "\\'",
         "'",

@@ -115,6 +115,8 @@ def _lookup_title_candidates(
         " ",
         "_",
     )
+    # TODO: Remove the legacy SQL-escaped fallback once snapshots before
+    # 20260401 are no longer supported.
     sql_escaped_title = (
         normalized_title.replace(
             "\\",
@@ -145,6 +147,8 @@ def _denormalize_stored_title(
             "_",
             " ",
         )
+        # TODO: Remove this legacy SQL-unescape path once snapshots before
+        # 20260401 are no longer supported.
         .replace(
             '\\"',
             '"',

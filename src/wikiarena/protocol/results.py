@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import cast
 
-from pydantic import BaseModel
-from pydantic import Field
-from pydantic import model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from wikiarena.protocol.enums import RunStatus
-from wikiarena.protocol.enums import SolverMode
-from wikiarena.protocol.enums import StepOutcome
-from wikiarena.protocol.enums import TerminalOutcome
-from wikiarena.protocol.enums import TerminationReason
-from wikiarena.protocol.enums import WikiBackend
+from wikiarena.protocol.enums import (
+    NavigationBackend,
+    RunStatus,
+    SolverBackend,
+    StepOutcome,
+    TaskExecutionAnnotationStatus,
+    TerminalOutcome,
+    TerminationReason,
+)
 from wikiarena.protocol.errors import ErrorRecord
 
 
@@ -21,6 +23,12 @@ class ModelCallMetrics(BaseModel):
     total_tokens: int = 0
     cache_creation_input_tokens: int = 0
     cache_read_input_tokens: int = 0
+    input_token_details: dict[str, int] = Field(
+        default_factory=dict,
+    )
+    output_token_details: dict[str, int] = Field(
+        default_factory=dict,
+    )
     estimated_cost_usd: float = 0.0
     response_time_ms: float = 0.0
 
@@ -34,6 +42,34 @@ class StepSolverMetrics(BaseModel):
         default=None,
         ge=0,
     )
+
+
+class TaskExecutionAnnotation(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    status: TaskExecutionAnnotationStatus
+    shortest_path_length: int | None = Field(
+        default=None,
+        ge=0,
+    )
+
+    @model_validator(mode="after")
+    def validate_status_dependent_fields(self) -> "TaskExecutionAnnotation":
+        if self.status == TaskExecutionAnnotationStatus.OK:
+            if self.shortest_path_length is None:
+                raise ValueError(
+                    "shortest_path_length is required when task_execution_annotation status is ok",
+                )
+            return self
+
+        if self.shortest_path_length is not None:
+            raise ValueError(
+                "shortest_path_length must be null when task_execution_annotation status is not ok",
+            )
+
+        return self
 
 
 class StepAttemptRecord(BaseModel):
@@ -100,6 +136,10 @@ class MoveRecord(BaseModel):
 
 
 class RunResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
     run_id: str
     race_id: str
     benchmark_id: str
@@ -132,9 +172,11 @@ class RunResult(BaseModel):
     ruleset_hash: str | None = None
     taskset_hash: str | None = None
     participant_hash: str | None = None
-    solver_mode: SolverMode = SolverMode.NONE
-    wiki_backend: WikiBackend | None = None
-    wiki_snapshot_id: str | None = None
+    solver_backend: SolverBackend = SolverBackend.NONE
+    navigation_backend: NavigationBackend | None = None
+    navigation_snapshot_id: str | None = None
+    solver_snapshot_id: str | None = None
+    task_execution_annotation: TaskExecutionAnnotation | None = None
 
     started_at: datetime
     ended_at: datetime
@@ -161,19 +203,30 @@ class RunResult(BaseModel):
         )
 
         if not self.committed_moves:
-            self.committed_moves = [
-                MoveRecord(
-                    move_index=step_attempt.move_index,
-                    source_step_index=step_attempt.step_index,
-                    from_page_title=step_attempt.from_page_title,
-                    to_page_title=step_attempt.resolved_to_page_title,
-                    requested_to_page_title=step_attempt.requested_to_page_title,
-                    was_redirect=step_attempt.was_redirect,
-                    occurred_at=step_attempt.occurred_at,
+            committed_moves: list[MoveRecord] = []
+            for step_attempt in self.step_attempts:
+                if step_attempt.outcome != StepOutcome.MOVE_COMMITTED:
+                    continue
+                assert step_attempt.move_index is not None
+                assert step_attempt.resolved_to_page_title is not None
+                committed_moves.append(
+                    MoveRecord(
+                        move_index=cast(
+                            int,
+                            step_attempt.move_index,
+                        ),
+                        source_step_index=step_attempt.step_index,
+                        from_page_title=step_attempt.from_page_title,
+                        to_page_title=cast(
+                            str,
+                            step_attempt.resolved_to_page_title,
+                        ),
+                        requested_to_page_title=step_attempt.requested_to_page_title,
+                        was_redirect=step_attempt.was_redirect,
+                        occurred_at=step_attempt.occurred_at,
+                    ),
                 )
-                for step_attempt in self.step_attempts
-                if step_attempt.outcome == StepOutcome.MOVE_COMMITTED
-            ]
+            self.committed_moves = committed_moves
 
         self._validate_move_index_sequence()
 
@@ -238,6 +291,7 @@ class RaceResult(BaseModel):
     race_id: str
     benchmark_id: str
     task_id: str
+    task_execution_annotation: TaskExecutionAnnotation | None = None
     run_results: list[RunResult] = Field(
         default_factory=list,
     )

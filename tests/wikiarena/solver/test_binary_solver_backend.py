@@ -159,6 +159,36 @@ async def test_binary_solver_backend_all_shortest_mode_returns_all_paths(
 
 
 @pytest.mark.asyncio
+async def test_binary_solver_backend_position_facts_include_next_hops(
+    tmp_path: Path,
+) -> None:
+    binary_path = tmp_path / "multi_split.solver.bin"
+    write_solver_binary(
+        file_path=binary_path,
+        data=_make_multi_split_solver_binary_data(),
+    )
+
+    backend = BinarySolverBackend.from_file_path(
+        binary_path,
+        snapshot_id="toy-snapshot",
+        path_mode="all_shortest",
+    )
+
+    solver_facts = await backend.get_position_solver_facts(
+        start_page="Alpha",
+        target_page="Foxtrot",
+    )
+
+    assert solver_facts.page_title == "Alpha"
+    assert solver_facts.target_page_title == "Foxtrot"
+    assert solver_facts.shortest_path_length == 3
+    assert solver_facts.shortest_next_hop_titles == ["Bravo", "Charlie"]
+    assert solver_facts.solver_snapshot_id == "toy-snapshot"
+
+    await backend.shutdown()
+
+
+@pytest.mark.asyncio
 async def test_binary_solver_backend_single_mode_still_returns_one_deterministic_path(
     tmp_path: Path,
 ) -> None:

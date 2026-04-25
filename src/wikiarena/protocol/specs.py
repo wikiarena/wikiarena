@@ -4,16 +4,10 @@ import re
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel
-from pydantic import Field
-from pydantic import model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from wikiarena.protocol.enums import ParticipantKind
-from wikiarena.protocol.enums import PathKind
-from wikiarena.protocol.enums import PathSource
-from wikiarena.protocol.rules import BenchmarkRules
-from wikiarena.protocol.rules import ExecutionPolicy
-from wikiarena.protocol.rules import NavigationRules
+from wikiarena.protocol.enums import ParticipantKind, PathSource
+from wikiarena.protocol.rules import BenchmarkRules, ExecutionPolicy, NavigationRules
 
 
 def _normalize_title_for_id(title: str) -> str:
@@ -51,45 +45,41 @@ def build_task_id(
     return f"{language}__{start}__{target}"
 
 
-class ReferencePath(BaseModel):
-    path_kind: PathKind = PathKind.SHORTEST
+class SolverShortestPath(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
     page_titles: list[str] = Field(
         min_length=2,
     )
-    hop_count: int | None = Field(
-        default=None,
-        ge=0,
-    )
     computed_at: datetime
-    valid_for_snapshot_id: str | None = None
-    source: PathSource = PathSource.LOCAL_SQLITE
+    solver_snapshot_id: str | None = None
+    source: PathSource = PathSource.LOCAL_GRAPH
 
-    @model_validator(mode="after")
-    def ensure_hop_count(self) -> "ReferencePath":
-        inferred_hop_count = (
-            len(
-                self.page_titles,
-            )
-            - 1
-        )
-        if self.hop_count is None:
-            self.hop_count = inferred_hop_count
-            return self
-        if self.hop_count != inferred_hop_count:
-            raise ValueError(
-                "hop_count must equal len(page_titles) - 1",
-            )
-        return self
+    @property
+    def hop_count(
+        self,
+    ) -> int:
+        return len(
+            self.page_titles,
+        ) - 1
 
 
 class TaskSpec(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
     task_id: str | None = None
     language: str = "en"
     start_page_title: str
     target_page_title: str
-    reference_paths: list[ReferencePath] = Field(
-        default_factory=list,
+    shortest_path_length: int | None = Field(
+        default=None,
+        ge=0,
     )
+    solver_shortest_path: SolverShortestPath | None = None
     metadata: dict[str, Any] = Field(
         default_factory=dict,
     )
@@ -100,6 +90,24 @@ class TaskSpec(BaseModel):
             raise ValueError(
                 "start_page_title and target_page_title must be different",
             )
+
+        if self.solver_shortest_path is not None:
+            if self.solver_shortest_path.page_titles[0] != self.start_page_title:
+                raise ValueError(
+                    "solver_shortest_path.page_titles must start with start_page_title",
+                )
+            if self.solver_shortest_path.page_titles[-1] != self.target_page_title:
+                raise ValueError(
+                    "solver_shortest_path.page_titles must end with target_page_title",
+                )
+
+            inferred_shortest_path_length = self.solver_shortest_path.hop_count
+            if self.shortest_path_length is None:
+                self.shortest_path_length = inferred_shortest_path_length
+            elif self.shortest_path_length != inferred_shortest_path_length:
+                raise ValueError(
+                    "shortest_path_length must equal len(solver_shortest_path.page_titles) - 1",
+                )
 
         canonical_task_id = build_task_id(
             language=self.language,

@@ -10,7 +10,7 @@ from wikiarena.solver.binary.search import (
     search_all_shortest_paths_by_node_ids,
     search_shortest_path_by_node_ids,
 )
-from wikiarena.solver.models import SolverResponse
+from wikiarena.solver.models import PositionSolverFacts, SolverResponse
 
 BinarySolverPathMode = Literal["single", "all_shortest"]
 
@@ -42,6 +42,15 @@ class BinarySolverTargetSession:
             start_page,
         )
         return response.path_length
+
+    async def get_position_solver_facts(
+        self,
+        start_page: str,
+    ) -> PositionSolverFacts:
+        return await self.backend.get_position_solver_facts(
+            start_page=start_page,
+            target_page=self.target_page,
+        )
 
 
 class BinarySolverBackend:
@@ -112,6 +121,23 @@ class BinarySolverBackend:
             start_node_id=start_node_id,
             target_node_id=target_node_id,
             started_at=started_at,
+        )
+
+    async def get_position_solver_facts(
+        self,
+        *,
+        start_page: str,
+        target_page: str,
+    ) -> PositionSolverFacts:
+        solver_response = await self.find_shortest_path(
+            start_page,
+            target_page,
+        )
+        return PositionSolverFacts.from_solver_response(
+            page_title=start_page,
+            target_page_title=target_page,
+            solver_response=solver_response,
+            solver_snapshot_id=self.capabilities.snapshot_id,
         )
 
     def _find_all_shortest_path(

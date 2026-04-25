@@ -3,34 +3,43 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 from pathlib import Path
+from typing import cast
 
-from pydantic import BaseModel
-from pydantic import Field
+from pydantic import BaseModel, ConfigDict, Field
 
-from wikiarena.adapters.wiki import CachedWikiNavigator
-from wikiarena.adapters.wiki import GraphWikipediaNavigator
-from wikiarena.adapters.wiki import LiveWikipediaNavigator
+from wikiarena.adapters.wiki import (
+    CachedWikiNavigator,
+    GraphWikipediaNavigator,
+    LiveWikipediaNavigator,
+)
 from wikiarena.core.run_executor import EventSink
-from wikiarena.eval.planner import BenchmarkIdentityPlan
-from wikiarena.eval.planner import build_race_id
-from wikiarena.eval.planner import build_run_id
-from wikiarena.eval.planner import plan_benchmark_identity
-from wikiarena.eval.run_service import RunPlan
-from wikiarena.eval.run_service import RunService
+from wikiarena.eval.planner import (
+    BenchmarkIdentityPlan,
+    build_race_id,
+    build_run_id,
+    plan_benchmark_identity,
+)
 from wikiarena.eval.run_result_store import RunResultStore
-from wikiarena.protocol import BenchmarkSpec
-from wikiarena.protocol import RaceResult
-from wikiarena.protocol import RunResult
-from wikiarena.protocol import RunSpec
-from wikiarena.protocol import SolverMode
-from wikiarena.protocol import TaskSpec
-from wikiarena.protocol import WikiBackend
-from wikiarena.protocol import NavigationRules
+from wikiarena.eval.run_service import RunPlan, RunRequest, RunService
+from wikiarena.protocol import (
+    BenchmarkSpec,
+    NavigationBackend,
+    NavigationRules,
+    RaceResult,
+    RunResult,
+    RunSpec,
+    SolverBackend,
+    TaskSpec,
+)
+from wikiarena.protocol.results import TaskExecutionAnnotation
 from wikiarena.protocol.specs import ParticipantSpec
 from wikiarena.solver.binary import MappedBinarySolverGraph
-from wikiarena.wiki_runtime import WikiRuntimeConfig
-from wikiarena.wiki_runtime import resolve_graph_file_path
+from wikiarena.solver_runtime import SolverRuntimeConfig
+from wikiarena.wiki_runtime import NavigationRuntimeConfig, resolve_graph_file_path
 from wikiarena.wikipedia import LiveWikiService
+
+
+_MISSING_TASK_EXECUTION_ANNOTATION = object()
 
 
 class BenchmarkConcurrencyConfig(BaseModel):
@@ -52,11 +61,18 @@ class BenchmarkConcurrencyConfig(BaseModel):
 
 
 class BenchmarkRunOptions(BaseModel):
-    solver_mode: SolverMode = SolverMode.NONE
-    wiki_runtime: WikiRuntimeConfig = Field(
-        default_factory=WikiRuntimeConfig,
+    model_config = ConfigDict(
+        extra="forbid",
     )
-    wiki_snapshot_id: str | None = None
+
+    navigation_runtime: NavigationRuntimeConfig = Field(
+        default_factory=NavigationRuntimeConfig,
+    )
+    solver_runtime: SolverRuntimeConfig = Field(
+        default_factory=SolverRuntimeConfig,
+    )
+    navigation_snapshot_id: str | None = None
+    solver_snapshot_id: str | None = None
 
 
 class BenchmarkExecutionArtifact(BaseModel):
@@ -226,11 +242,15 @@ class BenchmarkRunner:
             run_results = await asyncio.gather(
                 *run_tasks,
             )
+            race_task_execution_annotation = _resolve_shared_task_execution_annotation(
+                run_results,
+            )
 
             return RaceResult(
                 race_id=race_id,
                 benchmark_id=benchmark_spec.benchmark_id,
                 task_id=task_id,
+                task_execution_annotation=race_task_execution_annotation,
                 run_results=run_results,
             )
 
@@ -267,25 +287,31 @@ class BenchmarkRunner:
                 f"Missing participant_hash for participant_id '{participant_spec.participant_id}'",
             )
 
-        run_plan = RunPlan(
-            task_spec=task_spec,
-            participant_spec=participant_spec,
-            run_spec=benchmark_spec_run_spec(
-                benchmark_id=benchmark_spec.benchmark_id,
-                race_id=race_id,
-                run_id=run_id,
-                task_id=task_spec.task_id,
-                participant_id=participant_spec.participant_id,
-                navigation_rules=benchmark_spec.rules.navigation,
-            ),
-            harness_config=benchmark_spec.rules.harness,
+        run_request = RunRequest(
+            model_id=participant_spec.driver_config.model,
+            provider=participant_spec.driver_config.provider,
+            start_page_title=task_spec.start_page_title,
+            target_page_title=task_spec.target_page_title,
+            language=task_spec.language,
+            participant_id=participant_spec.participant_id,
+            participant_display_name=participant_spec.display_name,
+            model_settings=participant_spec.driver_config.settings,
+            benchmark_id=benchmark_spec.benchmark_id,
+            race_id=race_id,
+            run_id=run_id,
+            navigation_rules=benchmark_spec.rules.navigation,
             scoring_rules=benchmark_spec.rules.scoring,
+            harness_config=benchmark_spec.rules.harness,
             ruleset_hash=benchmark_identity.ruleset_hash,
             taskset_hash=benchmark_identity.taskset_hash,
             participant_hash=participant_hash,
-            solver_mode=run_options.solver_mode,
-            wiki_runtime=run_options.wiki_runtime,
-            wiki_snapshot_id=run_options.wiki_snapshot_id,
+            navigation_runtime=run_options.navigation_runtime,
+            solver_runtime=run_options.solver_runtime,
+            navigation_snapshot_id=run_options.navigation_snapshot_id,
+            solver_snapshot_id=run_options.solver_snapshot_id,
+        )
+        run_plan = await self.run_service.plan_run(
+            run_request,
         )
 
         provider_semaphore = provider_semaphores.get(
@@ -362,6 +388,27 @@ def _resolve_concurrency(
     )
 
 
+def _resolve_shared_task_execution_annotation(
+    run_results: list[RunResult],
+) -> TaskExecutionAnnotation | None:
+    shared_annotation = _MISSING_TASK_EXECUTION_ANNOTATION
+    for run_result in run_results:
+        annotation = run_result.task_execution_annotation
+        if shared_annotation is _MISSING_TASK_EXECUTION_ANNOTATION:
+            shared_annotation = annotation
+            continue
+        if annotation != shared_annotation:
+            raise ValueError(
+                "run results in the same race produced different task_execution_annotation values",
+            )
+    if shared_annotation is _MISSING_TASK_EXECUTION_ANNOTATION:
+        return None
+    return cast(
+        TaskExecutionAnnotation | None,
+        shared_annotation,
+    )
+
+
 def _resolve_protocol_version(
     run_service: RunService,
 ) -> str:
@@ -403,11 +450,11 @@ def _create_default_run_service(
     def wiki_navigator_factory(
         run_plan: RunPlan,
     ):
-        wiki_runtime = run_plan.wiki_runtime
-        if wiki_runtime.backend == WikiBackend.GRAPH:
+        navigation_runtime = run_plan.navigation_runtime
+        if navigation_runtime.backend == NavigationBackend.GRAPH:
             graph_path = str(
                 resolve_graph_file_path(
-                    wiki_runtime.graph_path,
+                    navigation_runtime.graph_path,
                 ),
             )
             cached_graph_navigator = graph_navigators.get(

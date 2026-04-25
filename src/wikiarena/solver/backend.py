@@ -2,10 +2,9 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from pydantic import BaseModel
-from pydantic import Field
+from pydantic import BaseModel, Field
 
-from wikiarena.solver.models import SolverResponse
+from wikiarena.solver.models import PositionSolverFacts, SolverResponse
 
 
 class SolverCapabilities(BaseModel):
@@ -29,6 +28,11 @@ class SolverTargetSession(Protocol):
         self,
         start_page: str,
     ) -> int: ...
+
+    async def get_position_solver_facts(
+        self,
+        start_page: str,
+    ) -> PositionSolverFacts: ...
 
 
 class SolverBackend(Protocol):

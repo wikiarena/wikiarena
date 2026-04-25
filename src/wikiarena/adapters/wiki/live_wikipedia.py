@@ -72,10 +72,17 @@ class LiveWikipediaNavigator:
         from_page_title: str,
         selected_link_text: str,
     ) -> NavigationResolution:
-        page = await self.wiki_service.get_page(
-            selected_link_text,
-            include_all_namespaces=False,
-        )
+        try:
+            page = await self.wiki_service.get_page(
+                selected_link_text,
+                include_all_namespaces=False,
+            )
+        except ValueError:
+            return NavigationResolution(
+                requested_to_page_title=selected_link_text,
+                resolved_to_page_title=None,
+                was_redirect=False,
+            )
         was_redirect = _normalize_title_for_comparison(
             page.title,
         ) != _normalize_title_for_comparison(

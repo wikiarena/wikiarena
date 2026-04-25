@@ -9,7 +9,8 @@ import time
 from pathlib import Path
 from typing import Protocol
 
-from wikiarena.graph import parse_standard_graph_file_name
+from wikiarena.graph.info import infer_graph_metadata_path
+from wikiarena.graph.naming import parse_standard_graph_file_name
 from wikiarena.server.config import ServerConfig
 from wikiarena.server.errors import GraphNotReadyError, UnknownTitleError
 from wikiarena.server.models import (
@@ -22,6 +23,10 @@ from wikiarena.solver.binary import (
     MappedBinarySolverGraph,
     search_all_shortest_paths_by_node_ids,
     search_shortest_path_by_node_ids,
+)
+from wikiarena.wiki_runtime import (
+    resolve_graph_file_path,
+    resolve_installed_graph_file_path,
 )
 
 logger = logging.getLogger(
@@ -313,12 +318,12 @@ class GraphSolverRuntime:
     def _load_graph_resources(
         self,
     ) -> tuple[MappedBinarySolverGraph, MetaResponse]:
-        graph_path = _require_existing_file(
-            self.config.graph_path,
-            label="graph",
+        graph_path = _resolve_graph_path(
+            self.config,
         )
         metadata_payload = _load_metadata_payload(
             self.config.graph_metadata_path,
+            graph_path=graph_path,
         )
         graph = MappedBinarySolverGraph(
             file_path=graph_path,
@@ -391,18 +396,65 @@ def _require_existing_file(
 
 def _load_metadata_payload(
     metadata_path: Path | None,
+    *,
+    graph_path: Path,
 ) -> dict[str, object] | None:
-    if metadata_path is None:
-        return None
+    resolved_metadata_path = metadata_path
+    if resolved_metadata_path is None:
+        inferred_metadata_path = infer_graph_metadata_path(
+            graph_path,
+        )
+        if not inferred_metadata_path.exists():
+            return None
+        resolved_metadata_path = inferred_metadata_path
+
+    assert resolved_metadata_path is not None
     resolved_metadata_path = _require_existing_file(
-        metadata_path,
+        resolved_metadata_path,
         label="graph metadata",
     )
-    return json.loads(
+    metadata_payload = json.loads(
         resolved_metadata_path.read_text(
             encoding="utf-8",
         ),
     )
+    _validate_metadata_matches_graph_path(
+        metadata_payload,
+        graph_path,
+    )
+    return metadata_payload
+
+
+def _resolve_graph_path(
+    config: ServerConfig,
+) -> Path:
+    if config.graph_path is not None:
+        return resolve_graph_file_path(
+            config.graph_path,
+        )
+    return resolve_installed_graph_file_path()
+
+
+def _validate_metadata_matches_graph_path(
+    metadata_payload: dict[str, object],
+    graph_path: Path,
+) -> None:
+    raw_graph_payload = metadata_payload.get(
+        "graph",
+    )
+    if not isinstance(raw_graph_payload, dict):
+        return
+    raw_graph_file_name = raw_graph_payload.get(
+        "file_name",
+    )
+    if (
+        isinstance(raw_graph_file_name, str)
+        and raw_graph_file_name
+        and raw_graph_file_name != graph_path.name
+    ):
+        raise ValueError(
+            "graph metadata file_name does not match the resolved graph file",
+        )
 
 
 def _resolve_public_snapshot_id(

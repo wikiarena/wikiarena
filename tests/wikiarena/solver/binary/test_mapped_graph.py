@@ -42,11 +42,35 @@ def test_mapped_binary_graph_reads_header_titles_and_adjacency(
             1,
             2,
         )
+        assert (
+            graph.outgoing_degree(
+                0,
+            )
+            == 2
+        )
+        assert (
+            graph.outgoing_degree(
+                5,
+            )
+            == 0
+        )
         assert graph.incoming_neighbors(
             3,
         ) == (
             1,
             2,
+        )
+        assert (
+            graph.incoming_degree(
+                3,
+            )
+            == 2
+        )
+        assert (
+            graph.incoming_degree(
+                0,
+            )
+            == 0
         )
 
 

@@ -18,7 +18,7 @@ from .benchmark import (
     benchmark_solver_backend,
 )
 from .case_sampling import SampledSolverCase, sample_random_cases_by_path_length
-from .models import SolverRequest, SolverResponse
+from .models import PositionSolverFacts, SolverRequest, SolverResponse
 from .path_audit import (
     PathAuditCache,
     PathAuditResult,
@@ -58,6 +58,7 @@ __all__ = [
     "BinarySolverBackend",
     "SolverRequest",
     "SolverResponse",
+    "PositionSolverFacts",
     "PathAuditCache",
     "PathAuditResult",
     "PathEdgeAuditResult",

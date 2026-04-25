@@ -1,32 +1,39 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
 from datetime import datetime
-from typing import Awaitable
-from typing import Callable
+from typing import Awaitable, Callable
 
-from pydantic import BaseModel
-from pydantic import Field
+from pydantic import BaseModel, Field
 
-from wikiarena.core.interfaces import ParticipantDecision
-from wikiarena.core.interfaces import ParticipantDriver
-from wikiarena.core.interfaces import WikiNavigator
-from wikiarena.protocol.enums import RunEventType
-from wikiarena.protocol.enums import ResponseContract
-from wikiarena.protocol.enums import SolverMode
-from wikiarena.protocol.enums import StepOutcome
-from wikiarena.protocol.enums import TerminalOutcome
-from wikiarena.protocol.enums import TerminationReason
-from wikiarena.protocol.enums import WikiBackend
+from wikiarena.core.interfaces import (
+    ParticipantDecision,
+    ParticipantDriver,
+    WikiNavigator,
+)
+from wikiarena.protocol.enums import (
+    NavigationBackend,
+    ResponseContract,
+    RunEventType,
+    SolverBackend,
+    StepOutcome,
+    TaskExecutionAnnotationStatus,
+    TerminalOutcome,
+    TerminationReason,
+)
 from wikiarena.protocol.errors import ErrorRecord
 from wikiarena.protocol.events import EventEnvelope
-from wikiarena.protocol.results import RunResult
-from wikiarena.protocol.results import StepAttemptRecord
-from wikiarena.protocol.rules import HarnessConfig
-from wikiarena.protocol.rules import ScoringRules
-from wikiarena.protocol.specs import RunSpec
-from wikiarena.protocol.specs import TaskSpec
-
+from wikiarena.protocol.results import (
+    RunResult,
+    StepAttemptRecord,
+    StepSolverMetrics,
+    TaskExecutionAnnotation,
+)
+from wikiarena.protocol.rules import HarnessConfig, ScoringRules
+from wikiarena.protocol.specs import RunSpec, TaskSpec
+from wikiarena.solver.backend import SolverTargetSession
+from wikiarena.solver.models import PositionSolverFacts
 
 EventSink = Callable[[EventEnvelope], Awaitable[None] | None]
 
@@ -61,15 +68,20 @@ class RunExecutor:
         ruleset_hash: str | None = None,
         taskset_hash: str | None = None,
         participant_hash: str | None = None,
-        solver_mode: SolverMode = SolverMode.NONE,
-        wiki_backend: WikiBackend | None = None,
-        wiki_snapshot_id: str | None = None,
+        solver_backend: SolverBackend = SolverBackend.NONE,
+        navigation_backend: NavigationBackend | None = None,
+        navigation_snapshot_id: str | None = None,
+        solver_snapshot_id: str | None = None,
+        task_execution_annotation: TaskExecutionAnnotation | None = None,
+        initial_position_solver_facts: PositionSolverFacts | None = None,
+        solver_target_session: SolverTargetSession | None = None,
         event_sink: EventSink | None = None,
     ) -> RunExecutionArtifact:
         started_at = datetime.now()
 
         events: list[EventEnvelope] = []
         next_sequence = 1
+        event_lock = asyncio.Lock()
 
         async def emit_event(
             event_type: RunEventType,
@@ -77,31 +89,32 @@ class RunExecutor:
             error: ErrorRecord | None = None,
         ) -> None:
             nonlocal next_sequence
-            event = EventEnvelope(
-                event_id=f"{run_spec.run_id}:{next_sequence}",
-                event_type=event_type,
-                benchmark_id=run_spec.benchmark_id,
-                race_id=run_spec.race_id,
-                run_id=run_spec.run_id,
-                sequence=next_sequence,
-                occurred_at=datetime.now(),
-                payload=payload,
-                error=error,
-            )
-            events.append(
-                event,
-            )
-
-            if event_sink is not None:
-                sink_result = event_sink(
+            async with event_lock:
+                event = EventEnvelope(
+                    event_id=f"{run_spec.run_id}:{next_sequence}",
+                    event_type=event_type,
+                    benchmark_id=run_spec.benchmark_id,
+                    race_id=run_spec.race_id,
+                    run_id=run_spec.run_id,
+                    sequence=next_sequence,
+                    occurred_at=datetime.now(),
+                    payload=payload,
+                    error=error,
+                )
+                events.append(
                     event,
                 )
-                if inspect.isawaitable(
-                    sink_result,
-                ):
-                    await sink_result
 
-            next_sequence += 1
+                if event_sink is not None:
+                    sink_result = event_sink(
+                        event,
+                    )
+                    if inspect.isawaitable(
+                        sink_result,
+                    ):
+                        await sink_result
+
+                next_sequence += 1
 
         await emit_event(
             RunEventType.RUN_STARTED,
@@ -114,6 +127,31 @@ class RunExecutor:
 
         current_page_title = task_spec.start_page_title
         step_attempts: list[StepAttemptRecord] = []
+        distance_cache = _initialize_solver_distance_cache(
+            task_spec=task_spec,
+            task_execution_annotation=task_execution_annotation,
+        )
+        position_solver_facts_by_page: dict[str, PositionSolverFacts] = {}
+        pending_position_solver_fact_pages: set[str] = set()
+        pending_position_solver_fact_tasks: list[asyncio.Task[None]] = []
+
+        if initial_position_solver_facts is not None:
+            position_solver_facts_by_page[initial_position_solver_facts.page_title] = (
+                initial_position_solver_facts
+            )
+            distance_cache[initial_position_solver_facts.page_title] = (
+                initial_position_solver_facts.shortest_path_length
+            )
+            await emit_event(
+                RunEventType.POSITION_SOLVER_FACTS_RECORDED,
+                {
+                    "step_index": 0,
+                    "move_index": 0,
+                    "solver_facts": initial_position_solver_facts.model_dump(
+                        mode="json",
+                    ),
+                },
+            )
 
         committed_moves = 0
         invalid_attempts_run = 0
@@ -219,6 +257,17 @@ class RunExecutor:
                         "step_index": step_attempt.step_index,
                     },
                 )
+                if solver_target_session is not None:
+                    assert step_attempt.resolved_to_page_title is not None
+                    _schedule_position_solver_facts(
+                        step_attempt=step_attempt,
+                        solver_target_session=solver_target_session,
+                        position_solver_facts_by_page=position_solver_facts_by_page,
+                        pending_position_solver_fact_pages=pending_position_solver_fact_pages,
+                        pending_position_solver_fact_tasks=pending_position_solver_fact_tasks,
+                        distance_cache=distance_cache,
+                        emit_event=emit_event,
+                    )
                 continue
 
             invalid_attempts_run += 1
@@ -248,6 +297,15 @@ class RunExecutor:
                 terminal_outcome = TerminalOutcome.MODEL_FAILURE
                 termination_reason = TerminationReason.INVALID_BUDGET_EXHAUSTED
                 break
+
+        if pending_position_solver_fact_tasks:
+            await asyncio.gather(
+                *pending_position_solver_fact_tasks,
+            )
+        _attach_solver_metrics_to_step_attempts(
+            step_attempts=step_attempts,
+            distance_cache=distance_cache,
+        )
 
         ended_at = datetime.now()
         if terminal_outcome is None or termination_reason is None:
@@ -285,9 +343,11 @@ class RunExecutor:
             ruleset_hash=ruleset_hash,
             taskset_hash=taskset_hash,
             participant_hash=participant_hash,
-            solver_mode=solver_mode,
-            wiki_backend=wiki_backend,
-            wiki_snapshot_id=wiki_snapshot_id,
+            solver_backend=solver_backend,
+            navigation_backend=navigation_backend,
+            navigation_snapshot_id=navigation_snapshot_id,
+            solver_snapshot_id=solver_snapshot_id,
+            task_execution_annotation=task_execution_annotation,
             started_at=started_at,
             ended_at=ended_at,
         )
@@ -325,6 +385,43 @@ class RunExecutor:
         wiki_navigator: WikiNavigator,
     ) -> tuple[StepAttemptRecord, str]:
         selected_link_text = decision.selected_link_text
+        tool_call_count = _decision_tool_call_count(
+            decision,
+        )
+
+        if (
+            expected_response_contract == ResponseContract.TOOL_CALL_ONLY
+            and tool_call_count > 1
+        ):
+            step_attempt = StepAttemptRecord(
+                step_index=step_index,
+                from_page_title=current_page_title,
+                selected_link_text=None,
+                outcome=StepOutcome.MALFORMED_TOOL_CALL,
+                rejection_reason_code="harness.multiple_tool_calls",
+                consumed_invalid_budget=True,
+                consumed_step_budget=run_spec.navigation_rules.invalid_attempt_consumes_step_budget,
+                model_metrics=decision.model_metrics,
+                error=ErrorRecord(
+                    scope="step",
+                    code="harness.multiple_tool_calls",
+                    message=(
+                        "expected exactly one tool call, but the model returned "
+                        f"{tool_call_count}"
+                    ),
+                    retryable=False,
+                    details={
+                        "tool_call_count": tool_call_count,
+                        "tool_call_ids": _decision_tool_call_ids(
+                            decision,
+                        ),
+                        "tool_call_names": _decision_tool_call_names(
+                            decision,
+                        ),
+                    },
+                ),
+            )
+            return step_attempt, current_page_title
 
         if (
             expected_response_contract == ResponseContract.TOOL_CALL_ONLY
@@ -493,6 +590,49 @@ def _determine_ranking_eligibility(
     return True
 
 
+def _decision_tool_call_count(
+    decision: ParticipantDecision,
+) -> int:
+    if decision.tool_call_count is not None:
+        return decision.tool_call_count
+    if decision.tool_call_ids or decision.tool_call_names:
+        return max(
+            len(
+                decision.tool_call_ids,
+            ),
+            len(
+                decision.tool_call_names,
+            ),
+        )
+    if decision.tool_call_id is not None or decision.tool_call_name is not None:
+        return 1
+    return 0
+
+
+def _decision_tool_call_ids(
+    decision: ParticipantDecision,
+) -> list[str]:
+    if decision.tool_call_ids:
+        return list(
+            decision.tool_call_ids,
+        )
+    if decision.tool_call_id is not None:
+        return [decision.tool_call_id]
+    return []
+
+
+def _decision_tool_call_names(
+    decision: ParticipantDecision,
+) -> list[str]:
+    if decision.tool_call_names:
+        return list(
+            decision.tool_call_names,
+        )
+    if decision.tool_call_name is not None:
+        return [decision.tool_call_name]
+    return []
+
+
 def _determine_ranking_exclusion_reason(
     *,
     terminal_outcome: TerminalOutcome,
@@ -505,3 +645,119 @@ def _determine_ranking_exclusion_reason(
     ):
         return None
     return termination_reason.value
+
+
+def _initialize_solver_distance_cache(
+    *,
+    task_spec: TaskSpec,
+    task_execution_annotation: TaskExecutionAnnotation | None,
+) -> dict[str, int | None]:
+    if (
+        task_execution_annotation is not None
+        and task_execution_annotation.status == TaskExecutionAnnotationStatus.OK
+        and task_execution_annotation.shortest_path_length is not None
+    ):
+        return {
+            task_spec.start_page_title: task_execution_annotation.shortest_path_length,
+        }
+    return {}
+
+
+async def _record_position_solver_facts(
+    *,
+    page_title: str,
+    step_attempt: StepAttemptRecord,
+    solver_target_session: SolverTargetSession,
+    position_solver_facts_by_page: dict[str, PositionSolverFacts],
+    pending_position_solver_fact_pages: set[str],
+    distance_cache: dict[str, int | None],
+    emit_event: Callable[[RunEventType, dict, ErrorRecord | None], Awaitable[None]],
+) -> None:
+    try:
+        position_solver_facts = await solver_target_session.get_position_solver_facts(
+            page_title,
+        )
+    except Exception:
+        return
+    finally:
+        pending_position_solver_fact_pages.discard(
+            page_title,
+        )
+
+    position_solver_facts_by_page[page_title] = position_solver_facts
+    distance_cache[page_title] = position_solver_facts.shortest_path_length
+    await emit_event(
+        RunEventType.POSITION_SOLVER_FACTS_RECORDED,
+        {
+            "step_index": step_attempt.step_index,
+            "move_index": step_attempt.move_index,
+            "solver_facts": position_solver_facts.model_dump(
+                mode="json",
+            ),
+        },
+        None,
+    )
+
+
+def _attach_solver_metrics_to_step_attempts(
+    *,
+    step_attempts: list[StepAttemptRecord],
+    distance_cache: dict[str, int | None],
+) -> None:
+    for step_attempt in step_attempts:
+        if step_attempt.outcome != StepOutcome.MOVE_COMMITTED:
+            continue
+        if step_attempt.resolved_to_page_title is None:
+            continue
+
+        distance_before = distance_cache.get(
+            step_attempt.from_page_title,
+        )
+        distance_after = distance_cache.get(
+            step_attempt.resolved_to_page_title,
+        )
+        if distance_before is None and distance_after is None:
+            continue
+
+        step_attempt.solver_metrics = StepSolverMetrics(
+            distance_before=distance_before,
+            distance_after=distance_after,
+        )
+
+
+def _schedule_position_solver_facts(
+    *,
+    step_attempt: StepAttemptRecord,
+    solver_target_session: SolverTargetSession,
+    position_solver_facts_by_page: dict[str, PositionSolverFacts],
+    pending_position_solver_fact_pages: set[str],
+    pending_position_solver_fact_tasks: list[asyncio.Task[None]],
+    distance_cache: dict[str, int | None],
+    emit_event: Callable[[RunEventType, dict, ErrorRecord | None], Awaitable[None]],
+) -> None:
+    resolved_page_title = step_attempt.resolved_to_page_title
+    if resolved_page_title is None:
+        return
+    if (
+        resolved_page_title in position_solver_facts_by_page
+        or resolved_page_title in pending_position_solver_fact_pages
+        or resolved_page_title in distance_cache
+    ):
+        return
+
+    pending_position_solver_fact_pages.add(
+        resolved_page_title,
+    )
+    pending_position_solver_fact_tasks.append(
+        asyncio.create_task(
+            _record_position_solver_facts(
+                page_title=resolved_page_title,
+                step_attempt=step_attempt,
+                solver_target_session=solver_target_session,
+                position_solver_facts_by_page=position_solver_facts_by_page,
+                pending_position_solver_fact_pages=pending_position_solver_fact_pages,
+                distance_cache=distance_cache,
+                emit_event=emit_event,
+            ),
+        ),
+    )

@@ -13,8 +13,10 @@ class ResultFileIdentity(BaseModel):
     total_runs: int
     ruleset_hashes: list[str]
     taskset_hashes: list[str]
-    wiki_backends: list[str]
-    wiki_snapshot_ids: list[str]
+    navigation_backends: list[str]
+    navigation_snapshot_ids: list[str]
+    solver_backends: list[str]
+    solver_snapshot_ids: list[str]
 
 
 class RunResultStore:
@@ -66,8 +68,10 @@ def inspect_result_file_identity(
     )
     ruleset_hashes: set[str] = set()
     taskset_hashes: set[str] = set()
-    wiki_backends: set[str] = set()
-    wiki_snapshot_ids: set[str] = set()
+    navigation_backends: set[str] = set()
+    navigation_snapshot_ids: set[str] = set()
+    solver_backends: set[str] = set()
+    solver_snapshot_ids: set[str] = set()
     total_runs = 0
 
     with resolved_input_path.open(
@@ -109,20 +113,36 @@ def inspect_result_file_identity(
                     taskset_hash,
                 )
 
-            wiki_backend = payload.get(
-                "wiki_backend",
+            navigation_backend = payload.get(
+                "navigation_backend",
             )
-            if wiki_backend is not None:
-                wiki_backends.add(
-                    wiki_backend,
+            if navigation_backend is not None:
+                navigation_backends.add(
+                    navigation_backend,
                 )
 
-            wiki_snapshot_id = payload.get(
-                "wiki_snapshot_id",
+            navigation_snapshot_id = payload.get(
+                "navigation_snapshot_id",
             )
-            if wiki_snapshot_id is not None:
-                wiki_snapshot_ids.add(
-                    wiki_snapshot_id,
+            if navigation_snapshot_id is not None:
+                navigation_snapshot_ids.add(
+                    navigation_snapshot_id,
+                )
+
+            solver_backend = payload.get(
+                "solver_backend",
+            )
+            if solver_backend is not None:
+                solver_backends.add(
+                    solver_backend,
+                )
+
+            solver_snapshot_id = payload.get(
+                "solver_snapshot_id",
+            )
+            if solver_snapshot_id is not None:
+                solver_snapshot_ids.add(
+                    solver_snapshot_id,
                 )
 
     return ResultFileIdentity(
@@ -133,10 +153,16 @@ def inspect_result_file_identity(
         taskset_hashes=sorted(
             taskset_hashes,
         ),
-        wiki_backends=sorted(
-            wiki_backends,
+        navigation_backends=sorted(
+            navigation_backends,
         ),
-        wiki_snapshot_ids=sorted(
-            wiki_snapshot_ids,
+        navigation_snapshot_ids=sorted(
+            navigation_snapshot_ids,
+        ),
+        solver_backends=sorted(
+            solver_backends,
+        ),
+        solver_snapshot_ids=sorted(
+            solver_snapshot_ids,
         ),
     )

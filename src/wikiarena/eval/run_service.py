@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import re
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Callable, Protocol
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from wikiarena.adapters.participants import ProviderParticipant
 from wikiarena.adapters.wiki import GraphWikipediaNavigator, LiveWikipediaNavigator
@@ -20,20 +21,29 @@ from wikiarena.eval.planner import build_participant_hash, build_ruleset_hash
 from wikiarena.protocol import (
     DriverConfig,
     HarnessConfig,
+    NavigationBackend,
     NavigationRules,
     ParticipantKind,
     ParticipantSpec,
     RunSpec,
     ScoringRules,
-    SolverMode,
+    SolverBackend,
     TaskSpec,
-    WikiBackend,
 )
-from wikiarena.protocol.specs import ReferencePath
+from wikiarena.protocol.enums import PathSource, TaskExecutionAnnotationStatus
+from wikiarena.protocol.results import TaskExecutionAnnotation
+from wikiarena.protocol.specs import SolverShortestPath
 from wikiarena.providers import create_provider_client
+from wikiarena.solver import BinarySolverBackend
 from wikiarena.solver.binary import MappedBinarySolverGraph
+from wikiarena.solver.models import PositionSolverFacts, SolverResponse
+from wikiarena.solver_runtime import (
+    SolverRuntimeConfig,
+    resolve_solver_graph_file_path,
+    resolve_solver_snapshot_id,
+)
 from wikiarena.wiki_runtime import (
-    WikiRuntimeConfig,
+    NavigationRuntimeConfig,
     resolve_graph_file_path,
     resolve_graph_snapshot_id,
 )
@@ -43,14 +53,25 @@ ParticipantFactory = Callable[[ParticipantSpec], ParticipantDriver]
 WikiNavigatorFactory = Callable[["RunPlan"], WikiNavigator]
 
 
-class ReferencePathOracle(Protocol):
-    async def get_reference_paths(
+class SolverShortestPathOracle(Protocol):
+    async def get_solver_shortest_path(
         self,
         task: TaskSpec,
-    ) -> list[ReferencePath]: ...
+    ) -> SolverShortestPath | None: ...
+
+
+@dataclass(frozen=True)
+class SolverTaskContext:
+    solver_shortest_path: SolverShortestPath | None = None
+    task_execution_annotation: TaskExecutionAnnotation | None = None
+    position_solver_facts: PositionSolverFacts | None = None
 
 
 class RunRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
     model_id: str
     provider: str = "openai"
     start_page_title: str
@@ -83,14 +104,21 @@ class RunRequest(BaseModel):
     taskset_hash: str | None = None
     participant_hash: str | None = None
 
-    solver_mode: SolverMode = SolverMode.NONE
-    wiki_runtime: WikiRuntimeConfig = Field(
-        default_factory=WikiRuntimeConfig,
+    navigation_runtime: NavigationRuntimeConfig = Field(
+        default_factory=NavigationRuntimeConfig,
     )
-    wiki_snapshot_id: str | None = None
+    solver_runtime: SolverRuntimeConfig = Field(
+        default_factory=SolverRuntimeConfig,
+    )
+    navigation_snapshot_id: str | None = None
+    solver_snapshot_id: str | None = None
 
 
 class RunPlan(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
     task_spec: TaskSpec
     participant_spec: ParticipantSpec
     run_spec: RunSpec
@@ -99,11 +127,16 @@ class RunPlan(BaseModel):
     ruleset_hash: str | None = None
     taskset_hash: str | None = None
     participant_hash: str | None = None
-    solver_mode: SolverMode = SolverMode.NONE
-    wiki_runtime: WikiRuntimeConfig = Field(
-        default_factory=WikiRuntimeConfig,
+    navigation_runtime: NavigationRuntimeConfig = Field(
+        default_factory=NavigationRuntimeConfig,
     )
-    wiki_snapshot_id: str | None = None
+    solver_runtime: SolverRuntimeConfig = Field(
+        default_factory=SolverRuntimeConfig,
+    )
+    navigation_snapshot_id: str | None = None
+    solver_snapshot_id: str | None = None
+    task_execution_annotation: TaskExecutionAnnotation | None = None
+    initial_position_solver_facts: PositionSolverFacts | None = None
 
 
 class RunService:
@@ -112,14 +145,14 @@ class RunService:
         *,
         participant_factory: ParticipantFactory | None = None,
         wiki_navigator_factory: WikiNavigatorFactory | None = None,
-        reference_path_oracle: ReferencePathOracle | None = None,
+        solver_shortest_path_oracle: SolverShortestPathOracle | None = None,
         run_executor: RunExecutor | None = None,
     ):
         self.participant_factory = participant_factory or _default_participant_factory
         self.wiki_navigator_factory = (
             wiki_navigator_factory or _default_wiki_navigator_factory
         )
-        self.reference_path_oracle = reference_path_oracle
+        self.solver_shortest_path_oracle = solver_shortest_path_oracle
         self.run_executor = run_executor or RunExecutor()
 
     async def plan_run(
@@ -136,45 +169,93 @@ class RunService:
                 "task_id cannot be null after TaskSpec validation",
             )
 
-        resolved_wiki_snapshot_id = request.wiki_snapshot_id
-        resolved_wiki_runtime = request.wiki_runtime
-        if request.wiki_runtime.backend == WikiBackend.GRAPH:
+        resolved_navigation_snapshot_id = (
+            request.navigation_snapshot_id or request.navigation_runtime.snapshot_id
+        )
+        resolved_navigation_runtime = request.navigation_runtime
+        if request.navigation_runtime.backend == NavigationBackend.GRAPH:
             resolved_graph_path = resolve_graph_file_path(
-                request.wiki_runtime.graph_path,
+                request.navigation_runtime.graph_path,
             )
-            resolved_wiki_runtime = request.wiki_runtime.model_copy(
+            resolved_navigation_runtime = request.navigation_runtime.model_copy(
                 update={
                     "graph_path": resolved_graph_path,
                 },
             )
-            resolved_wiki_snapshot_id = resolve_graph_snapshot_id(
+            resolved_navigation_snapshot_id = resolve_graph_snapshot_id(
                 resolved_graph_path,
-                resolved_wiki_snapshot_id,
+                resolved_navigation_snapshot_id,
             )
 
-        if (
-            self.reference_path_oracle is not None
-            and request.solver_mode != SolverMode.NONE
-        ):
-            reference_paths = await self.reference_path_oracle.get_reference_paths(
-                task_spec,
+        resolved_solver_runtime = request.solver_runtime
+        resolved_solver_snapshot_id = (
+            request.solver_snapshot_id or request.solver_runtime.snapshot_id
+        )
+        solver_backend = request.solver_runtime.backend
+        if solver_backend == SolverBackend.LOCAL:
+            fallback_navigation_graph_path = None
+            if resolved_navigation_runtime.backend == NavigationBackend.GRAPH:
+                fallback_navigation_graph_path = resolved_navigation_runtime.graph_path
+            resolved_solver_graph_path = resolve_solver_graph_file_path(
+                request.solver_runtime.graph_path,
+                fallback_graph_path=fallback_navigation_graph_path,
             )
-            task_spec = task_spec.model_copy(
+            resolved_solver_runtime = request.solver_runtime.model_copy(
                 update={
-                    "reference_paths": reference_paths,
+                    "graph_path": resolved_solver_graph_path,
                 },
             )
+            resolved_solver_snapshot_id = resolve_solver_snapshot_id(
+                resolved_solver_graph_path,
+                resolved_solver_snapshot_id,
+            )
 
-            if resolved_wiki_snapshot_id is None:
-                snapshot_ids = {
-                    reference_path.valid_for_snapshot_id
-                    for reference_path in reference_paths
-                    if reference_path.valid_for_snapshot_id
-                }
-                if len(snapshot_ids) == 1:
-                    resolved_wiki_snapshot_id = next(
-                        iter(snapshot_ids),
-                    )
+        solver_shortest_path: SolverShortestPath | None = None
+        task_execution_annotation: TaskExecutionAnnotation | None = None
+        initial_position_solver_facts: PositionSolverFacts | None = None
+        if solver_backend != SolverBackend.NONE:
+            solver_task_context = await _resolve_solver_task_context(
+                task_spec=task_spec,
+                solver_runtime=resolved_solver_runtime,
+                solver_snapshot_id=resolved_solver_snapshot_id,
+                injected_solver_shortest_path_oracle=self.solver_shortest_path_oracle,
+            )
+            solver_shortest_path = solver_task_context.solver_shortest_path
+            task_execution_annotation = solver_task_context.task_execution_annotation
+            initial_position_solver_facts = solver_task_context.position_solver_facts
+            if (
+                solver_shortest_path is not None
+                and solver_shortest_path.solver_snapshot_id is None
+                and resolved_solver_snapshot_id is not None
+            ):
+                solver_shortest_path = solver_shortest_path.model_copy(
+                    update={
+                        "solver_snapshot_id": resolved_solver_snapshot_id,
+                    },
+                )
+
+            task_spec_update: dict[str, object] = {}
+            if solver_shortest_path is not None:
+                task_spec_update["solver_shortest_path"] = solver_shortest_path
+            if (
+                task_execution_annotation is not None
+                and task_execution_annotation.shortest_path_length is not None
+            ):
+                task_spec_update["shortest_path_length"] = (
+                    task_execution_annotation.shortest_path_length
+                )
+            if task_spec_update:
+                task_spec = TaskSpec.model_validate(
+                    task_spec.model_dump()
+                    | task_spec_update,
+                )
+
+            if (
+                resolved_solver_snapshot_id is None
+                and solver_shortest_path is not None
+                and solver_shortest_path.solver_snapshot_id is not None
+            ):
+                resolved_solver_snapshot_id = solver_shortest_path.solver_snapshot_id
 
         task_id = task_spec.task_id
         if task_id is None:
@@ -233,9 +314,12 @@ class RunService:
             ruleset_hash=resolved_ruleset_hash,
             taskset_hash=request.taskset_hash,
             participant_hash=resolved_participant_hash,
-            solver_mode=request.solver_mode,
-            wiki_runtime=resolved_wiki_runtime,
-            wiki_snapshot_id=resolved_wiki_snapshot_id,
+            navigation_runtime=resolved_navigation_runtime,
+            solver_runtime=resolved_solver_runtime,
+            navigation_snapshot_id=resolved_navigation_snapshot_id,
+            solver_snapshot_id=resolved_solver_snapshot_id,
+            task_execution_annotation=task_execution_annotation,
+            initial_position_solver_facts=initial_position_solver_facts,
         )
 
     async def execute_plan(
@@ -250,23 +334,45 @@ class RunService:
         wiki_navigator = self.wiki_navigator_factory(
             run_plan,
         )
+        local_solver_backend = None
+        solver_target_session = None
+        if run_plan.solver_runtime.backend == SolverBackend.LOCAL:
+            solver_graph_path = resolve_solver_graph_file_path(
+                run_plan.solver_runtime.graph_path,
+            )
+            local_solver_backend = BinarySolverBackend.from_file_path(
+                solver_graph_path,
+                snapshot_id=run_plan.solver_snapshot_id,
+                path_mode="all_shortest",
+            )
+            solver_target_session = await local_solver_backend.create_target_session(
+                run_plan.task_spec.target_page_title,
+            )
 
-        return await self.run_executor.execute_run(
-            run_spec=run_plan.run_spec,
-            task_spec=run_plan.task_spec,
-            participant=participant_driver,
-            wiki_navigator=wiki_navigator,
-            harness_id=run_plan.harness_config.harness_id,
-            harness_config=run_plan.harness_config,
-            scoring_rules=run_plan.scoring_rules,
-            ruleset_hash=run_plan.ruleset_hash,
-            taskset_hash=run_plan.taskset_hash,
-            participant_hash=run_plan.participant_hash,
-            solver_mode=run_plan.solver_mode,
-            wiki_backend=run_plan.wiki_runtime.backend,
-            wiki_snapshot_id=run_plan.wiki_snapshot_id,
-            event_sink=event_sink,
-        )
+        try:
+            return await self.run_executor.execute_run(
+                run_spec=run_plan.run_spec,
+                task_spec=run_plan.task_spec,
+                participant=participant_driver,
+                wiki_navigator=wiki_navigator,
+                harness_id=run_plan.harness_config.harness_id,
+                harness_config=run_plan.harness_config,
+                scoring_rules=run_plan.scoring_rules,
+                ruleset_hash=run_plan.ruleset_hash,
+                taskset_hash=run_plan.taskset_hash,
+                participant_hash=run_plan.participant_hash,
+                solver_backend=run_plan.solver_runtime.backend,
+                navigation_backend=run_plan.navigation_runtime.backend,
+                navigation_snapshot_id=run_plan.navigation_snapshot_id,
+                solver_snapshot_id=run_plan.solver_snapshot_id,
+                task_execution_annotation=run_plan.task_execution_annotation,
+                initial_position_solver_facts=run_plan.initial_position_solver_facts,
+                solver_target_session=solver_target_session,
+                event_sink=event_sink,
+            )
+        finally:
+            if local_solver_backend is not None:
+                await local_solver_backend.shutdown()
 
     async def run(
         self,
@@ -325,6 +431,7 @@ def _split_driver_settings(
     )
 
     provider_setting_aliases = [
+        "auth_file",
         "base_url",
         "api_key",
         "extra_headers",
@@ -348,9 +455,9 @@ def _split_driver_settings(
 def _default_wiki_navigator_factory(
     run_plan: RunPlan,
 ) -> WikiNavigator:
-    if run_plan.wiki_runtime.backend == WikiBackend.GRAPH:
+    if run_plan.navigation_runtime.backend == NavigationBackend.GRAPH:
         graph_path = resolve_graph_file_path(
-            run_plan.wiki_runtime.graph_path,
+            run_plan.navigation_runtime.graph_path,
         )
         return GraphWikipediaNavigator(
             graph=MappedBinarySolverGraph(
@@ -362,6 +469,125 @@ def _default_wiki_navigator_factory(
         wiki_service=LiveWikiService(
             language=run_plan.task_spec.language,
         ),
+    )
+
+
+async def _resolve_solver_task_context(
+    *,
+    task_spec: TaskSpec,
+    solver_runtime: SolverRuntimeConfig,
+    solver_snapshot_id: str | None,
+    injected_solver_shortest_path_oracle: SolverShortestPathOracle | None,
+) -> SolverTaskContext:
+    if solver_runtime.backend == SolverBackend.LOCAL:
+        solver_graph_path = resolve_solver_graph_file_path(
+            solver_runtime.graph_path,
+        )
+        local_backend = BinarySolverBackend.from_file_path(
+            solver_graph_path,
+            snapshot_id=solver_snapshot_id,
+            path_mode="all_shortest",
+        )
+        try:
+            start_node_id = local_backend.graph.find_node_id(
+                task_spec.start_page_title,
+            )
+            if start_node_id is None:
+                return SolverTaskContext(
+                    solver_shortest_path=None,
+                    task_execution_annotation=TaskExecutionAnnotation(
+                        status=TaskExecutionAnnotationStatus.START_MISSING_IN_SOLVER,
+                    ),
+                )
+
+            target_node_id = local_backend.graph.find_node_id(
+                task_spec.target_page_title,
+            )
+            if target_node_id is None:
+                return SolverTaskContext(
+                    solver_shortest_path=None,
+                    task_execution_annotation=TaskExecutionAnnotation(
+                        status=TaskExecutionAnnotationStatus.TARGET_MISSING_IN_SOLVER,
+                    ),
+                )
+
+            solver_response = await local_backend.find_shortest_path(
+                task_spec.start_page_title,
+                task_spec.target_page_title,
+            )
+            if solver_response.path_length < 0 or not solver_response.paths:
+                return SolverTaskContext(
+                    solver_shortest_path=None,
+                    task_execution_annotation=TaskExecutionAnnotation(
+                        status=TaskExecutionAnnotationStatus.UNREACHABLE_IN_SOLVER,
+                    ),
+                )
+
+            return SolverTaskContext(
+                solver_shortest_path=_solver_shortest_path_from_solver_response(
+                    solver_response=solver_response,
+                    solver_snapshot_id=solver_snapshot_id,
+                ),
+                task_execution_annotation=TaskExecutionAnnotation(
+                    status=TaskExecutionAnnotationStatus.OK,
+                    shortest_path_length=solver_response.path_length,
+                ),
+                position_solver_facts=PositionSolverFacts.from_solver_response(
+                    page_title=task_spec.start_page_title,
+                    target_page_title=task_spec.target_page_title,
+                    solver_response=solver_response,
+                    solver_snapshot_id=solver_snapshot_id,
+                ),
+            )
+        finally:
+            await local_backend.shutdown()
+
+    if solver_runtime.backend == SolverBackend.REMOTE:
+        if injected_solver_shortest_path_oracle is None:
+            raise ValueError(
+                "solver backend remote requires a configured solver_shortest_path_oracle",
+            )
+
+        solver_shortest_path = (
+            await injected_solver_shortest_path_oracle.get_solver_shortest_path(
+                task_spec,
+            )
+        )
+        task_execution_annotation = _annotation_from_solver_shortest_path(
+            solver_shortest_path,
+        )
+        return SolverTaskContext(
+            solver_shortest_path=solver_shortest_path,
+            task_execution_annotation=task_execution_annotation,
+        )
+
+    return SolverTaskContext(
+        solver_shortest_path=None,
+        task_execution_annotation=None,
+    )
+
+
+def _solver_shortest_path_from_solver_response(
+    *,
+    solver_response: SolverResponse,
+    solver_snapshot_id: str | None,
+) -> SolverShortestPath:
+    return SolverShortestPath(
+        page_titles=solver_response.paths[0],
+        computed_at=datetime.now(),
+        solver_snapshot_id=solver_snapshot_id,
+        source=PathSource.LOCAL_GRAPH,
+    )
+
+
+def _annotation_from_solver_shortest_path(
+    solver_shortest_path: SolverShortestPath | None,
+) -> TaskExecutionAnnotation | None:
+    if solver_shortest_path is None:
+        return None
+    return TaskExecutionAnnotation(
+        status=TaskExecutionAnnotationStatus.OK,
+        shortest_path_length=solver_shortest_path.hop_count,
     )
 
 

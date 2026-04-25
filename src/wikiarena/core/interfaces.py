@@ -3,11 +3,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Protocol
 
-from pydantic import BaseModel
-from pydantic import Field
+from pydantic import BaseModel, Field
 
-from wikiarena.protocol.results import ModelCallMetrics
 from wikiarena.protocol.enums import LinkPolicy
+from wikiarena.protocol.results import ModelCallMetrics
 from wikiarena.protocol.rules import HarnessConfig
 from wikiarena.protocol.specs import TaskSpec
 
@@ -34,6 +33,16 @@ class ParticipantDecision(BaseModel):
     raw_response: str | None = None
     tool_call_name: str | None = None
     tool_call_id: str | None = None
+    tool_call_count: int | None = Field(
+        default=None,
+        ge=0,
+    )
+    tool_call_ids: list[str] = Field(
+        default_factory=list,
+    )
+    tool_call_names: list[str] = Field(
+        default_factory=list,
+    )
     model_metrics: ModelCallMetrics | None = None
 
 

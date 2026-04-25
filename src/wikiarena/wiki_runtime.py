@@ -1,23 +1,31 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 from pydantic import BaseModel
 
-from wikiarena.graph import (
+from wikiarena.graph.naming import (
+    graph_file_name,
     graph_snapshot_id,
     list_standard_graph_files,
     parse_standard_graph_file_name,
 )
-from wikiarena.protocol.enums import WikiBackend
+from wikiarena.paths import get_default_graph_install_dir
+from wikiarena.protocol.enums import NavigationBackend
 
-DEFAULT_GRAPH_INSTALL_DIR = Path("~/.wikiarena").expanduser()
 GRAPH_PATH_ENV_VAR = "WIKIARENA_GRAPH_PATH"
 
 
-class WikiRuntimeConfig(BaseModel):
-    backend: WikiBackend = WikiBackend.LIVE
+@dataclass(frozen=True)
+class GraphSelection:
+    graph_path: Path
+    selected_via: str
+
+
+class NavigationRuntimeConfig(BaseModel):
+    backend: NavigationBackend = NavigationBackend.LIVE
     graph_path: Path | None = None
     snapshot_id: str | None = None
 
@@ -25,25 +33,46 @@ class WikiRuntimeConfig(BaseModel):
 def resolve_graph_file_path(
     graph_path: Path | None,
 ) -> Path:
+    return resolve_graph_selection(
+        graph_path,
+    ).graph_path
+
+
+def resolve_installed_graph_file_path() -> Path:
+    return _resolve_installed_graph_file()
+
+
+def resolve_graph_selection(
+    graph_path: Path | None,
+) -> GraphSelection:
     explicit_graph_path = _expand_optional_path(
         graph_path,
     )
     if explicit_graph_path is not None:
-        return _require_graph_file(
-            explicit_graph_path,
+        return GraphSelection(
+            graph_path=_require_graph_file(
+                explicit_graph_path,
+            ),
+            selected_via="explicit",
         )
 
     env_graph_path = os.getenv(
         GRAPH_PATH_ENV_VAR,
     )
     if env_graph_path:
-        return _require_graph_file(
-            Path(
-                env_graph_path,
-            ).expanduser(),
+        return GraphSelection(
+            graph_path=_require_graph_file(
+                Path(
+                    env_graph_path,
+                ).expanduser(),
+            ),
+            selected_via="environment_variable",
         )
 
-    return _resolve_installed_graph_file()
+    return GraphSelection(
+        graph_path=_resolve_installed_graph_file(),
+        selected_via="installed_latest",
+    )
 
 
 def resolve_graph_snapshot_id(
@@ -73,34 +102,47 @@ def _expand_optional_path(
 def _require_graph_file(
     graph_path: Path,
 ) -> Path:
+    default_install_dir = get_default_graph_install_dir()
     if graph_path.is_dir():
         raise FileNotFoundError(
             f"graph path is a directory: {graph_path}",
         )
+    if graph_path.exists():
+        resolved_graph_path = graph_path.resolve()
+        if (
+            graph_path.name == "wikiarena_graph.bin"
+            and parse_standard_graph_file_name(resolved_graph_path.name) is None
+        ):
+            raise FileNotFoundError(
+                "legacy graph file name is no longer supported. "
+                f"Checked: {graph_path}. "
+                "Use a dated file name like "
+                f"{_installed_graph_example_path(default_install_dir)}.",
+            )
+        return resolved_graph_path
+
     if graph_path.name == "wikiarena_graph.bin":
         raise FileNotFoundError(
             "legacy graph file name is no longer supported. "
             f"Checked: {graph_path}. "
-            "Use a dated file name like wikiarena_graph_enwiki_20260301.bin.",
+            "Use a dated file name like "
+            f"{_installed_graph_example_path(default_install_dir)}.",
         )
-    if not graph_path.exists():
-        raise FileNotFoundError(
-            "local graph file not found. "
-            f"Checked: {graph_path}. "
-            "Pass --graph-path, set WIKIARENA_GRAPH_PATH, or install a dated graph like ~/.wikiarena/wikiarena_graph_enwiki_20260301.bin.",
-        )
-    return graph_path.resolve()
+    raise FileNotFoundError(
+        f"local graph file not found. Checked: {graph_path}. "
+        f"{_graph_install_hint(default_install_dir)}",
+    )
 
 
 def _resolve_installed_graph_file() -> Path:
+    install_dir = get_default_graph_install_dir()
     installed_graph_files = list_standard_graph_files(
-        DEFAULT_GRAPH_INSTALL_DIR,
+        install_dir,
     )
     if not installed_graph_files:
         raise FileNotFoundError(
-            "no installed dated graph file found. "
-            f"Checked: {DEFAULT_GRAPH_INSTALL_DIR}. "
-            "Pass --graph-path, set WIKIARENA_GRAPH_PATH, or install a dated graph like ~/.wikiarena/wikiarena_graph_enwiki_20260301.bin.",
+            f"no installed dated graph file found. Checked: {install_dir}. "
+            f"{_graph_install_hint(install_dir)}",
         )
     assert installed_graph_files
     installed_graph_file = next(
@@ -123,4 +165,23 @@ def infer_snapshot_id_from_graph_path(
     return graph_snapshot_id(
         wiki=wiki,
         dump_date=dump_date,
+    )
+
+
+def _graph_install_hint(
+    install_dir: Path,
+) -> str:
+    return (
+        "Run `wikiarena graph install`, pass an explicit graph path, set WIKIARENA_GRAPH_PATH, "
+        "or install a dated graph like "
+        f"{_installed_graph_example_path(install_dir)}."
+    )
+
+
+def _installed_graph_example_path(
+    install_dir: Path,
+) -> Path:
+    return install_dir / graph_file_name(
+        wiki="enwiki",
+        dump_date="20260301",
     )

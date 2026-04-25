@@ -166,6 +166,34 @@ class MappedBinarySolverGraph:
             ),
         )
 
+    def outgoing_degree(
+        self,
+        node_id: int,
+    ) -> int:
+        start = self._u32_at(
+            self.header.out_offsets_off,
+            node_id,
+        )
+        end = self._u32_at(
+            self.header.out_offsets_off,
+            node_id + 1,
+        )
+        return end - start
+
+    def incoming_degree(
+        self,
+        node_id: int,
+    ) -> int:
+        start = self._u32_at(
+            self.header.in_offsets_off,
+            node_id,
+        )
+        end = self._u32_at(
+            self.header.in_offsets_off,
+            node_id + 1,
+        )
+        return end - start
+
     def iter_outgoing_neighbors(
         self,
         node_id: int,
@@ -292,6 +320,8 @@ def _lookup_title_candidates(
         " ",
         "_",
     )
+    # TODO: Remove the legacy SQL-escaped fallback once snapshots before
+    # 20260401 are no longer supported.
     sql_escaped_title = _escape_sql_title(
         normalized_title,
     )
@@ -330,6 +360,8 @@ def _denormalize_stored_title(
             "_",
             " ",
         )
+        # TODO: Remove this legacy SQL-unescape path once snapshots before
+        # 20260401 are no longer supported.
         .replace(
             '\\"',
             '"',

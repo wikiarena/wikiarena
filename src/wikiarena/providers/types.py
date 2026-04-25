@@ -22,9 +22,20 @@ class ProviderToolCall(BaseModel):
     )
 
 
+class ProviderReasoningItem(BaseModel):
+    id: str
+    summary: str | None = None
+    encrypted_content: str | None = None
+    status: str | None = None
+
+
 class ProviderMessage(BaseModel):
     role: ProviderMessageRole
     content: str | None = None
+    thinking: str | None = None
+    reasoning_items: list[ProviderReasoningItem] = Field(
+        default_factory=list,
+    )
     tool_calls: list[ProviderToolCall] = Field(
         default_factory=list,
     )
@@ -46,6 +57,12 @@ class ProviderUsage(BaseModel):
     total_tokens: int = 0
     cache_creation_input_tokens: int = 0
     cache_read_input_tokens: int = 0
+    input_token_details: dict[str, int] = Field(
+        default_factory=dict,
+    )
+    output_token_details: dict[str, int] = Field(
+        default_factory=dict,
+    )
     estimated_cost_usd: float = 0.0
     response_time_ms: float = 0.0
 

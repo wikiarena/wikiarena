@@ -10,11 +10,11 @@ from wikiarena.protocol.enums import ResponseContract
 
 class NavigationRules(BaseModel):
     max_moves: int = Field(
-        default=30,
+        default=50,
         ge=1,
     )
     max_invalid_attempts_per_run: int = Field(
-        default=10,
+        default=15,
         ge=0,
     )
     max_invalid_attempts_per_step_context: int | None = Field(
