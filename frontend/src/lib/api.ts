@@ -26,6 +26,39 @@ export interface RandomPageTitlesResponse {
   titles: string[];
 }
 
+export interface TitleValidationResponse {
+  snapshot_id: string;
+  query_title: string;
+  exists: boolean;
+  canonical_title: string | null;
+}
+
+export interface RaceParticipantRequest {
+  participant_id?: string;
+  display_name?: string;
+  provider: string;
+  model: string;
+  settings?: Record<string, unknown>;
+}
+
+export interface CreateRaceRequest {
+  start_title: string;
+  target_title: string;
+  participants: RaceParticipantRequest[];
+  benchmark_id?: string;
+  max_moves?: number;
+  navigation_backend?: "graph" | "live";
+  solver_backend?: "local" | "none";
+}
+
+export interface RaceCreatedResponse {
+  race_id: string;
+  status: string;
+  stream_url: string;
+  events_url: string;
+  race_url: string;
+}
+
 interface ErrorResponse {
   code?: string;
   message?: string;
@@ -120,6 +153,30 @@ export async function loadRandomPageTitles(count: number): Promise<RandomPageTit
   return requestJson<RandomPageTitlesResponse>(`/v1/random-page-titles?${searchParams.toString()}`);
 }
 
+export async function validateTitle(title: string): Promise<TitleValidationResponse> {
+  const searchParams = new URLSearchParams({
+    title,
+  });
+  return requestJson<TitleValidationResponse>(`/v1/title-validation?${searchParams.toString()}`);
+}
+
+export async function createRace(request: CreateRaceRequest): Promise<RaceCreatedResponse> {
+  return requestJson<RaceCreatedResponse>("/v1/races", {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
+}
+
 export function getApiBaseUrl(): string {
+  return apiBaseUrl;
+}
+
+export function getWebSocketBaseUrl(): string {
+  if (apiBaseUrl.startsWith("https://")) {
+    return `wss://${apiBaseUrl.slice("https://".length)}`;
+  }
+  if (apiBaseUrl.startsWith("http://")) {
+    return `ws://${apiBaseUrl.slice("http://".length)}`;
+  }
   return apiBaseUrl;
 }

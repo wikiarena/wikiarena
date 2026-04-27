@@ -10,6 +10,7 @@ from wikiarena.server.models import (
     MetaResponse,
     RandomPageTitlesResponse,
     SolveResponse,
+    TitleValidationResponse,
 )
 
 
@@ -19,6 +20,8 @@ class StubRuntime:
     meta_response: MetaResponse | None = None
     random_titles_response: RandomPageTitlesResponse | None = None
     random_titles_count: int | None = None
+    title_validation_response: TitleValidationResponse | None = None
+    validated_title: str | None = None
     solve_response: SolveResponse | None = None
     solve_path_mode: str | None = None
     solve_exception: Exception | None = None
@@ -65,6 +68,18 @@ class StubRuntime:
                 "graph is not ready",
             )
         return self.random_titles_response
+
+    async def validate_title(
+        self,
+        *,
+        title: str,
+    ) -> TitleValidationResponse:
+        self.validated_title = title
+        if self.title_validation_response is None:
+            raise GraphNotReadyError(
+                "graph is not ready",
+            )
+        return self.title_validation_response
 
     async def solve(
         self,
@@ -292,6 +307,35 @@ def test_random_page_titles_returns_422_for_invalid_count() -> None:
     assert response.json() == {
         "code": "invalid_request",
         "message": "Invalid request body.",
+    }
+
+
+def test_title_validation_returns_snapshot_title_status() -> None:
+    runtime = StubRuntime(
+        title_validation_response=TitleValidationResponse(
+            snapshot_id="enwiki-20260301",
+            query_title="NYC",
+            exists=True,
+            canonical_title="New York City",
+        ),
+    )
+
+    with TestClient(
+        create_app(
+            runtime=runtime,
+        ),
+    ) as client:
+        response = client.get(
+            "/v1/title-validation?title=NYC",
+        )
+
+    assert response.status_code == 200
+    assert runtime.validated_title == "NYC"
+    assert response.json() == {
+        "snapshot_id": "enwiki-20260301",
+        "query_title": "NYC",
+        "exists": True,
+        "canonical_title": "New York City",
     }
 
 

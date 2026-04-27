@@ -11,6 +11,7 @@ SERVICE_VERSION_ENV_VAR = "WIKIARENA_SERVICE_VERSION"
 CORS_ORIGINS_ENV_VAR = "WIKIARENA_SERVER_CORS_ORIGINS"
 HOST_ENV_VAR = "WIKIARENA_SERVER_HOST"
 PORT_ENV_VAR = "WIKIARENA_SERVER_PORT"
+ARTIFACT_DIR_ENV_VAR = "WIKIARENA_ARTIFACT_DIR"
 
 DEFAULT_CORS_ORIGINS = (
     "https://wikiarena.org",
@@ -29,6 +30,7 @@ class ServerConfig:
     cors_origins: tuple[str, ...] = DEFAULT_CORS_ORIGINS
     host: str = "0.0.0.0"
     port: int = 8000
+    artifact_dir: Path = Path("artifacts")
 
     @classmethod
     def from_env(
@@ -76,6 +78,12 @@ class ServerConfig:
                     ),
                 ),
             ),
+            artifact_dir=Path(
+                os.getenv(
+                    ARTIFACT_DIR_ENV_VAR,
+                    "artifacts",
+                ),
+            ).expanduser(),
         )
 
 

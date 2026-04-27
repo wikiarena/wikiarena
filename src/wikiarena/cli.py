@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import random
+import shutil
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -17,9 +19,12 @@ from wikiarena.cli_output import (
     build_stderr_console,
 )
 from wikiarena.eval import (
+    BenchmarkResumeConfig,
     BenchmarkRunner,
     RunResultStore,
     RunService,
+    build_race_id,
+    build_run_id,
     inspect_result_file_identity,
     load_eval_run_config,
     load_run_results,
@@ -28,6 +33,7 @@ from wikiarena.eval import (
 )
 from wikiarena.graph import install_graph_release, load_graph_info
 from wikiarena.protocol import (
+    BenchmarkSpec,
     EventEnvelope,
     HarnessConfig,
     NavigationBackend,
@@ -37,7 +43,10 @@ from wikiarena.protocol import (
     ScoringRules,
     SolverBackend,
     StepAttemptRecord,
+    TerminalOutcome,
 )
+from wikiarena.server.race_models import RaceMetadata, RaceParticipantSummary
+from wikiarena.server.race_store import LocalRaceArtifactStore
 from wikiarena.solver.binary import MappedBinarySolverGraph
 from wikiarena.solver.models import PositionSolverFacts
 from wikiarena.solver_runtime import SolverRuntimeConfig, resolve_solver_graph_file_path
@@ -441,6 +450,7 @@ def run_command(
         output,
         append=append,
         overwrite=overwrite,
+        resume_existing=False,
         expected_ruleset_hash=run_plan.ruleset_hash,
         expected_navigation_backend=run_plan.navigation_runtime.backend,
         expected_navigation_snapshot_id=run_plan.navigation_snapshot_id,
@@ -489,15 +499,26 @@ def eval_run_command(
         "--output",
         help="Run results JSONL output path",
     ),
-    append: bool = typer.Option(
-        False,
-        "--append",
-        help="Append to an existing output file",
-    ),
     overwrite: bool = typer.Option(
         False,
         "--overwrite",
         help="Overwrite an existing output file",
+    ),
+    resume: bool = typer.Option(
+        False,
+        "--resume",
+        help="Accepted for clarity; resume/create is the default unless --overwrite is passed",
+    ),
+    race_limit: int | None = typer.Option(
+        None,
+        "--race-limit",
+        min=1,
+        help="Execute only the first N races while preserving full taskset identity",
+    ),
+    artifact_dir: Path | None = typer.Option(
+        None,
+        "--artifact-dir",
+        help="Persist frontend-compatible race artifacts under this directory",
     ),
     json_output: bool = typer.Option(
         False,
@@ -578,29 +599,83 @@ def eval_run_command(
         loaded_config.benchmark_spec,
         protocol_version=protocol_version,
     )
+    execution_benchmark_spec = _limit_benchmark_tasks(
+        loaded_config.benchmark_spec,
+        race_limit=race_limit,
+    )
     _prepare_output_path(
         output,
-        append=append,
         overwrite=overwrite,
+        resume_existing=True,
         expected_ruleset_hash=identity_plan.ruleset_hash,
+        expected_taskset_hash=identity_plan.taskset_hash,
         expected_navigation_backend=resolved_run_options.navigation_runtime.backend,
         expected_navigation_snapshot_id=resolved_run_options.navigation_snapshot_id,
         expected_solver_backend=resolved_run_options.solver_runtime.backend,
         expected_solver_snapshot_id=resolved_run_options.solver_snapshot_id,
     )
+    existing_run_results = _load_existing_resume_results(
+        output,
+        overwrite=overwrite,
+    )
+    race_artifact_store = None
+    race_artifact_event_sink = None
+    if artifact_dir is not None:
+        race_artifact_store = LocalRaceArtifactStore(
+            artifact_dir,
+        )
+        if overwrite:
+            _clear_eval_race_artifacts(
+                race_artifact_store,
+                execution_benchmark_spec,
+            )
+        race_artifact_event_sink = _build_race_artifact_event_sink(
+            race_artifact_store,
+        )
+        _write_eval_race_metadata(
+            race_artifact_store,
+            execution_benchmark_spec,
+            status="pending",
+        )
+    execution_run_race_ids = _build_expected_run_race_ids(
+        execution_benchmark_spec,
+    )
+    resume_run_results = _filter_existing_results_for_resume(
+        existing_run_results,
+        rerunnable_run_ids=set(
+            execution_run_race_ids,
+        ),
+    )
+    if len(resume_run_results) != len(existing_run_results):
+        _rewrite_run_results(
+            output,
+            resume_run_results,
+        )
+    if race_artifact_store is not None and not overwrite:
+        _clear_eval_run_artifacts(
+            race_artifact_store,
+            run_race_ids=execution_run_race_ids,
+            run_ids=set(execution_run_race_ids)
+            - {run_result.run_id for run_result in resume_run_results},
+        )
     result_store = RunResultStore(
         output_path=output,
+        artifact_store=race_artifact_store,
+    )
+    resume_config = BenchmarkResumeConfig(
+        existing_run_results=resume_run_results,
+        rerun_system_failures=True,
     )
     progress_reporter = None
     if not quiet and not json_output:
         progress_reporter = EvalProgressReporter(
             console=build_stderr_console(),
             total_runs=(
-                len(loaded_config.benchmark_spec.tasks)
-                * len(loaded_config.benchmark_spec.participants)
+                len(execution_benchmark_spec.tasks)
+                * len(execution_benchmark_spec.participants)
             ),
             total_races=len(
-                loaded_config.benchmark_spec.tasks,
+                execution_benchmark_spec.tasks,
             ),
             participant_count=len(
                 loaded_config.benchmark_spec.participants,
@@ -610,7 +685,7 @@ def eval_run_command(
             benchmark_id=loaded_config.benchmark_spec.benchmark_id,
             participant_ids=[
                 participant.participant_id
-                for participant in loaded_config.benchmark_spec.participants
+                for participant in execution_benchmark_spec.participants
             ],
             navigation_backend=resolved_run_options.navigation_runtime.backend.value,
             solver_backend=resolved_run_options.solver_runtime.backend.value,
@@ -618,26 +693,48 @@ def eval_run_command(
 
     artifact = asyncio.run(
         benchmark_runner.run_benchmark(
-            loaded_config.benchmark_spec,
+            execution_benchmark_spec,
             concurrency=loaded_config.concurrency,
             run_options=resolved_run_options,
+            resume=resume_config,
+            taskset_hash_override=identity_plan.taskset_hash,
             result_store=result_store,
-            event_sink=(
+            event_sink=_combine_event_sinks(
                 progress_reporter.handle_event
                 if progress_reporter is not None
-                else None
+                else None,
+                race_artifact_event_sink,
             ),
         ),
     )
+
+    if race_artifact_store is not None:
+        _write_eval_race_metadata(
+            race_artifact_store,
+            execution_benchmark_spec,
+            status="completed",
+            artifact=artifact,
+        )
+        _write_eval_run_artifacts(
+            race_artifact_store,
+            artifact,
+        )
 
     summary_payload = {
         "benchmark_id": artifact.benchmark_id,
         "total_runs": artifact.total_runs,
         "total_races": len(artifact.race_results),
+        "existing_runs": len(resume_run_results),
+        "new_runs": _count_output_file_runs(output) - len(resume_run_results),
+        "race_limit": race_limit,
         "ruleset_hash": identity_plan.ruleset_hash,
         "taskset_hash": identity_plan.taskset_hash,
         "output_path": str(output),
     }
+    if artifact_dir is not None:
+        summary_payload["artifact_dir"] = str(
+            artifact_dir,
+        )
 
     if json_output:
         typer.echo(
@@ -710,6 +807,409 @@ def eval_summarize_command(
             evaluation_summary,
         ),
     )
+
+
+def _load_existing_resume_results(
+    output: Path,
+    *,
+    overwrite: bool,
+) -> list[RunResult]:
+    if overwrite or not output.exists():
+        return []
+    return load_run_results(
+        output,
+    )
+
+
+def _filter_existing_results_for_resume(
+    run_results: list[RunResult],
+    *,
+    rerunnable_run_ids: set[str],
+) -> list[RunResult]:
+    return [
+        run_result
+        for run_result in run_results
+        if run_result.terminal_outcome != TerminalOutcome.SYSTEM_FAILURE
+        or run_result.run_id not in rerunnable_run_ids
+    ]
+
+
+def _build_expected_run_race_ids(
+    benchmark_spec: BenchmarkSpec,
+) -> dict[str, str]:
+    run_race_ids = {}
+    for task_index, task_spec in enumerate(
+        benchmark_spec.tasks,
+        start=1,
+    ):
+        if task_spec.task_id is None:
+            raise ValueError(
+                "task_id cannot be null when building expected run IDs",
+            )
+        race_id = build_race_id(
+            benchmark_id=benchmark_spec.benchmark_id,
+            task_id=task_spec.task_id,
+            task_index=task_index,
+        )
+        for participant in benchmark_spec.participants:
+            run_race_ids[
+                build_run_id(
+                    race_id=race_id,
+                    participant_id=participant.participant_id,
+                )
+            ] = race_id
+    return run_race_ids
+
+
+def _rewrite_run_results(
+    output: Path,
+    run_results: list[RunResult],
+) -> None:
+    output.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+    with output.open(
+        "w",
+        encoding="utf-8",
+    ) as file_handle:
+        for run_result in run_results:
+            file_handle.write(
+                json.dumps(
+                    run_result.model_dump(mode="json"),
+                    ensure_ascii=False,
+                ),
+            )
+            file_handle.write(
+                "\n",
+            )
+
+
+def _limit_benchmark_tasks(
+    benchmark_spec: BenchmarkSpec,
+    *,
+    race_limit: int | None,
+) -> BenchmarkSpec:
+    if race_limit is None:
+        return benchmark_spec
+    if race_limit < 1:
+        raise typer.BadParameter(
+            "--race-limit must be at least 1",
+        )
+    return benchmark_spec.model_copy(
+        update={
+            "tasks": benchmark_spec.tasks[:race_limit],
+        },
+    )
+
+
+def _count_output_file_runs(
+    output: Path,
+) -> int:
+    if not output.exists():
+        return 0
+    with output.open(
+        "r",
+        encoding="utf-8",
+    ) as file_handle:
+        return sum(1 for line in file_handle if line.strip())
+
+
+def _build_race_artifact_event_sink(
+    race_artifact_store: LocalRaceArtifactStore,
+):
+    event_lock = asyncio.Lock()
+
+    async def handle_event(event: EventEnvelope) -> None:
+        async with event_lock:
+            await asyncio.to_thread(
+                race_artifact_store.append_event,
+                event.race_id,
+                event,
+            )
+            await asyncio.to_thread(
+                race_artifact_store.append_run_event,
+                event.race_id,
+                event.run_id,
+                event,
+            )
+
+    return handle_event
+
+
+def _clear_eval_race_artifacts(
+    race_artifact_store: LocalRaceArtifactStore,
+    benchmark_spec: BenchmarkSpec,
+) -> None:
+    for task_index, task_spec in enumerate(
+        benchmark_spec.tasks,
+        start=1,
+    ):
+        if task_spec.task_id is None:
+            raise ValueError(
+                "task_id cannot be null when clearing race artifacts",
+            )
+        race_dir = race_artifact_store.race_dir(
+            build_race_id(
+                benchmark_id=benchmark_spec.benchmark_id,
+                task_id=task_spec.task_id,
+                task_index=task_index,
+            ),
+        )
+        if race_dir.exists():
+            shutil.rmtree(
+                race_dir,
+            )
+
+
+def _clear_eval_run_artifacts(
+    race_artifact_store: LocalRaceArtifactStore,
+    *,
+    run_race_ids: dict[str, str],
+    run_ids: set[str],
+) -> None:
+    if not run_ids:
+        return
+
+    run_ids_by_race: dict[str, set[str]] = {}
+    for run_id in run_ids:
+        race_id = run_race_ids.get(
+            run_id,
+        )
+        if race_id is None:
+            continue
+        run_ids_by_race.setdefault(
+            race_id,
+            set(),
+        ).add(
+            run_id,
+        )
+
+    for race_id, race_run_ids in run_ids_by_race.items():
+        race_dir = race_artifact_store.race_dir(
+            race_id,
+        )
+        runs_dir = race_dir / "runs"
+        for run_id in race_run_ids:
+            for path in (
+                runs_dir / f"{run_id}.events.jsonl",
+                runs_dir / f"{run_id}.result.json",
+            ):
+                if path.exists():
+                    path.unlink()
+        _remove_runs_from_race_events(
+            race_dir / "events.jsonl",
+            race_run_ids,
+        )
+
+
+def _remove_runs_from_race_events(
+    event_path: Path,
+    run_ids: set[str],
+) -> None:
+    if not event_path.exists():
+        return
+
+    kept_events = []
+    with event_path.open(
+        "r",
+        encoding="utf-8",
+    ) as file_handle:
+        for line in file_handle:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            payload = json.loads(
+                stripped,
+            )
+            event = payload.get(
+                "event",
+                {},
+            )
+            if event.get(
+                "run_id",
+            ) in run_ids:
+                continue
+            kept_events.append(
+                payload,
+            )
+
+    with event_path.open(
+        "w",
+        encoding="utf-8",
+    ) as file_handle:
+        for stream_sequence, payload in enumerate(
+            kept_events,
+            start=1,
+        ):
+            payload["stream_sequence"] = stream_sequence
+            file_handle.write(
+                json.dumps(
+                    payload,
+                    ensure_ascii=False,
+                ),
+            )
+            file_handle.write(
+                "\n",
+            )
+
+
+def _combine_event_sinks(
+    *event_sinks,
+):
+    active_event_sinks = [
+        event_sink for event_sink in event_sinks if event_sink is not None
+    ]
+    if not active_event_sinks:
+        return None
+
+    async def handle_event(event: EventEnvelope) -> None:
+        for event_sink in active_event_sinks:
+            sink_result = event_sink(
+                event,
+            )
+            if inspect.isawaitable(
+                sink_result,
+            ):
+                await sink_result
+
+    return handle_event
+
+
+def _write_eval_race_metadata(
+    race_artifact_store: LocalRaceArtifactStore,
+    benchmark_spec: BenchmarkSpec,
+    *,
+    status: str,
+    artifact=None,
+) -> None:
+    race_results_by_id = {}
+    race_results_by_task_id = {}
+    if artifact is not None:
+        race_results_by_id = {
+            race_result.race_id: race_result for race_result in artifact.race_results
+        }
+        race_results_by_task_id = {
+            race_result.task_id: race_result for race_result in artifact.race_results
+        }
+
+    for task_index, task_spec in enumerate(
+        benchmark_spec.tasks,
+        start=1,
+    ):
+        if task_spec.task_id is None:
+            raise ValueError(
+                "task_id cannot be null when writing race metadata",
+            )
+        race_result_for_task = race_results_by_task_id.get(
+            task_spec.task_id,
+        )
+        if race_result_for_task is not None:
+            race_id = race_result_for_task.race_id
+        else:
+            race_id = build_race_id(
+                benchmark_id=benchmark_spec.benchmark_id,
+                task_id=task_spec.task_id,
+                task_index=task_index,
+            )
+        race_result = race_results_by_id.get(
+            race_id,
+        )
+        race_run_results = race_result.run_results if race_result is not None else []
+        run_results_by_participant_id = {
+            run_result.participant_id: run_result for run_result in race_run_results
+        }
+        existing_metadata = race_artifact_store.read_metadata(
+            race_id,
+        )
+        existing_participants = (
+            {
+                participant.participant_id: participant
+                for participant in existing_metadata.participants
+            }
+            if existing_metadata is not None
+            else {}
+        )
+        current_participants = {
+            participant.participant_id: RaceParticipantSummary(
+                participant_id=participant.participant_id,
+                display_name=participant.display_name,
+                provider=participant.driver_config.provider,
+                model=participant.driver_config.model,
+                run_id=(
+                    run_results_by_participant_id[participant.participant_id].run_id
+                    if participant.participant_id in run_results_by_participant_id
+                    else build_run_id(
+                        race_id=race_id,
+                        participant_id=participant.participant_id,
+                    )
+                ),
+            )
+            for participant in benchmark_spec.participants
+        }
+        merged_participants = {
+            **existing_participants,
+            **current_participants,
+        }
+        race_artifact_store.write_metadata(
+            RaceMetadata(
+                race_id=race_id,
+                benchmark_id=benchmark_spec.benchmark_id,
+                task_id=task_spec.task_id,
+                start_title=task_spec.start_page_title,
+                target_title=task_spec.target_page_title,
+                participants=list(merged_participants.values()),
+                status=status,
+                started_at=_earliest_run_start(
+                    race_run_results,
+                    existing_metadata=existing_metadata,
+                ),
+                ended_at=_latest_run_end(
+                    race_run_results,
+                    existing_metadata=existing_metadata,
+                ),
+            ),
+        )
+
+
+def _write_eval_run_artifacts(
+    race_artifact_store: LocalRaceArtifactStore,
+    artifact,
+) -> None:
+    for run_result in artifact.run_results:
+        race_artifact_store.write_run_result(
+            run_result,
+        )
+
+
+def _earliest_run_start(
+    run_results: list[RunResult],
+    *,
+    existing_metadata: RaceMetadata | None = None,
+):
+    starts = [run_result.started_at for run_result in run_results]
+    if existing_metadata is not None and existing_metadata.started_at is not None:
+        starts.append(
+            existing_metadata.started_at,
+        )
+    if not starts:
+        return None
+    return min(starts)
+
+
+def _latest_run_end(
+    run_results: list[RunResult],
+    *,
+    existing_metadata: RaceMetadata | None = None,
+):
+    ends = [run_result.ended_at for run_result in run_results]
+    if existing_metadata is not None and existing_metadata.ended_at is not None:
+        ends.append(
+            existing_metadata.ended_at,
+        )
+    if not ends:
+        return None
+    return max(ends)
 
 
 def run_service_request(
@@ -1024,10 +1524,7 @@ def _build_model_settings(
             normalized_provider == "openai"
             or (
                 openai_provider
-                and (
-                    openai_use_responses_api
-                    or openai_include_encrypted_reasoning
-                )
+                and (openai_use_responses_api or openai_include_encrypted_reasoning)
             )
         )
     ):
@@ -1319,9 +1816,11 @@ def _print_run_result(
 def _prepare_output_path(
     output_path: Path | None,
     *,
-    append: bool,
+    append: bool = False,
     overwrite: bool,
+    resume_existing: bool = True,
     expected_ruleset_hash: str | None = None,
+    expected_taskset_hash: str | None = None,
     expected_navigation_backend: NavigationBackend | None = None,
     expected_navigation_snapshot_id: str | None = None,
     expected_solver_backend: SolverBackend | None = None,
@@ -1347,26 +1846,27 @@ def _prepare_output_path(
         output_path.unlink()
         return
 
-    if append:
-        _validate_append_identity(
-            output_path,
-            expected_ruleset_hash=expected_ruleset_hash,
-            expected_navigation_backend=expected_navigation_backend,
-            expected_navigation_snapshot_id=expected_navigation_snapshot_id,
-            expected_solver_backend=expected_solver_backend,
-            expected_solver_snapshot_id=expected_solver_snapshot_id,
+    if not append and not resume_existing:
+        raise typer.BadParameter(
+            f"output path already exists: {output_path}. Use --append or --overwrite.",
         )
-        return
 
-    raise typer.BadParameter(
-        f"output path already exists: {output_path}. Use --append or --overwrite.",
+    _validate_resume_identity(
+        output_path,
+        expected_ruleset_hash=expected_ruleset_hash,
+        expected_taskset_hash=expected_taskset_hash,
+        expected_navigation_backend=expected_navigation_backend,
+        expected_navigation_snapshot_id=expected_navigation_snapshot_id,
+        expected_solver_backend=expected_solver_backend,
+        expected_solver_snapshot_id=expected_solver_snapshot_id,
     )
 
 
-def _validate_append_identity(
+def _validate_resume_identity(
     output_path: Path,
     *,
     expected_ruleset_hash: str | None,
+    expected_taskset_hash: str | None,
     expected_navigation_backend: NavigationBackend | None,
     expected_navigation_snapshot_id: str | None,
     expected_solver_backend: SolverBackend | None,
@@ -1394,8 +1894,23 @@ def _validate_append_identity(
     existing_ruleset_hash = identity.ruleset_hashes[0]
     if existing_ruleset_hash != expected_ruleset_hash:
         raise typer.BadParameter(
-            "cannot append to output file with a different ruleset_hash",
+            "cannot resume output file with a different ruleset_hash",
         )
+
+    if expected_taskset_hash is not None:
+        if not identity.taskset_hashes:
+            raise typer.BadParameter(
+                f"existing output file has no taskset_hash values: {output_path}",
+            )
+        if len(identity.taskset_hashes) > 1:
+            raise typer.BadParameter(
+                f"existing output file contains multiple taskset hashes: {output_path}",
+            )
+        existing_taskset_hash = identity.taskset_hashes[0]
+        if existing_taskset_hash != expected_taskset_hash:
+            raise typer.BadParameter(
+                "cannot resume output file with a different taskset_hash",
+            )
 
     if expected_navigation_backend is not None:
         existing_navigation_backends = identity.navigation_backends
@@ -1403,7 +1918,7 @@ def _validate_append_identity(
             expected_navigation_backend.value,
         ]:
             raise typer.BadParameter(
-                "cannot append to output file with a different navigation_backend",
+                "cannot resume output file with a different navigation_backend",
             )
 
     if expected_navigation_snapshot_id is not None:
@@ -1412,7 +1927,7 @@ def _validate_append_identity(
             expected_navigation_snapshot_id,
         ]:
             raise typer.BadParameter(
-                "cannot append to output file with a different navigation_snapshot_id",
+                "cannot resume output file with a different navigation_snapshot_id",
             )
 
     if expected_solver_backend is not None:
@@ -1421,7 +1936,7 @@ def _validate_append_identity(
             expected_solver_backend.value,
         ]:
             raise typer.BadParameter(
-                "cannot append to output file with a different solver_backend",
+                "cannot resume output file with a different solver_backend",
             )
 
     if expected_solver_snapshot_id is not None:
@@ -1430,7 +1945,7 @@ def _validate_append_identity(
             expected_solver_snapshot_id,
         ]:
             raise typer.BadParameter(
-                "cannot append to output file with a different solver_snapshot_id",
+                "cannot resume output file with a different solver_snapshot_id",
             )
 
 

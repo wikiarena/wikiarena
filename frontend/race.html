@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WikiArena Race Viewer</title>
+    <meta
+      name="description"
+      content="Watch WikiArena model races move through Wikipedia against live shortest-path solver facts."
+    />
+    <link rel="icon" type="image/png" sizes="32x32" href="./assets/icons/wikiarena-favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="./assets/icons/wikiarena-favicon-16.png" />
+    <link rel="apple-touch-icon" href="./assets/icons/wikiarena_logo2.png" />
+  </head>
+  <body class="page-race">
+    <div class="page-frame race-frame">
+      <header class="topbar reveal reveal-delay-1">
+        <a class="brand" href="./index.html" aria-label="WikiArena home">
+          <img class="brand-mark" src="./assets/icons/wikiarena_logo2.png" alt="WikiArena logo" />
+          <span class="brand-lockup">
+            <span class="brand-name">wikiarena</span>
+          </span>
+        </a>
+
+        <nav class="nav-links nav-links-primary" aria-label="Primary">
+          <a class="nav-link is-current" href="./race.html">Race</a>
+          <a class="nav-link" href="./leaderboard.html">Leaderboard</a>
+          <a class="nav-link" href="./solver.html">Solver</a>
+        </nav>
+
+        <nav class="nav-links nav-links-secondary" aria-label="External">
+          <a class="nav-link github-link" href="https://github.com/wikiarena/wikiarena" target="_blank" rel="noreferrer" aria-label="WikiArena on GitHub">
+            <img src="./assets/providers/github.svg" alt="" />
+          </a>
+        </nav>
+      </header>
+
+      <main class="race-main reveal reveal-delay-2">
+        <section id="race-coming-soon" class="solver-experience race-coming-soon-panel">
+          <div class="intro-copy">
+            <p class="kicker">live races</p>
+            <h1 class="display-title display-title-minimal">coming soon</h1>
+            <p class="lede">We are figuring out how to support configuration and viewing of live LLM races. For now you can explore our catalog of replays or try to overload our solver.</p>
+          </div>
+          <div class="race-coming-soon-actions">
+            <a class="solve-button cta-link" href="./leaderboard.html">Watch Replays</a>
+            <a class="path-mode-button cta-link" href="./solver.html">Try Solver</a>
+          </div>
+        </section>
+
+        <section id="race-setup" class="solver-experience race-setup-panel hidden" aria-hidden="true">
+          <div class="intro-copy">
+            <p class="kicker">live eval viewer</p>
+            <h1 class="display-title display-title-minimal">watch models move through wikipedia space</h1>
+            <p class="lede">Create a protocol-native race, stream one interleaved event feed, and preserve the artifact for replay.</p>
+          </div>
+
+          <form id="race-form" class="landing-form race-form">
+            <div class="title-row">
+              <section id="race-start-box" class="title-box" aria-labelledby="race-start-label">
+                <div class="title-box-header">
+                  <label id="race-start-label" class="title-label" for="race-start-title">Start page</label>
+                  <button id="race-start-random-button" class="random-button" type="button" aria-label="Randomize start page">
+                    <img src="./assets/icons/dice-dark.svg" alt="" />
+                  </button>
+                </div>
+                <div class="autocomplete-shell">
+                  <input id="race-start-title" class="title-input" type="text" autocomplete="off" placeholder="Loading random page..." />
+                  <div id="race-start-suggestions" class="suggestion-list hidden" role="listbox" aria-label="Start page suggestions"></div>
+                </div>
+              </section>
+
+              <div class="title-middle-controls">
+                <div class="title-divider" aria-hidden="true">-&gt;</div>
+                <button id="race-swap-button" class="swap-button" type="button" aria-label="Swap start and target pages">
+                  <span aria-hidden="true">⇄</span>
+                </button>
+              </div>
+
+              <section id="race-target-box" class="title-box" aria-labelledby="race-target-label">
+                <div class="title-box-header">
+                  <label id="race-target-label" class="title-label" for="race-target-title">Target page</label>
+                  <button id="race-target-random-button" class="random-button" type="button" aria-label="Randomize target page">
+                    <img src="./assets/icons/dice-dark.svg" alt="" />
+                  </button>
+                </div>
+                <div class="autocomplete-shell">
+                  <input id="race-target-title" class="title-input" type="text" autocomplete="off" placeholder="Loading random page..." />
+                  <div id="race-target-suggestions" class="suggestion-list hidden" role="listbox" aria-label="Target page suggestions"></div>
+                </div>
+              </section>
+            </div>
+
+            <div class="race-model-grid">
+              <label class="race-model-card">
+                <span>Model 1</span>
+                <select id="race-model-1" class="race-select">
+                  <option value="wikiarena/first" selected>First Link</option>
+                  <option value="wikiarena/random">Random Walker</option>
+                  <option value="codex:gpt-5.4">Codex GPT-5.4</option>
+                  <option value="codex:gpt-5.2">Codex GPT-5.2</option>
+                </select>
+              </label>
+              <label class="race-model-card">
+                <span>Model 2</span>
+                <select id="race-model-2" class="race-select">
+                  <option value="wikiarena/random">Random Walker</option>
+                  <option value="wikiarena/first">First Link</option>
+                  <option value="codex:gpt-5.4">Codex GPT-5.4</option>
+                  <option value="codex:gpt-5.2">Codex GPT-5.2</option>
+                </select>
+              </label>
+            </div>
+            <p id="race-model-error" class="form-message is-error hidden" aria-live="polite"></p>
+            <div class="solve-row race-actions">
+              <button id="race-start-button" class="solve-button" type="submit">Start Race</button>
+              <p id="race-form-error" class="form-message is-error hidden" aria-live="polite"></p>
+            </div>
+          </form>
+        </section>
+
+        <section id="race-live" class="race-live race-view hidden">
+          <div id="race-graph" class="race-graph-stage"></div>
+          <div id="race-loading" class="race-loading hidden"></div>
+
+          <div id="race-result-hud" class="race-result-hud">
+            <button id="race-result-header" class="race-result-header" type="button">
+              <span id="race-result-start-page" class="race-result-start-page">Start</span>
+              <span class="race-result-arrow">-&gt;</span>
+              <span id="race-result-target-page" class="race-result-target-page">Target</span>
+            </button>
+            <div id="race-progress" class="horizontal-progress-container"></div>
+            <div id="race-result-content" class="race-result-content">
+              <div class="race-result-meta">
+                <span id="race-status" class="status-token">connecting</span>
+                <button id="race-live-button" class="path-mode-button is-active" type="button">Live</button>
+              </div>
+              <div id="race-results" class="race-results"></div>
+            </div>
+          </div>
+
+          <div id="player-dropdowns-container" class="player-dropdowns-container">
+            <section id="player1-dropdown" class="player-dropdown">
+              <button class="player-dropdown-header" type="button" data-dropdown-toggle="player1-dropdown">
+                <span class="player-dropdown-logo" aria-hidden="true"></span>
+                <span class="player-dropdown-name">Player 1</span>
+                <span class="player-dropdown-status not_started">pending</span>
+                <span class="player-dropdown-toggle"><span class="player-dropdown-arrow"></span></span>
+              </button>
+              <div class="player-dropdown-content">
+                <ol id="player1-page-list" class="player-dropdown-list race-page-list" data-player-index="0"></ol>
+              </div>
+            </section>
+
+            <section id="player2-dropdown" class="player-dropdown">
+              <button class="player-dropdown-header" type="button" data-dropdown-toggle="player2-dropdown">
+                <span class="player-dropdown-logo" aria-hidden="true"></span>
+                <span class="player-dropdown-name">Player 2</span>
+                <span class="player-dropdown-status not_started">pending</span>
+                <span class="player-dropdown-toggle"><span class="player-dropdown-arrow"></span></span>
+              </button>
+              <div class="player-dropdown-content">
+                <ol id="player2-page-list" class="player-dropdown-list race-page-list" data-player-index="1"></ol>
+              </div>
+            </section>
+          </div>
+
+          <div class="page-step-slider-container">
+            <input id="race-scrubber" class="page-step-slider race-scrubber" type="range" min="0" max="0" value="0" />
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="/src/race.ts"></script>
+  </body>
+</html>

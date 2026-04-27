@@ -28,8 +28,8 @@ from wikiarena.protocol import (
     RaceResult,
     RunResult,
     RunSpec,
-    SolverBackend,
     TaskSpec,
+    TerminalOutcome,
 )
 from wikiarena.protocol.results import TaskExecutionAnnotation
 from wikiarena.protocol.specs import ParticipantSpec
@@ -37,7 +37,6 @@ from wikiarena.solver.binary import MappedBinarySolverGraph
 from wikiarena.solver_runtime import SolverRuntimeConfig
 from wikiarena.wiki_runtime import NavigationRuntimeConfig, resolve_graph_file_path
 from wikiarena.wikipedia import LiveWikiService
-
 
 _MISSING_TASK_EXECUTION_ANNOTATION = object()
 
@@ -58,6 +57,9 @@ class BenchmarkConcurrencyConfig(BaseModel):
     provider_max_concurrency: dict[str, int] = Field(
         default_factory=dict,
     )
+    participant_max_concurrency: dict[str, int] = Field(
+        default_factory=dict,
+    )
 
 
 class BenchmarkRunOptions(BaseModel):
@@ -73,6 +75,13 @@ class BenchmarkRunOptions(BaseModel):
     )
     navigation_snapshot_id: str | None = None
     solver_snapshot_id: str | None = None
+
+
+class BenchmarkResumeConfig(BaseModel):
+    existing_run_results: list[RunResult] = Field(
+        default_factory=list,
+    )
+    rerun_system_failures: bool = True
 
 
 class BenchmarkExecutionArtifact(BaseModel):
@@ -112,6 +121,8 @@ class BenchmarkRunner:
         *,
         concurrency: BenchmarkConcurrencyConfig | None = None,
         run_options: BenchmarkRunOptions | None = None,
+        resume: BenchmarkResumeConfig | None = None,
+        taskset_hash_override: str | None = None,
         result_store: RunResultStore | None = None,
         event_sink: EventSink | None = None,
     ) -> BenchmarkExecutionArtifact:
@@ -129,6 +140,15 @@ class BenchmarkRunner:
             benchmark_spec,
             protocol_version=protocol_version,
         )
+        if taskset_hash_override is not None:
+            benchmark_identity = benchmark_identity.model_copy(
+                update={
+                    "taskset_hash": taskset_hash_override,
+                },
+            )
+        resume_index = _build_resume_index(
+            resume,
+        )
 
         task_semaphore = asyncio.Semaphore(
             resolved_concurrency.max_concurrent_tasks,
@@ -143,6 +163,13 @@ class BenchmarkRunner:
             for provider, limit in resolved_concurrency.provider_max_concurrency.items()
             if limit > 0
         }
+        participant_semaphores = {
+            participant_id: asyncio.Semaphore(
+                limit,
+            )
+            for participant_id, limit in resolved_concurrency.participant_max_concurrency.items()
+            if limit > 0
+        }
         store_lock = asyncio.Lock()
 
         race_tasks = [
@@ -153,10 +180,13 @@ class BenchmarkRunner:
                     task_index=task_index,
                     task_spec=task_spec,
                     run_options=resolved_run_options,
+                    resume=resume,
+                    resume_index=resume_index,
                     concurrency=resolved_concurrency,
                     task_semaphore=task_semaphore,
                     run_semaphore=run_semaphore,
                     provider_semaphores=provider_semaphores,
+                    participant_semaphores=participant_semaphores,
                     result_store=result_store,
                     store_lock=store_lock,
                     event_sink=event_sink,
@@ -193,10 +223,13 @@ class BenchmarkRunner:
         task_index: int,
         task_spec: TaskSpec,
         run_options: BenchmarkRunOptions,
+        resume: BenchmarkResumeConfig | None,
+        resume_index: dict[str, RunResult],
         concurrency: BenchmarkConcurrencyConfig,
         task_semaphore: asyncio.Semaphore,
         run_semaphore: asyncio.Semaphore,
         provider_semaphores: dict[str, asyncio.Semaphore],
+        participant_semaphores: dict[str, asyncio.Semaphore],
         result_store: RunResultStore | None,
         store_lock: asyncio.Lock,
         event_sink: EventSink | None,
@@ -220,28 +253,63 @@ class BenchmarkRunner:
                     concurrency.max_concurrent_runs_per_race,
                 )
 
-            run_tasks = [
-                asyncio.create_task(
-                    self._execute_single_run(
-                        benchmark_spec=benchmark_spec,
-                        benchmark_identity=benchmark_identity,
-                        task_spec=task_spec,
-                        race_id=race_id,
-                        participant_spec=participant_spec,
-                        run_options=run_options,
-                        run_semaphore=run_semaphore,
-                        race_run_semaphore=race_run_semaphore,
-                        provider_semaphores=provider_semaphores,
-                        result_store=result_store,
-                        store_lock=store_lock,
-                        event_sink=event_sink,
-                    ),
+            run_tasks_by_participant_id = {}
+            run_results_by_participant_id: dict[str, RunResult] = {}
+            for participant_spec in benchmark_spec.participants:
+                run_id = build_run_id(
+                    race_id=race_id,
+                    participant_id=participant_spec.participant_id,
                 )
+                resumable_run_result = _lookup_resumable_run_result(
+                    run_id=run_id,
+                    participant_spec=participant_spec,
+                    benchmark_identity=benchmark_identity,
+                    run_options=run_options,
+                    resume=resume,
+                    resume_index=resume_index,
+                )
+                if resumable_run_result is not None:
+                    run_results_by_participant_id[participant_spec.participant_id] = (
+                        resumable_run_result
+                    )
+                    continue
+
+                run_tasks_by_participant_id[participant_spec.participant_id] = (
+                    asyncio.create_task(
+                        self._execute_single_run(
+                            benchmark_spec=benchmark_spec,
+                            benchmark_identity=benchmark_identity,
+                            task_spec=task_spec,
+                            race_id=race_id,
+                            participant_spec=participant_spec,
+                            run_options=run_options,
+                            run_semaphore=run_semaphore,
+                            race_run_semaphore=race_run_semaphore,
+                            provider_semaphores=provider_semaphores,
+                            participant_semaphores=participant_semaphores,
+                            result_store=result_store,
+                            store_lock=store_lock,
+                            event_sink=event_sink,
+                        ),
+                    )
+                )
+
+            if run_tasks_by_participant_id:
+                executed_run_results = await asyncio.gather(
+                    *run_tasks_by_participant_id.values(),
+                )
+                for participant_id, run_result in zip(
+                    run_tasks_by_participant_id,
+                    executed_run_results,
+                    strict=True,
+                ):
+                    run_results_by_participant_id[participant_id] = run_result
+
+            run_results = [
+                run_results_by_participant_id[participant_spec.participant_id]
                 for participant_spec in benchmark_spec.participants
+                if participant_spec.participant_id in run_results_by_participant_id
             ]
-            run_results = await asyncio.gather(
-                *run_tasks,
-            )
             race_task_execution_annotation = _resolve_shared_task_execution_annotation(
                 run_results,
             )
@@ -266,6 +334,7 @@ class BenchmarkRunner:
         run_semaphore: asyncio.Semaphore,
         race_run_semaphore: asyncio.Semaphore | None,
         provider_semaphores: dict[str, asyncio.Semaphore],
+        participant_semaphores: dict[str, asyncio.Semaphore],
         result_store: RunResultStore | None,
         store_lock: asyncio.Lock,
         event_sink: EventSink | None,
@@ -317,6 +386,9 @@ class BenchmarkRunner:
         provider_semaphore = provider_semaphores.get(
             participant_spec.driver_config.provider,
         )
+        participant_semaphore = participant_semaphores.get(
+            participant_spec.participant_id,
+        )
 
         artifact = await _execute_with_semaphore_limits(
             run_plan=run_plan,
@@ -324,6 +396,7 @@ class BenchmarkRunner:
             run_semaphore=run_semaphore,
             race_run_semaphore=race_run_semaphore,
             provider_semaphore=provider_semaphore,
+            participant_semaphore=participant_semaphore,
             event_sink=event_sink,
         )
 
@@ -344,33 +417,61 @@ async def _execute_with_semaphore_limits(
     run_semaphore: asyncio.Semaphore,
     race_run_semaphore: asyncio.Semaphore | None,
     provider_semaphore: asyncio.Semaphore | None,
+    participant_semaphore: asyncio.Semaphore | None,
     event_sink: EventSink | None,
 ):
     async with run_semaphore:
         if race_run_semaphore is not None:
             async with race_run_semaphore:
-                if provider_semaphore is not None:
-                    async with provider_semaphore:
-                        return await run_service.execute_plan(
-                            run_plan,
-                            event_sink=event_sink,
-                        )
-                return await run_service.execute_plan(
+                return await _execute_with_optional_limiters(
                     run_plan,
                     event_sink=event_sink,
+                    run_service=run_service,
+                    provider_semaphore=provider_semaphore,
+                    participant_semaphore=participant_semaphore,
                 )
 
-        if provider_semaphore is not None:
-            async with provider_semaphore:
-                return await run_service.execute_plan(
-                    run_plan,
-                    event_sink=event_sink,
-                )
-
-        return await run_service.execute_plan(
+        return await _execute_with_optional_limiters(
             run_plan,
             event_sink=event_sink,
+            run_service=run_service,
+            provider_semaphore=provider_semaphore,
+            participant_semaphore=participant_semaphore,
         )
+
+
+async def _execute_with_optional_limiters(
+    run_plan: RunPlan,
+    *,
+    run_service: RunService,
+    provider_semaphore: asyncio.Semaphore | None,
+    participant_semaphore: asyncio.Semaphore | None,
+    event_sink: EventSink | None,
+):
+    if provider_semaphore is not None:
+        async with provider_semaphore:
+            if participant_semaphore is not None:
+                async with participant_semaphore:
+                    return await run_service.execute_plan(
+                        run_plan,
+                        event_sink=event_sink,
+                    )
+            return await run_service.execute_plan(
+                run_plan,
+                event_sink=event_sink,
+            )
+
+    if participant_semaphore is not None:
+        async with participant_semaphore:
+            return await run_service.execute_plan(
+                run_plan,
+                event_sink=event_sink,
+            )
+
+    return await run_service.execute_plan(
+        run_plan,
+        event_sink=event_sink,
+    )
 
 
 def _resolve_concurrency(
@@ -386,6 +487,69 @@ def _resolve_concurrency(
         max_concurrent_tasks=2,
         max_concurrent_runs=default_max_runs,
     )
+
+
+def _build_resume_index(
+    resume: BenchmarkResumeConfig | None,
+) -> dict[str, RunResult]:
+    if resume is None:
+        return {}
+
+    return {run_result.run_id: run_result for run_result in resume.existing_run_results}
+
+
+def _lookup_resumable_run_result(
+    *,
+    run_id: str,
+    participant_spec: ParticipantSpec,
+    benchmark_identity: BenchmarkIdentityPlan,
+    run_options: BenchmarkRunOptions,
+    resume: BenchmarkResumeConfig | None,
+    resume_index: dict[str, RunResult],
+) -> RunResult | None:
+    if resume is None:
+        return None
+
+    run_result = resume_index.get(
+        run_id,
+    )
+    if run_result is None:
+        return None
+
+    if (
+        resume.rerun_system_failures
+        and run_result.terminal_outcome == TerminalOutcome.SYSTEM_FAILURE
+    ):
+        return None
+
+    participant_hash = benchmark_identity.participant_hashes.get(
+        participant_spec.participant_id,
+    )
+    if participant_hash is None:
+        return None
+
+    if run_result.ruleset_hash != benchmark_identity.ruleset_hash:
+        return None
+    if run_result.taskset_hash != benchmark_identity.taskset_hash:
+        return None
+    if run_result.participant_hash != participant_hash:
+        return None
+    if run_result.navigation_backend != run_options.navigation_runtime.backend:
+        return None
+    if run_result.solver_backend != run_options.solver_runtime.backend:
+        return None
+    if (
+        run_options.navigation_snapshot_id is not None
+        and run_result.navigation_snapshot_id != run_options.navigation_snapshot_id
+    ):
+        return None
+    if (
+        run_options.solver_snapshot_id is not None
+        and run_result.solver_snapshot_id != run_options.solver_snapshot_id
+    ):
+        return None
+
+    return run_result
 
 
 def _resolve_shared_task_execution_annotation(

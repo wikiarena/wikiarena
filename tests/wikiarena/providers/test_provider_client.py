@@ -9,23 +9,27 @@ import pytest
 from anthropic import AnthropicError
 from openai import OpenAIError
 
-from wikiarena.providers.client import _build_anthropic_cache_control
-from wikiarena.providers.client import _anthropic_prompt_caching_enabled
-from wikiarena.providers.client import _CODEX_OAUTH_CLIENT_ID
-from wikiarena.providers.client import _CODEX_OAUTH_TOKEN_URL
-from wikiarena.providers.client import _estimate_token_cost_usd
-from wikiarena.providers.client import _format_messages_for_anthropic
-from wikiarena.providers.client import _format_messages_for_openai_responses
-from wikiarena.providers.client import AnthropicChatProvider
-from wikiarena.providers.client import CodexChatProvider
-from wikiarena.providers.client import OpenAIChatProvider
-from wikiarena.providers.client import ProviderConfigurationError
-from wikiarena.providers.client import ProviderError
-from wikiarena.providers.types import ProviderMessage
-from wikiarena.providers.types import ProviderMessageRole
-from wikiarena.providers.types import ProviderReasoningItem
-from wikiarena.providers.types import ProviderRequest
-from wikiarena.providers.types import ProviderToolCall
+from wikiarena.providers.client import (
+    _CODEX_OAUTH_CLIENT_ID,
+    _CODEX_OAUTH_TOKEN_URL,
+    AnthropicChatProvider,
+    CodexChatProvider,
+    OpenAIChatProvider,
+    ProviderConfigurationError,
+    ProviderError,
+    _anthropic_prompt_caching_enabled,
+    _build_anthropic_cache_control,
+    _estimate_token_cost_usd,
+    _format_messages_for_anthropic,
+    _format_messages_for_openai_responses,
+)
+from wikiarena.providers.types import (
+    ProviderMessage,
+    ProviderMessageRole,
+    ProviderReasoningItem,
+    ProviderRequest,
+    ProviderToolCall,
+)
 
 
 def _create_test_jwt(
@@ -203,6 +207,126 @@ def test_estimate_token_cost_usd_includes_anthropic_cache_costs() -> None:
     )
 
     assert estimated_cost == pytest.approx(0.0189)
+
+
+def test_estimate_token_cost_usd_uses_default_openai_model_pricing() -> None:
+    estimated_cost = _estimate_token_cost_usd(
+        settings={},
+        model_id="gpt-5.4",
+        provider_name="openai",
+        input_tokens=10_000,
+        output_tokens=100,
+        cache_read_input_tokens=4_000,
+    )
+
+    assert estimated_cost == pytest.approx(0.0175)
+
+
+def test_estimate_token_cost_usd_uses_long_context_openai_pricing() -> None:
+    estimated_cost = _estimate_token_cost_usd(
+        settings={},
+        model_id="gpt-5.4",
+        provider_name="openai",
+        input_tokens=272_001,
+        output_tokens=100,
+    )
+
+    assert estimated_cost == pytest.approx(1.362255)
+
+
+def test_estimate_token_cost_usd_does_not_mix_explicit_base_with_default_cache_pricing() -> None:
+    estimated_cost = _estimate_token_cost_usd(
+        settings={
+            "input_cost_per_1m_tokens": 3.0,
+            "output_cost_per_1m_tokens": 15.0,
+        },
+        model_id="gpt-5.4",
+        provider_name="openai",
+        input_tokens=10_000,
+        output_tokens=100,
+        cache_read_input_tokens=4_000,
+    )
+
+    assert estimated_cost == pytest.approx(0.0315)
+
+
+def test_estimate_token_cost_usd_does_not_mix_explicit_base_with_default_long_context_pricing() -> None:
+    estimated_cost = _estimate_token_cost_usd(
+        settings={
+            "input_cost_per_1m_tokens": 3.0,
+            "output_cost_per_1m_tokens": 15.0,
+        },
+        model_id="gpt-5.4",
+        provider_name="openai",
+        input_tokens=272_001,
+        output_tokens=100,
+    )
+
+    assert estimated_cost == pytest.approx(0.817503)
+
+
+def test_estimate_token_cost_usd_does_not_price_legacy_openai_models() -> None:
+    with pytest.raises(
+        ProviderConfigurationError,
+        match="Missing pricing for provider 'codex' model 'gpt-5.2'",
+    ):
+        _estimate_token_cost_usd(
+            settings={},
+            model_id="gpt-5.2",
+            provider_name="codex",
+            input_tokens=1_000,
+            output_tokens=100,
+        )
+
+
+def test_estimate_token_cost_usd_honors_zero_cache_pricing_override() -> None:
+    estimated_cost = _estimate_token_cost_usd(
+        settings={
+            "input_cost_per_1m_tokens": 3.0,
+            "output_cost_per_1m_tokens": 15.0,
+            "cache_read_input_cost_per_1m_tokens": 0.0,
+            "cache_creation_input_cost_per_1m_tokens": 0.0,
+        },
+        input_tokens=2_000,
+        output_tokens=0,
+        cache_creation_input_tokens=1_000,
+        cache_read_input_tokens=1_000,
+    )
+
+    assert estimated_cost == 0.0
+
+
+def test_estimate_token_cost_usd_uses_default_anthropic_model_pricing() -> None:
+    estimated_cost = _estimate_token_cost_usd(
+        settings={},
+        model_id="claude-sonnet-4-6",
+        provider_name="anthropic",
+        input_tokens=1_000,
+        output_tokens=500,
+        cache_creation_input_tokens=2_000,
+        cache_read_input_tokens=3_000,
+        input_tokens_include_cache_tokens=False,
+    )
+
+    assert estimated_cost == pytest.approx(0.0189)
+
+
+def test_estimate_token_cost_usd_uses_anthropic_one_hour_cache_write_pricing() -> None:
+    estimated_cost = _estimate_token_cost_usd(
+        settings={
+            "anthropic_cache_ttl": "1h",
+        },
+        model_id="claude-sonnet-4-6",
+        provider_name="anthropic",
+        input_tokens=1_000,
+        output_tokens=500,
+        cache_creation_input_tokens=2_000,
+        cache_read_input_tokens=3_000,
+        input_tokens_include_cache_tokens=False,
+        anthropic_cache_pricing=True,
+    )
+
+    assert estimated_cost == pytest.approx(0.0234)
 
 
 def test_format_messages_for_anthropic_does_not_embed_cache_markers() -> None:
@@ -467,6 +591,7 @@ async def test_codex_provider_generates_response_from_sse_items(
     )
     provider = CodexChatProvider(
         auth_file=auth_file,
+        prompt_cache_key="test-cache-key",
         http_client=http_client,
     )
 
@@ -487,6 +612,9 @@ async def test_codex_provider_generates_response_from_sse_items(
             settings={
                 "reasoning_effort": "high",
                 "max_tokens": 128,
+                "prompt_cache_retention": "24h",
+                "temperature": 0,
+                "top_p": 1,
             },
         ),
     )
@@ -505,9 +633,12 @@ async def test_codex_provider_generates_response_from_sse_items(
     assert response.usage.input_token_details == {
         "cached_tokens": 2,
     }
+    assert response.usage.cache_read_input_tokens == 2
+    assert response.usage.cache_creation_input_tokens == 0
     assert response.usage.output_token_details == {
         "reasoning_tokens": 3,
     }
+    assert response.usage.estimated_cost_usd == pytest.approx(0.0000955)
     stream_call = http_client.stream_calls[0]
     assert stream_call["url"] == "https://chatgpt.com/backend-api/codex/responses"
     assert stream_call["headers"]["ChatGPT-Account-Id"] == "account-123"
@@ -523,7 +654,7 @@ async def test_codex_provider_generates_response_from_sse_items(
         ],
         "store": False,
         "stream": True,
-        "max_output_tokens": 128,
+        "prompt_cache_key": "test-cache-key",
         "reasoning": {
             "effort": "high",
         },
@@ -631,6 +762,214 @@ async def test_codex_provider_replays_full_history_without_previous_response_id(
             "status": "completed",
         },
     ]
+
+
+@pytest.mark.asyncio
+async def test_codex_provider_supports_current_reasoning_summary_options(
+    tmp_path,
+) -> None:
+    auth_file = tmp_path / "codex-auth.json"
+    auth_file.write_text(
+        json.dumps(
+            {
+                "auth_mode": "chatgpt",
+                "tokens": {
+                    "access_token": _create_test_jwt(
+                        {
+                            "exp": 4_102_444_800,
+                            "https://api.openai.com/auth": {
+                                "chatgpt_account_id": "account-123",
+                            },
+                        },
+                    ),
+                    "refresh_token": "refresh-token",
+                    "account_id": "account-123",
+                },
+            },
+        ),
+    )
+    http_client = _FakeCodexHttpClient(
+        stream_responses=[
+            _FakeStreamResponse(
+                status_code=200,
+                lines=[
+                    'data: {"type":"response.output_item.done","item":{"id":"msg_1","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"OK"}]}}',
+                    'data: {"type":"response.completed","response":{"id":"resp_3","usage":{"input_tokens":8,"input_tokens_details":{"cached_tokens":0},"output_tokens":2,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":10}}}',
+                    "data: [DONE]",
+                ],
+            ),
+        ],
+    )
+    provider = CodexChatProvider(
+        auth_file=auth_file,
+        prompt_cache_key="test-cache-key",
+        http_client=http_client,
+    )
+
+    await provider.generate(
+        ProviderRequest(
+            model_id="gpt-5.4",
+            messages=[
+                ProviderMessage(
+                    role=ProviderMessageRole.USER,
+                    content="hello",
+                ),
+            ],
+            settings={
+                "reasoning_effort": "low",
+                "openai_reasoning_summary": "auto",
+                "openai_include_encrypted_reasoning": True,
+                "include": ["reasoning.encrypted_content"],
+            },
+        ),
+    )
+
+    payload = http_client.stream_calls[0]["json"]
+    assert payload["reasoning"] == {
+        "effort": "low",
+        "summary": "auto",
+    }
+    assert payload["include"] == [
+        "reasoning.encrypted_content",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_codex_provider_rejects_unknown_settings_before_request(
+    tmp_path,
+) -> None:
+    auth_file = tmp_path / "codex-auth.json"
+    auth_file.write_text(
+        json.dumps(
+            {
+                "auth_mode": "chatgpt",
+                "tokens": {
+                    "access_token": _create_test_jwt(
+                        {
+                            "exp": 4_102_444_800,
+                            "https://api.openai.com/auth": {
+                                "chatgpt_account_id": "account-123",
+                            },
+                        },
+                    ),
+                    "refresh_token": "refresh-token",
+                    "account_id": "account-123",
+                },
+            },
+        ),
+    )
+    http_client = _FakeCodexHttpClient()
+    provider = CodexChatProvider(
+        auth_file=auth_file,
+        http_client=http_client,
+    )
+
+    with pytest.raises(
+        ProviderConfigurationError,
+        match="Codex provider does not support settings: response_format",
+    ):
+        await provider.generate(
+            ProviderRequest(
+                model_id="gpt-5.4",
+                messages=[
+                    ProviderMessage(
+                        role=ProviderMessageRole.USER,
+                        content="hello",
+                    ),
+                ],
+                settings={
+                    "response_format": {
+                        "type": "json_object",
+                    },
+                },
+            ),
+        )
+
+    assert http_client.post_calls == []
+    assert http_client.stream_calls == []
+
+
+@pytest.mark.asyncio
+async def test_codex_provider_rejects_priority_service_tier_before_request(
+    tmp_path,
+) -> None:
+    auth_file = tmp_path / "codex-auth.json"
+    auth_file.write_text(
+        json.dumps(
+            {
+                "auth_mode": "chatgpt",
+                "tokens": {
+                    "access_token": _create_test_jwt(
+                        {
+                            "exp": 1,
+                            "https://api.openai.com/auth": {
+                                "chatgpt_account_id": "account-123",
+                            },
+                        },
+                    ),
+                    "refresh_token": "refresh-token",
+                    "account_id": "account-123",
+                },
+            },
+        ),
+    )
+    http_client = _FakeCodexHttpClient()
+    provider = CodexChatProvider(
+        auth_file=auth_file,
+        http_client=http_client,
+    )
+
+    with pytest.raises(
+        ProviderConfigurationError,
+        match="Codex provider priority service_tier is disabled",
+    ):
+        await provider.generate(
+            ProviderRequest(
+                model_id="gpt-5.4",
+                messages=[
+                    ProviderMessage(
+                        role=ProviderMessageRole.USER,
+                        content="hello",
+                    ),
+                ],
+                settings={
+                    "service_tier": "priority",
+                },
+            ),
+        )
+
+    assert http_client.post_calls == []
+    assert http_client.stream_calls == []
+
+
+@pytest.mark.asyncio
+async def test_codex_provider_rejects_missing_pricing_before_request(
+    tmp_path,
+) -> None:
+    http_client = _FakeCodexHttpClient()
+    provider = CodexChatProvider(
+        auth_file=tmp_path / "missing-codex-auth.json",
+        http_client=http_client,
+    )
+
+    with pytest.raises(
+        ProviderConfigurationError,
+        match="Missing pricing for provider 'codex' model 'gpt-5.2'",
+    ):
+        await provider.generate(
+            ProviderRequest(
+                model_id="gpt-5.2",
+                messages=[
+                    ProviderMessage(
+                        role=ProviderMessageRole.USER,
+                        content="hello",
+                    ),
+                ],
+            ),
+        )
+
+    assert http_client.post_calls == []
+    assert http_client.stream_calls == []
 
 
 @pytest.mark.asyncio
@@ -817,7 +1156,7 @@ async def test_openai_provider_error_preserves_sdk_message() -> None:
     ):
         await provider.generate(
             ProviderRequest(
-                model_id="gpt-test",
+                model_id="gpt-5.4",
                 messages=[
                     ProviderMessage(
                         role=ProviderMessageRole.USER,
@@ -826,6 +1165,163 @@ async def test_openai_provider_error_preserves_sdk_message() -> None:
                 ],
             ),
         )
+
+
+@pytest.mark.asyncio
+async def test_openai_provider_chat_completions_strips_internal_settings() -> None:
+    provider = OpenAIChatProvider(
+        api_key="test-key",
+    )
+    provider.client.chat.completions.create = AsyncMock(
+        return_value=SimpleNamespace(
+            id="chatcmpl-test",
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        content="hello",
+                        tool_calls=[],
+                        reasoning=None,
+                    ),
+                ),
+            ],
+            usage=SimpleNamespace(
+                prompt_tokens=1,
+                completion_tokens=1,
+                total_tokens=2,
+            ),
+        ),
+    )
+
+    await provider.generate(
+        ProviderRequest(
+            model_id="gpt-5.4",
+            messages=[
+                ProviderMessage(
+                    role=ProviderMessageRole.USER,
+                    content="hello",
+                ),
+            ],
+            settings={
+                "openai_api_mode": "chat_completions",
+                "openai_use_previous_response_id": True,
+                "output_config": {
+                    "effort": "high",
+                },
+                "thinking": {
+                    "type": "adaptive",
+                },
+            },
+        ),
+    )
+
+    create_kwargs = provider.client.chat.completions.create.await_args.kwargs
+    assert "openai_api_mode" not in create_kwargs
+    assert "openai_use_previous_response_id" not in create_kwargs
+    assert "output_config" not in create_kwargs
+    assert "thinking" not in create_kwargs
+
+
+@pytest.mark.asyncio
+async def test_openai_provider_rejects_priority_service_tier() -> None:
+    provider = OpenAIChatProvider(
+        api_key="test-key",
+        default_api_mode="responses",
+    )
+    provider.client.responses.create = AsyncMock()
+
+    with pytest.raises(
+        ProviderConfigurationError,
+        match="OpenAI provider priority service_tier is disabled",
+    ):
+        await provider.generate(
+            ProviderRequest(
+                model_id="gpt-5.4",
+                messages=[
+                    ProviderMessage(
+                        role=ProviderMessageRole.USER,
+                        content="hello",
+                    ),
+                ],
+                settings={
+                    "service_tier": "priority",
+                },
+            ),
+        )
+
+    provider.client.responses.create.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_openai_provider_rejects_missing_pricing_before_request() -> None:
+    provider = OpenAIChatProvider(
+        api_key="test-key",
+    )
+    provider.client.chat.completions.create = AsyncMock()
+
+    with pytest.raises(
+        ProviderConfigurationError,
+        match="Missing pricing for provider 'openai' model 'gpt-5.2'",
+    ):
+        await provider.generate(
+            ProviderRequest(
+                model_id="gpt-5.2",
+                messages=[
+                    ProviderMessage(
+                        role=ProviderMessageRole.USER,
+                        content="hello",
+                    ),
+                ],
+            ),
+        )
+
+    provider.client.chat.completions.create.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_openai_provider_allows_explicit_pricing_for_unknown_model() -> None:
+    provider = OpenAIChatProvider(
+        api_key="test-key",
+    )
+    provider.client.chat.completions.create = AsyncMock(
+        return_value=SimpleNamespace(
+            id="chatcmpl-test",
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        content="hello",
+                        tool_calls=[],
+                        reasoning=None,
+                    ),
+                ),
+            ],
+            usage=SimpleNamespace(
+                prompt_tokens=1_000,
+                completion_tokens=500,
+                total_tokens=1_500,
+            ),
+        ),
+    )
+
+    response = await provider.generate(
+        ProviderRequest(
+            model_id="gpt-test",
+            messages=[
+                ProviderMessage(
+                    role=ProviderMessageRole.USER,
+                    content="hello",
+                ),
+            ],
+            settings={
+                "input_cost_per_1m_tokens": 3.0,
+                "output_cost_per_1m_tokens": 15.0,
+            },
+        ),
+    )
+
+    create_kwargs = provider.client.chat.completions.create.await_args.kwargs
+    assert "input_cost_per_1m_tokens" not in create_kwargs
+    assert "output_cost_per_1m_tokens" not in create_kwargs
+    assert response.usage.estimated_cost_usd == pytest.approx(0.0105)
 
 
 @pytest.mark.asyncio
@@ -842,7 +1338,7 @@ async def test_openai_provider_can_be_locked_to_responses_only() -> None:
     ):
         await provider.generate(
             ProviderRequest(
-                model_id="gpt-test",
+                model_id="gpt-5.4",
                 messages=[
                     ProviderMessage(
                         role=ProviderMessageRole.USER,
@@ -890,7 +1386,7 @@ async def test_openai_provider_records_chat_completion_token_breakdown() -> None
 
     response = await provider.generate(
         ProviderRequest(
-            model_id="gpt-test",
+            model_id="gpt-5.4",
             messages=[
                 ProviderMessage(
                     role=ProviderMessageRole.USER,
@@ -914,6 +1410,7 @@ async def test_openai_provider_records_chat_completion_token_breakdown() -> None
 async def test_openai_provider_responses_api_returns_summary_and_encrypted_reasoning() -> None:
     provider = OpenAIChatProvider(
         api_key="test-key",
+        prompt_cache_key="test-cache-key",
     )
     provider.client.responses.create = AsyncMock(
         return_value=SimpleNamespace(
@@ -955,7 +1452,7 @@ async def test_openai_provider_responses_api_returns_summary_and_encrypted_reaso
 
     response = await provider.generate(
         ProviderRequest(
-            model_id="gpt-test",
+            model_id="gpt-5.4",
             messages=[
                 ProviderMessage(
                     role=ProviderMessageRole.USER,
@@ -987,6 +1484,7 @@ async def test_openai_provider_responses_api_returns_summary_and_encrypted_reaso
         "reasoning_tokens": 33,
     }
     create_kwargs = provider.client.responses.create.await_args.kwargs
+    assert create_kwargs["prompt_cache_key"] == "test-cache-key"
     assert create_kwargs["include"] == ["reasoning.encrypted_content"]
     assert create_kwargs["reasoning"] == {
         "summary": "auto",
@@ -1044,7 +1542,7 @@ async def test_openai_provider_responses_api_uses_previous_response_id_for_follo
 
     first_response = await provider.generate(
         ProviderRequest(
-            model_id="gpt-test",
+            model_id="gpt-5.4",
             messages=[
                 ProviderMessage(
                     role=ProviderMessageRole.USER,
@@ -1059,7 +1557,7 @@ async def test_openai_provider_responses_api_uses_previous_response_id_for_follo
     )
     await provider.generate(
         ProviderRequest(
-            model_id="gpt-test",
+            model_id="gpt-5.4",
             messages=[
                 ProviderMessage(
                     role=ProviderMessageRole.USER,
@@ -1116,7 +1614,7 @@ async def test_openai_provider_responses_api_replays_encrypted_reasoning_without
 
     await provider.generate(
         ProviderRequest(
-            model_id="gpt-test",
+            model_id="gpt-5.4",
             messages=[
                 ProviderMessage(
                     role=ProviderMessageRole.USER,
@@ -1212,7 +1710,7 @@ async def test_anthropic_provider_sends_output_config_directly() -> None:
 
     response = await provider.generate(
         ProviderRequest(
-            model_id="claude-test",
+            model_id="claude-sonnet-4-6",
             messages=[
                 ProviderMessage(
                     role=ProviderMessageRole.USER,
@@ -1266,7 +1764,7 @@ async def test_anthropic_provider_sends_cache_control_directly_when_enabled() ->
 
     await provider.generate(
         ProviderRequest(
-            model_id="claude-test",
+            model_id="claude-sonnet-4-6",
             messages=[
                 ProviderMessage(
                     role=ProviderMessageRole.USER,
@@ -1288,6 +1786,75 @@ async def test_anthropic_provider_sends_cache_control_directly_when_enabled() ->
 
 
 @pytest.mark.asyncio
+async def test_anthropic_provider_rejects_missing_pricing_before_request() -> None:
+    provider = AnthropicChatProvider(
+        api_key="test-key",
+    )
+    provider.client.messages.create = AsyncMock()
+
+    with pytest.raises(
+        ProviderConfigurationError,
+        match="Missing pricing for provider 'anthropic' model 'claude-test'",
+    ):
+        await provider.generate(
+            ProviderRequest(
+                model_id="claude-test",
+                messages=[
+                    ProviderMessage(
+                        role=ProviderMessageRole.USER,
+                        content="hello",
+                    ),
+                ],
+            ),
+        )
+
+    provider.client.messages.create.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_anthropic_provider_allows_explicit_pricing_for_unknown_model() -> None:
+    provider = AnthropicChatProvider(
+        api_key="test-key",
+    )
+    provider.client.messages.create = AsyncMock(
+        return_value=SimpleNamespace(
+            content=[
+                SimpleNamespace(
+                    type="text",
+                    text="hello",
+                ),
+            ],
+            usage=SimpleNamespace(
+                input_tokens=1_000,
+                output_tokens=500,
+            ),
+            stop_reason="end_turn",
+        ),
+    )
+
+    response = await provider.generate(
+        ProviderRequest(
+            model_id="claude-test",
+            messages=[
+                ProviderMessage(
+                    role=ProviderMessageRole.USER,
+                    content="hello",
+                ),
+            ],
+            settings={
+                "input_cost_per_1m_tokens": 3.0,
+                "output_cost_per_1m_tokens": 15.0,
+            },
+        ),
+    )
+
+    call_kwargs = provider.client.messages.create.await_args.kwargs
+    assert "input_cost_per_1m_tokens" not in call_kwargs
+    assert "output_cost_per_1m_tokens" not in call_kwargs
+    assert response.usage.estimated_cost_usd == pytest.approx(0.0105)
+
+
+@pytest.mark.asyncio
 async def test_anthropic_provider_error_preserves_sdk_message() -> None:
     provider = AnthropicChatProvider(
         api_key="test-key",
@@ -1304,7 +1871,7 @@ async def test_anthropic_provider_error_preserves_sdk_message() -> None:
     ):
         await provider.generate(
             ProviderRequest(
-                model_id="claude-test",
+                model_id="claude-sonnet-4-6",
                 messages=[
                     ProviderMessage(
                         role=ProviderMessageRole.USER,

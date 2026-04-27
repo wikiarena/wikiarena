@@ -11,6 +11,7 @@ import { attachTitleAutocomplete } from "./lib/autocomplete";
 import { formatDurationMs, formatInteger } from "./lib/format";
 import { renderPathGraph } from "./lib/path-graph";
 import { WikipediaRandomService } from "./lib/random-pages";
+import { createRandomTitleField } from "./lib/title-field";
 import { WikipediaSearchService } from "./lib/wikipedia-search";
 
 type SolveButtonMode = "solve" | "another" | "solving";
@@ -18,12 +19,6 @@ type SolveButtonMode = "solve" | "another" | "solving";
 interface ArticlePair {
   startTitle: string;
   targetTitle: string;
-}
-
-interface RandomFieldController {
-  setDisabled(disabled: boolean): void;
-  setValue(title: string): void;
-  resolveTitle(): Promise<string>;
 }
 
 function getRequiredElement<T extends HTMLElement>(id: string): T {
@@ -96,159 +91,6 @@ function renderSinglePathTimeline(resultsContainer: HTMLElement, path: string[])
       <ol class="timeline-list">${itemMarkup}</ol>
     </div>
   `;
-}
-
-function createRandomFieldController(options: {
-  inputElement: HTMLInputElement;
-  buttonElement: HTMLButtonElement;
-  boxElement: HTMLElement;
-  randomService: WikipediaRandomService;
-  onValueChange: () => void;
-}): RandomFieldController {
-  const {
-    inputElement,
-    buttonElement,
-    boxElement,
-    randomService,
-    onValueChange,
-  } = options;
-
-  const defaultPlaceholder = inputElement.placeholder;
-
-  let cyclingCallback: ((title: string) => void) | null = null;
-  let isRandomizing = false;
-  let currentDisplayedTitle = "";
-
-  function commitTitle(title: string): string {
-    const resolvedTitle = title.trim();
-    if (!resolvedTitle) {
-      return "";
-    }
-
-    inputElement.value = resolvedTitle;
-    inputElement.placeholder = defaultPlaceholder;
-    currentDisplayedTitle = resolvedTitle;
-    stopCycling();
-    onValueChange();
-    return resolvedTitle;
-  }
-
-  function startCycling(): void {
-    if (cyclingCallback !== null || isRandomizing || inputElement.value.trim() !== "") {
-      return;
-    }
-
-    cyclingCallback = (title: string) => {
-      if (isRandomizing || document.activeElement === inputElement || inputElement.value.trim() !== "") {
-        return;
-      }
-      currentDisplayedTitle = title;
-      inputElement.placeholder = title;
-    };
-    randomService.registerCyclingCallback(cyclingCallback);
-  }
-
-  function stopCycling(): void {
-    if (cyclingCallback !== null) {
-      randomService.unregisterCyclingCallback(cyclingCallback);
-      cyclingCallback = null;
-    }
-
-    if (!isRandomizing) {
-      inputElement.placeholder = defaultPlaceholder;
-    }
-  }
-
-  async function randomizeTitle(): Promise<void> {
-    if (isRandomizing || buttonElement.disabled) {
-      return;
-    }
-
-    isRandomizing = true;
-    stopCycling();
-    boxElement.classList.add("is-randomizing");
-    buttonElement.disabled = true;
-    inputElement.value = "";
-    onValueChange();
-
-    try {
-      const finalTitle = await randomService.startSlotMachine((title, spinning) => {
-        currentDisplayedTitle = title;
-        if (spinning) {
-          inputElement.placeholder = title;
-          return;
-        }
-
-        commitTitle(title);
-      });
-      commitTitle(finalTitle);
-    } finally {
-      isRandomizing = false;
-      boxElement.classList.remove("is-randomizing");
-      buttonElement.disabled = false;
-      if (inputElement.value.trim() === "") {
-        startCycling();
-      }
-    }
-  }
-
-  inputElement.addEventListener("focus", () => {
-    stopCycling();
-  });
-
-  inputElement.addEventListener("blur", () => {
-    window.setTimeout(() => {
-      if (inputElement.value.trim() === "" && !isRandomizing) {
-        startCycling();
-      }
-    }, 80);
-  });
-
-  inputElement.addEventListener("input", () => {
-    currentDisplayedTitle = inputElement.value.trim() || currentDisplayedTitle;
-    if (inputElement.value.trim() === "") {
-      startCycling();
-    } else {
-      stopCycling();
-    }
-    onValueChange();
-  });
-
-  buttonElement.addEventListener("click", () => {
-    void randomizeTitle();
-  });
-
-  startCycling();
-
-  return {
-    setDisabled(disabled: boolean): void {
-      buttonElement.disabled = disabled;
-      if (disabled) {
-        stopCycling();
-        return;
-      }
-      if (inputElement.value.trim() === "" && !isRandomizing) {
-        startCycling();
-      }
-    },
-    setValue(title: string): void {
-      commitTitle(title);
-    },
-    async resolveTitle(): Promise<string> {
-      const typedTitle = inputElement.value.trim();
-      if (typedTitle) {
-        currentDisplayedTitle = typedTitle;
-        return typedTitle;
-      }
-
-      if (currentDisplayedTitle.trim()) {
-        return commitTitle(currentDisplayedTitle);
-      }
-
-      const randomTitle = await randomService.getRandomTitle();
-      return commitTitle(randomTitle);
-    },
-  };
 }
 
 function renderSolveResponse(
@@ -408,14 +250,14 @@ async function initializeHomePage(): Promise<void> {
     suggestionListElement: targetSuggestions,
   });
 
-  const startRandomController = createRandomFieldController({
+  const startRandomController = createRandomTitleField({
     inputElement: startInput,
     buttonElement: startRandomButton,
     boxElement: startBoxElement,
     randomService: startFieldRandomService,
     onValueChange: updateSolveButtonState,
   });
-  const targetRandomController = createRandomFieldController({
+  const targetRandomController = createRandomTitleField({
     inputElement: targetInput,
     buttonElement: targetRandomButton,
     boxElement: targetBoxElement,

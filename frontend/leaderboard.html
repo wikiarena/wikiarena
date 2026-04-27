@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WikiArena Leaderboard</title>
+    <meta
+      name="description"
+      content="Official WikiArena benchmark results, leaderboard rankings, race replays, and analysis."
+    />
+    <link rel="icon" type="image/png" sizes="32x32" href="./assets/icons/wikiarena-favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="./assets/icons/wikiarena-favicon-16.png" />
+    <link rel="apple-touch-icon" href="./assets/icons/wikiarena_logo2.png" />
+  </head>
+  <body class="page-home page-leaderboard">
+    <div class="page-frame leaderboard-frame">
+      <header class="topbar reveal reveal-delay-1">
+        <a class="brand" href="./index.html" aria-label="WikiArena home">
+          <img class="brand-mark" src="./assets/icons/wikiarena_logo2.png" alt="WikiArena logo" />
+          <span class="brand-lockup">
+            <span class="brand-name">wikiarena</span>
+          </span>
+        </a>
+
+        <nav class="nav-links nav-links-primary" aria-label="Primary">
+          <a class="nav-link" href="./race.html">Race</a>
+          <a class="nav-link is-current" href="./leaderboard.html">Leaderboard</a>
+          <a class="nav-link" href="./solver.html">Solver</a>
+        </nav>
+
+        <nav class="nav-links nav-links-secondary" aria-label="External">
+          <a class="nav-link github-link" href="https://github.com/wikiarena/wikiarena" target="_blank" rel="noreferrer" aria-label="WikiArena on GitHub">
+            <img src="./assets/providers/github.svg" alt="" />
+          </a>
+        </nav>
+      </header>
+
+      <main class="home-main leaderboard-main">
+        <section class="leaderboard-hero reveal reveal-delay-2">
+          <div>
+            <h1 class="display-title display-title-minimal">wikiarena v0.0</h1>
+            <p class="lede">Official results from LLMs racing through Wikipedia.</p>
+          </div>
+          <div class="benchmark-summary-card">
+            <span class="meta-token">enwiki-20260401</span>
+          </div>
+        </section>
+
+        <section class="leaderboard-panel reveal reveal-delay-3" aria-labelledby="leaderboard-title">
+          <div class="section-header-simple">
+            <div>
+              <p class="kicker">rankings</p>
+              <h2 id="leaderboard-title" class="section-title">Leaderboard</h2>
+            </div>
+            <p id="leaderboard-source-note" class="note-copy hidden">Loading current benchmark snapshot...</p>
+          </div>
+
+          <div class="leaderboard-table" role="table" aria-label="Official WikiArena leaderboard">
+            <div class="leaderboard-row leaderboard-row-header" role="row">
+              <span role="columnheader">Rank</span>
+              <span role="columnheader">Model</span>
+              <span role="columnheader">Elo</span>
+              <span role="columnheader">Task success rate</span>
+              <span role="columnheader">Step error rate</span>
+              <span role="columnheader">Total API Time</span>
+            </div>
+            <div id="leaderboard-rows"></div>
+          </div>
+        </section>
+
+        <section class="leaderboard-panel reveal reveal-delay-3" aria-labelledby="race-browser-title">
+          <div class="section-header-simple">
+            <div>
+              <p class="kicker">benchmark replays</p>
+              <h2 id="race-browser-title" class="section-title">Races worth watching</h2>
+            </div>
+            <label class="race-browser-search">
+              <span class="sr-only">Search benchmark races</span>
+              <input id="race-browser-search" class="title-input race-browser-input" type="search" placeholder="Search start or target page" />
+            </label>
+          </div>
+          <p id="race-browser-note" class="note-copy hidden">Loading benchmark race manifest...</p>
+          <div id="race-browser-sections" class="race-browser-sections" aria-live="polite"></div>
+        </section>
+
+      </main>
+    </div>
+
+    <script type="module" src="/src/leaderboard.ts"></script>
+  </body>
+</html>

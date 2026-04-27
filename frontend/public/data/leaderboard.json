@@ -1,0 +1,54 @@
+{
+  "benchmarkId": "wikiarena_v0",
+  "snapshotId": "enwiki-20260401",
+  "sourcePath": "dumps/eval_wikiarena_v0_results.jsonl",
+  "artifactDir": "artifacts/benchmark/v0",
+  "generatedFromRuns": 1000,
+  "totalRaces": 500,
+  "rulesetHashes": [
+    "e6f25d2836ac4eea7dc74ea92ee61a2507f0ace8a4785e5edd4f24a035ff7cc9"
+  ],
+  "tasksetHashes": [
+    "9e7c178197819d4b1d6ec529c0a964fecb371a8d0f8cc2b3a2dc36577e74ad7c"
+  ],
+  "participants": [
+    {
+      "participantId": "gpt_5_5",
+      "displayName": "GPT-5.5",
+      "runs": 500,
+      "rankingEligibleRuns": 500,
+      "successes": 315,
+      "modelFailures": 185,
+      "systemFailures": 0,
+      "totalEstimatedCostUsd": 1856.048927,
+      "estimatedCostUsdPerSuccess": 5.892218815873016,
+      "totalStepAttempts": 12567,
+      "totalInvalidAttempts": 903,
+      "stepErrorRate": 0.07185485796132729,
+      "totalModelResponseTimeMs": 80813849.40269983,
+      "pairwiseWins": 182.0,
+      "pairwiseLosses": 72.0,
+      "pairwiseDraws": 246.0,
+      "elo": 1235
+    },
+    {
+      "participantId": "claude_sonnet_4_6",
+      "displayName": "Claude Sonnet 4.6",
+      "runs": 500,
+      "rankingEligibleRuns": 500,
+      "successes": 255,
+      "modelFailures": 245,
+      "systemFailures": 0,
+      "totalEstimatedCostUsd": 577.43452725,
+      "estimatedCostUsdPerSuccess": 2.264449126470588,
+      "totalStepAttempts": 16354,
+      "totalInvalidAttempts": 2829,
+      "stepErrorRate": 0.1729852023969671,
+      "totalModelResponseTimeMs": 67143795.85933065,
+      "pairwiseWins": 72.0,
+      "pairwiseLosses": 182.0,
+      "pairwiseDraws": 246.0,
+      "elo": 1157
+    }
+  ]
+}

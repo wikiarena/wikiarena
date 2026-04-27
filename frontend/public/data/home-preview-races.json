@@ -1,0 +1,424 @@
+{
+  "generatedAt": "2026-04-26T22:34:28.320622+00:00",
+  "races": [
+    {
+      "pathLength": 3,
+      "paths": [
+        [
+          "Matcha",
+          "Matcha latte",
+          "Performative male",
+          "Labubu"
+        ],
+        [
+          "Matcha",
+          "Tea party",
+          "Stuffed toy",
+          "Labubu"
+        ],
+        [
+          "Matcha",
+          "Yakiniku",
+          "Numeric substitution in Japanese",
+          "Labubu"
+        ]
+      ],
+      "startTitle": "Matcha",
+      "targetTitle": "Labubu"
+    },
+    {
+      "pathLength": 3,
+      "paths": [
+        [
+          "Turing machine",
+          "Alan Turing",
+          "Timeline of computer viruses and worms",
+          "Pok\u00e9mon"
+        ],
+        [
+          "Turing machine",
+          "Assembly language",
+          "Homebrew (video games)",
+          "Pok\u00e9mon"
+        ],
+        [
+          "Turing machine",
+          "Automaton",
+          "Golem",
+          "Pok\u00e9mon"
+        ],
+        [
+          "Turing machine",
+          "Charles Babbage",
+          "Timeline of computer viruses and worms",
+          "Pok\u00e9mon"
+        ],
+        [
+          "Turing machine",
+          "Claude Shannon",
+          "Timeline of computer viruses and worms",
+          "Pok\u00e9mon"
+        ],
+        [
+          "Turing machine",
+          "Computer",
+          "List of fictional computers",
+          "Pok\u00e9mon"
+        ],
+        [
+          "Turing machine",
+          "Context-free grammar",
+          "Palindrome",
+          "Pok\u00e9mon"
+        ],
+        [
+          "Turing machine",
+          "Deterministic context-free language",
+          "Palindrome",
+          "Pok\u00e9mon"
+        ]
+      ],
+      "startTitle": "Turing machine",
+      "targetTitle": "Pok\u00e9mon"
+    },
+    {
+      "pathLength": 3,
+      "paths": [
+        [
+          "Deep learning",
+          "AI alignment",
+          "Technological singularity",
+          "Singularity"
+        ],
+        [
+          "Deep learning",
+          "AI boom",
+          "Technological singularity",
+          "Singularity"
+        ],
+        [
+          "Deep learning",
+          "AI safety",
+          "Technological singularity",
+          "Singularity"
+        ],
+        [
+          "Deep learning",
+          "AI takeover",
+          "Technological singularity",
+          "Singularity"
+        ],
+        [
+          "Deep learning",
+          "Alan Turing",
+          "Technological singularity",
+          "Singularity"
+        ],
+        [
+          "Deep learning",
+          "Applications of artificial intelligence",
+          "Technological singularity",
+          "Singularity"
+        ],
+        [
+          "Deep learning",
+          "Artificial Intelligence Act",
+          "Technological singularity",
+          "Singularity"
+        ],
+        [
+          "Deep learning",
+          "Artificial Intelligence Cold War",
+          "Technological singularity",
+          "Singularity"
+        ]
+      ],
+      "startTitle": "Deep learning",
+      "targetTitle": "Singularity"
+    },
+    {
+      "pathLength": 3,
+      "paths": [
+        [
+          "Isaac Newton",
+          "Alexander Graham Bell",
+          "Semiconductor device",
+          "ASML"
+        ],
+        [
+          "Isaac Newton",
+          "Alkahest",
+          "Grifols",
+          "ASML"
+        ],
+        [
+          "Isaac Newton",
+          "Amazon Standard Identification Number",
+          "Amazon (company)",
+          "ASML"
+        ],
+        [
+          "Isaac Newton",
+          "Ancient Greek",
+          "Netherlands",
+          "ASML"
+        ],
+        [
+          "Isaac Newton",
+          "Angstrom",
+          "Integrated circuit",
+          "ASML"
+        ],
+        [
+          "Isaac Newton",
+          "Anne Robert Jacques Turgot",
+          "Netherlands",
+          "ASML"
+        ],
+        [
+          "Isaac Newton",
+          "Anthony Ashley-Cooper, 3rd Earl of Shaftesbury",
+          "Netherlands",
+          "ASML"
+        ],
+        [
+          "Isaac Newton",
+          "Arthur Schopenhauer",
+          "Bernardo Kastrup",
+          "ASML"
+        ]
+      ],
+      "startTitle": "Isaac Newton",
+      "targetTitle": "ASML"
+    },
+    {
+      "pathLength": 4,
+      "paths": [
+        [
+          "Mechanistic interpretability",
+          "AAAI Conference on Artificial Intelligence",
+          "Artificial intelligence",
+          "2001: A Space Odyssey",
+          "Hero's journey"
+        ],
+        [
+          "Mechanistic interpretability",
+          "AI safety",
+          "15.ai",
+          "2001: A Space Odyssey",
+          "Hero's journey"
+        ],
+        [
+          "Mechanistic interpretability",
+          "AlexNet",
+          "15.ai",
+          "2001: A Space Odyssey",
+          "Hero's journey"
+        ],
+        [
+          "Mechanistic interpretability",
+          "Anomaly detection",
+          "LMU Munich",
+          "Joseph Campbell",
+          "Hero's journey"
+        ],
+        [
+          "Mechanistic interpretability",
+          "Anthropic",
+          "15.ai",
+          "2001: A Space Odyssey",
+          "Hero's journey"
+        ],
+        [
+          "Mechanistic interpretability",
+          "Apprenticeship learning",
+          "Artificial intelligence",
+          "2001: A Space Odyssey",
+          "Hero's journey"
+        ],
+        [
+          "Mechanistic interpretability",
+          "Association for Computational Linguistics",
+          "China",
+          "Culture hero",
+          "Hero's journey"
+        ],
+        [
+          "Mechanistic interpretability",
+          "Association rule learning",
+          "Product placement",
+          "2001: A Space Odyssey",
+          "Hero's journey"
+        ]
+      ],
+      "startTitle": "Mechanistic interpretability",
+      "targetTitle": "Hero's journey"
+    },
+    {
+      "pathLength": 3,
+      "paths": [
+        [
+          "Unicellular organism",
+          "Abiogenesis",
+          "Extraterrestrial life",
+          "Dyson sphere"
+        ],
+        [
+          "Unicellular organism",
+          "Adaptation",
+          "Julian Huxley",
+          "Dyson sphere"
+        ],
+        [
+          "Unicellular organism",
+          "Ageing",
+          "Transhumanist politics",
+          "Dyson sphere"
+        ],
+        [
+          "Unicellular organism",
+          "Alternatives to Darwinian evolution",
+          "Pierre Teilhard de Chardin",
+          "Dyson sphere"
+        ],
+        [
+          "Unicellular organism",
+          "Altruism (biology)",
+          "Julian Huxley",
+          "Dyson sphere"
+        ],
+        [
+          "Unicellular organism",
+          "Amoebozoa",
+          "Extraterrestrial life",
+          "Dyson sphere"
+        ],
+        [
+          "Unicellular organism",
+          "Archaea",
+          "Extraterrestrial life",
+          "Dyson sphere"
+        ],
+        [
+          "Unicellular organism",
+          "Archean",
+          "Sphere",
+          "Dyson sphere"
+        ]
+      ],
+      "startTitle": "Unicellular organism",
+      "targetTitle": "Dyson sphere"
+    },
+    {
+      "pathLength": 3,
+      "paths": [
+        [
+          "Claude Shannon",
+          "Ada Lovelace",
+          "William Gibson",
+          "Dune (novel)"
+        ],
+        [
+          "Claude Shannon",
+          "Alfred Sturtevant",
+          "Eugenics",
+          "Dune (novel)"
+        ],
+        [
+          "Claude Shannon",
+          "American Academy of Achievement",
+          "Carl Sagan",
+          "Dune (novel)"
+        ],
+        [
+          "Claude Shannon",
+          "Andrew Hodges",
+          "Academy Award for Best Adapted Screenplay",
+          "Dune (novel)"
+        ],
+        [
+          "Claude Shannon",
+          "Artificial intelligence",
+          "Darwin among the Machines",
+          "Dune (novel)"
+        ],
+        [
+          "Claude Shannon",
+          "Atheism",
+          "Conceptions of God",
+          "Dune (novel)"
+        ],
+        [
+          "Claude Shannon",
+          "Barbara McClintock",
+          "Octavia E. Butler",
+          "Dune (novel)"
+        ],
+        [
+          "Claude Shannon",
+          "Ben Barzman",
+          "Science fiction",
+          "Dune (novel)"
+        ]
+      ],
+      "startTitle": "Claude Shannon",
+      "targetTitle": "Dune (novel)"
+    },
+    {
+      "pathLength": 3,
+      "paths": [
+        [
+          "Thomas Kuhn",
+          "A priori and a posteriori",
+          "Logic in computer science",
+          "Tensor Processing Unit"
+        ],
+        [
+          "Thomas Kuhn",
+          "Adolf Gr\u00fcnbaum",
+          "YouTube",
+          "Tensor Processing Unit"
+        ],
+        [
+          "Thomas Kuhn",
+          "Alasdair MacIntyre",
+          "Ethics of artificial intelligence",
+          "Tensor Processing Unit"
+        ],
+        [
+          "Thomas Kuhn",
+          "Alice Crary",
+          "Ethics of artificial intelligence",
+          "Tensor Processing Unit"
+        ],
+        [
+          "Thomas Kuhn",
+          "Alternative hypothesis",
+          "Loss function",
+          "Tensor Processing Unit"
+        ],
+        [
+          "Thomas Kuhn",
+          "Alvin Plantinga",
+          "YouTube",
+          "Tensor Processing Unit"
+        ],
+        [
+          "Thomas Kuhn",
+          "Analytic\u2013synthetic distinction",
+          "Logic in computer science",
+          "Tensor Processing Unit"
+        ],
+        [
+          "Thomas Kuhn",
+          "Bas van Fraassen",
+          "Logic in computer science",
+          "Tensor Processing Unit"
+        ]
+      ],
+      "startTitle": "Thomas Kuhn",
+      "targetTitle": "Tensor Processing Unit"
+    }
+  ],
+  "snapshotId": "enwiki-20260401"
+}

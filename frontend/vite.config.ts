@@ -6,7 +6,10 @@ export default defineConfig({
   build: {
     rollupOptions: {
       input: {
-        solver: resolve(__dirname, "index.html"),
+        home: resolve(__dirname, "index.html"),
+        leaderboard: resolve(__dirname, "leaderboard.html"),
+        race: resolve(__dirname, "race.html"),
+        solver: resolve(__dirname, "solver.html"),
       },
     },
   },

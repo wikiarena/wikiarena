@@ -3,18 +3,21 @@ from datetime import datetime
 import pytest
 from pydantic import ValidationError
 
-from wikiarena.protocol import HarnessConfig
-from wikiarena.protocol import ResponseContract
-from wikiarena.protocol import NavigationRules
-from wikiarena.protocol import RunResult
-from wikiarena.protocol import SolverShortestPath
-from wikiarena.protocol import StepAttemptRecord
-from wikiarena.protocol import StepOutcome
-from wikiarena.protocol import TaskSpec
-from wikiarena.protocol import TaskExecutionAnnotation
-from wikiarena.protocol import TaskExecutionAnnotationStatus
-from wikiarena.protocol import TerminalOutcome
-from wikiarena.protocol import TerminationReason
+from wikiarena.protocol import (
+    HarnessConfig,
+    ModelCallMetrics,
+    NavigationRules,
+    ResponseContract,
+    RunResult,
+    SolverShortestPath,
+    StepAttemptRecord,
+    StepOutcome,
+    TaskExecutionAnnotation,
+    TaskExecutionAnnotationStatus,
+    TaskSpec,
+    TerminalOutcome,
+    TerminationReason,
+)
 
 
 def test_task_spec_rejects_same_start_and_target_title() -> None:
@@ -137,6 +140,9 @@ def test_run_result_derives_counts_and_ranking_for_success() -> None:
                 rejection_reason_code="rule.link_not_present",
                 consumed_invalid_budget=True,
                 consumed_step_budget=False,
+                model_metrics=ModelCallMetrics(
+                    estimated_cost_usd=0.01,
+                ),
             ),
             StepAttemptRecord(
                 step_index=2,
@@ -148,6 +154,9 @@ def test_run_result_derives_counts_and_ranking_for_success() -> None:
                 outcome=StepOutcome.MOVE_COMMITTED,
                 consumed_invalid_budget=False,
                 consumed_step_budget=True,
+                model_metrics=ModelCallMetrics(
+                    estimated_cost_usd=0.02,
+                ),
             ),
         ],
         started_at=datetime(2026, 1, 1, 0, 0, 0),
@@ -159,6 +168,7 @@ def test_run_result_derives_counts_and_ranking_for_success() -> None:
     assert run_result.total_invalid_attempts == 1
     assert run_result.ranking_eligible is True
     assert run_result.ranking_exclusion_reason is None
+    assert run_result.estimated_cost_usd == pytest.approx(0.03)
     assert run_result.duration_ms == 1000.0
     assert len(run_result.committed_moves) == 1
 

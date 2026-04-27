@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WikiArena Solver</title>
+    <meta
+      name="description"
+      content="Query the WikiArena production Wikipedia shortest-path solver from a stripped-down public interface."
+    />
+    <link rel="icon" type="image/png" sizes="32x32" href="./assets/icons/wikiarena-favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="./assets/icons/wikiarena-favicon-16.png" />
+    <link rel="apple-touch-icon" href="./assets/icons/wikiarena_logo2.png" />
+  </head>
+  <body class="page-home page-solver">
+    <div class="page-frame">
+      <header class="topbar reveal reveal-delay-1">
+        <a class="brand" href="./index.html" aria-label="WikiArena home">
+          <img class="brand-mark" src="./assets/icons/wikiarena_logo2.png" alt="WikiArena logo" />
+          <span class="brand-lockup">
+            <span class="brand-name">wikiarena</span>
+          </span>
+        </a>
+
+        <nav class="nav-links nav-links-primary" aria-label="Primary">
+          <a class="nav-link" href="./race.html">Race</a>
+          <a class="nav-link" href="./leaderboard.html">Leaderboard</a>
+          <a class="nav-link is-current" href="./solver.html">Solver</a>
+        </nav>
+
+        <nav class="nav-links nav-links-secondary" aria-label="External">
+          <a class="nav-link github-link" href="https://github.com/wikiarena/wikiarena" target="_blank" rel="noreferrer" aria-label="WikiArena on GitHub">
+            <img src="./assets/providers/github.svg" alt="" />
+          </a>
+        </nav>
+      </header>
+
+      <main class="home-main">
+        <section id="solver-experience" class="solver-experience reveal reveal-delay-2">
+          <div class="intro-copy">
+            <h1 class="display-title display-title-minimal">find the shortest path on wikipedia from</h1>
+          </div>
+
+          <form id="solve-form" class="landing-form">
+            <div class="title-row">
+              <section class="title-box" aria-labelledby="start-title-label">
+                <div class="title-box-header">
+                  <label id="start-title-label" class="title-label" for="start-title">Start page</label>
+                  <button id="start-random-button" class="random-button" type="button" aria-label="Randomize start page">
+                    <img src="./assets/icons/dice-dark.svg" alt="" />
+                  </button>
+                </div>
+
+                <div class="autocomplete-shell">
+                  <input id="start-title" class="title-input" type="text" autocomplete="off" placeholder="Loading random page..." />
+                  <div id="start-suggestions" class="suggestion-list hidden" role="listbox" aria-label="Start page suggestions"></div>
+                </div>
+              </section>
+
+              <div class="title-middle-controls">
+                <div class="title-divider" aria-hidden="true">-&gt;</div>
+                <button id="swap-button" class="swap-button" type="button" aria-label="Swap start and target pages">
+                  <span aria-hidden="true">⇄</span>
+                </button>
+              </div>
+
+              <section class="title-box" aria-labelledby="target-title-label">
+                <div class="title-box-header">
+                  <label id="target-title-label" class="title-label" for="target-title">Target page</label>
+                  <button id="target-random-button" class="random-button" type="button" aria-label="Randomize target page">
+                    <img src="./assets/icons/dice-dark.svg" alt="" />
+                  </button>
+                </div>
+
+                <div class="autocomplete-shell">
+                  <input id="target-title" class="title-input" type="text" autocomplete="off" placeholder="Loading random page..." />
+                  <div id="target-suggestions" class="suggestion-list hidden" role="listbox" aria-label="Target page suggestions"></div>
+                </div>
+              </section>
+            </div>
+
+            <div class="solve-row">
+              <div class="path-mode-toggle" role="group" aria-label="Path mode">
+                <button id="path-mode-single" class="path-mode-button" type="button" data-path-mode="single" aria-pressed="false">
+                  1 path
+                </button>
+                <button id="path-mode-all" class="path-mode-button is-active" type="button" data-path-mode="all_shortest" aria-pressed="true">
+                  all paths
+                </button>
+              </div>
+              <button id="solve-button" class="solve-button" type="submit">Solve</button>
+            </div>
+
+            <p id="form-error" class="form-message is-error hidden" aria-live="polite"></p>
+          </form>
+
+          <section id="results-panel" class="results-panel" aria-labelledby="results-title">
+            <div class="results-header">
+              <div>
+                <h2 id="results-title" class="section-title">Shortest Path</h2>
+              </div>
+              <div id="result-summary" class="result-summary"></div>
+            </div>
+
+            <div id="results-empty-state" class="empty-state hidden"></div>
+            <div id="results-container" class="path-graph-stage hidden"></div>
+          </section>
+        </section>
+      </main>
+
+      <footer class="site-footer reveal reveal-delay-3">
+        <span id="hero-snapshot" class="meta-token">Snapshot loading</span>
+        <span id="hero-node-count" class="meta-token">-- pages</span>
+        <span id="hero-edge-count" class="meta-token">-- links</span>
+      </footer>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

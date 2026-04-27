@@ -1,0 +1,130 @@
+name: Import Benchmark Release To S3
+
+on:
+  workflow_dispatch:
+    inputs:
+      benchmark_version:
+        description: Benchmark version, such as v0.
+        required: true
+        default: v0
+        type: string
+      release_tag:
+        description: Optional GitHub release tag. Defaults to benchmark-<benchmark_version>.
+        required: false
+        type: string
+      asset_name:
+        description: Optional release asset name. Defaults to wikiarena-benchmark-<benchmark_version>.tar.gz.
+        required: false
+        type: string
+      artifact_s3_bucket:
+        description: Optional S3 bucket override for benchmark artifact import.
+        required: false
+        type: string
+      artifact_s3_prefix:
+        description: Optional S3 prefix override. Defaults to benchmark/<benchmark_version>.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_ACCOUNT_ID: "171436514933"
+  AWS_REGION: us-west-2
+  DEFAULT_ARTIFACT_S3_BUCKET: wikiarena-artifacts-production
+
+jobs:
+  import-benchmark-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Resolve benchmark artifact names
+        id: resolve
+        run: |
+          benchmark_version="${{ inputs.benchmark_version }}"
+          if [[ -z "$benchmark_version" ]]; then
+            echo "benchmark_version is required" >&2
+            exit 1
+          fi
+
+          release_tag="${{ inputs.release_tag }}"
+          if [[ -z "$release_tag" ]]; then
+            release_tag="benchmark-${benchmark_version}"
+          fi
+
+          asset_name="${{ inputs.asset_name }}"
+          if [[ -z "$asset_name" ]]; then
+            asset_name="wikiarena-benchmark-${benchmark_version}.tar.gz"
+          fi
+
+          artifact_s3_bucket="${{ inputs.artifact_s3_bucket }}"
+          if [[ -z "$artifact_s3_bucket" ]]; then
+            artifact_s3_bucket="${{ env.DEFAULT_ARTIFACT_S3_BUCKET }}"
+          fi
+
+          artifact_s3_prefix="${{ inputs.artifact_s3_prefix }}"
+          if [[ -z "$artifact_s3_prefix" ]]; then
+            artifact_s3_prefix="benchmark/${benchmark_version}"
+          fi
+
+          echo "benchmark_version=$benchmark_version" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+          echo "asset_name=$asset_name" >> "$GITHUB_OUTPUT"
+          echo "checksum_name=${asset_name}.sha256" >> "$GITHUB_OUTPUT"
+          echo "artifact_s3_bucket=$artifact_s3_bucket" >> "$GITHUB_OUTPUT"
+          echo "artifact_s3_prefix=$artifact_s3_prefix" >> "$GITHUB_OUTPUT"
+
+      - name: Download benchmark release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p dist
+          gh release download "${{ steps.resolve.outputs.release_tag }}" \
+            --repo wikiarena/wikiarena \
+            --pattern "${{ steps.resolve.outputs.asset_name }}" \
+            --pattern "${{ steps.resolve.outputs.checksum_name }}" \
+            --dir dist
+
+      - name: Verify benchmark release asset
+        run: |
+          asset_path="dist/${{ steps.resolve.outputs.asset_name }}"
+          checksum_path="dist/${{ steps.resolve.outputs.checksum_name }}"
+
+          expected_sha=$(awk '{print $1}' "$checksum_path")
+          actual_sha=$(sha256sum "$asset_path" | cut -d' ' -f1)
+          if [[ -z "$expected_sha" || "$expected_sha" != "$actual_sha" ]]; then
+            echo "Benchmark artifact checksum mismatch" >&2
+            exit 1
+          fi
+
+      - name: Extract benchmark artifacts
+        run: |
+          mkdir -p dist/extracted
+          tar -xzf "dist/${{ steps.resolve.outputs.asset_name }}" -C dist/extracted
+
+          if [[ ! -d dist/extracted/races ]]; then
+            echo "Benchmark archive must extract to a tree containing a races/ directory" >&2
+            exit 1
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/wikiarena-production-github-actions-app
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Upload benchmark artifacts to S3
+        run: |
+          s3_prefix="s3://${{ steps.resolve.outputs.artifact_s3_bucket }}/${{ steps.resolve.outputs.artifact_s3_prefix }}"
+          aws s3 sync dist/extracted "$s3_prefix" --delete
+
+      - name: Build summary
+        run: |
+          echo "## Benchmark Import Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Release tag: ${{ steps.resolve.outputs.release_tag }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Asset: ${{ steps.resolve.outputs.asset_name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- S3 prefix: s3://${{ steps.resolve.outputs.artifact_s3_bucket }}/${{ steps.resolve.outputs.artifact_s3_prefix }}/" >> "$GITHUB_STEP_SUMMARY"

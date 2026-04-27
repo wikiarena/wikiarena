@@ -8,7 +8,11 @@ from typing import Any, Callable, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from wikiarena.adapters.participants import ProviderParticipant
+from wikiarena.adapters.participants import (
+    FirstLinkParticipant,
+    ProviderParticipant,
+    RandomLinkParticipant,
+)
 from wikiarena.adapters.wiki import GraphWikipediaNavigator, LiveWikipediaNavigator
 from wikiarena.core import (
     ParticipantDriver,
@@ -402,6 +406,26 @@ class RunService:
 def _default_participant_factory(
     participant_spec: ParticipantSpec,
 ) -> ParticipantDriver:
+    if _is_wikiarena_random_participant(participant_spec):
+        seed = participant_spec.driver_config.settings.get("seed")
+        move_delay_s = participant_spec.driver_config.settings.get(
+            "move_delay_s",
+            1.0,
+        )
+        return RandomLinkParticipant(
+            seed=seed if isinstance(seed, int) else None,
+            move_delay_s=move_delay_s if isinstance(move_delay_s, (int, float)) else 1.0,
+        )
+
+    if _is_wikiarena_first_link_participant(participant_spec):
+        move_delay_s = participant_spec.driver_config.settings.get(
+            "move_delay_s",
+            1.0,
+        )
+        return FirstLinkParticipant(
+            move_delay_s=move_delay_s if isinstance(move_delay_s, (int, float)) else 1.0,
+        )
+
     provider_settings, model_settings = _split_driver_settings(
         participant_spec.driver_config.settings,
     )
@@ -414,6 +438,23 @@ def _default_participant_factory(
         provider_client=provider_client,
         model_id=participant_spec.driver_config.model,
         model_settings=model_settings,
+    )
+
+
+def _is_wikiarena_random_participant(participant_spec: ParticipantSpec) -> bool:
+    return (
+        participant_spec.driver_config.provider == "wikiarena"
+        and participant_spec.driver_config.model == "random"
+    ) or (
+        participant_spec.driver_config.provider == "random"
+        and participant_spec.driver_config.model == "random"
+    )
+
+
+def _is_wikiarena_first_link_participant(participant_spec: ParticipantSpec) -> bool:
+    return (
+        participant_spec.driver_config.provider == "wikiarena"
+        and participant_spec.driver_config.model == "first"
     )
 
 

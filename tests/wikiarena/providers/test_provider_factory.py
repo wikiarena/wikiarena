@@ -4,11 +4,13 @@ import json
 
 import pytest
 
-from wikiarena.providers import AnthropicChatProvider
-from wikiarena.providers import CodexChatProvider
-from wikiarena.providers import OpenAIChatProvider
-from wikiarena.providers import ProviderConfigurationError
-from wikiarena.providers import create_provider_client
+from wikiarena.providers import (
+    AnthropicChatProvider,
+    CodexChatProvider,
+    OpenAIChatProvider,
+    ProviderConfigurationError,
+    create_provider_client,
+)
 
 
 def test_create_openai_client_uses_openai_environment_settings(
@@ -34,6 +36,7 @@ def test_create_openai_client_uses_openai_environment_settings(
     assert provider_client.base_url == "https://openai-compatible.example.com"
     assert provider_client.default_api_mode == "responses"
     assert provider_client.supported_api_modes == frozenset({"responses"})
+    assert provider_client.prompt_cache_key.startswith("wikiarena-")
 
 
 def test_create_openai_compatible_client_keeps_chat_completions_compatibility(
@@ -60,6 +63,7 @@ def test_create_openai_compatible_client_keeps_chat_completions_compatibility(
     assert provider_client.supported_api_modes == frozenset(
         {"chat_completions", "responses"},
     )
+    assert provider_client.prompt_cache_key is None
 
 
 def test_create_anthropic_client_uses_standard_environment_settings(
@@ -112,6 +116,7 @@ def test_create_codex_client_uses_codex_auth_file_environment_settings(
     )
     assert provider_client.auth_file == auth_file
     assert provider_client.base_url == "https://chatgpt.com/backend-api/codex/responses"
+    assert provider_client.prompt_cache_key.startswith("wikiarena-")
 
 
 def test_create_provider_client_fails_without_required_api_key(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -23,10 +24,13 @@ class RunResultStore:
     def __init__(
         self,
         output_path: str | Path,
+        *,
+        artifact_store: Any | None = None,
     ):
         self.output_path = Path(
             output_path,
         )
+        self.artifact_store = artifact_store
         self.output_path.parent.mkdir(
             parents=True,
             exist_ok=True,
@@ -58,6 +62,10 @@ class RunResultStore:
         self.append_run_result(
             artifact.run_result,
         )
+        if self.artifact_store is not None:
+            self.artifact_store.write_artifact(
+                artifact,
+            )
 
 
 def inspect_result_file_identity(

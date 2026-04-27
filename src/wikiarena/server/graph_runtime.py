@@ -18,6 +18,7 @@ from wikiarena.server.models import (
     RandomPageTitlesResponse,
     SolvePathMode,
     SolveResponse,
+    TitleValidationResponse,
 )
 from wikiarena.solver.binary import (
     MappedBinarySolverGraph,
@@ -64,6 +65,12 @@ class SolverRuntime(Protocol):
         *,
         count: int,
     ) -> RandomPageTitlesResponse: ...
+
+    async def validate_title(
+        self,
+        *,
+        title: str,
+    ) -> TitleValidationResponse: ...
 
     async def solve(
         self,
@@ -157,6 +164,20 @@ class GraphSolverRuntime:
         return await asyncio.to_thread(
             self._random_page_titles_sync,
             count,
+        )
+
+    async def validate_title(
+        self,
+        *,
+        title: str,
+    ) -> TitleValidationResponse:
+        if self._graph is None or self._meta_response is None:
+            raise GraphNotReadyError(
+                "Graph is not ready.",
+            )
+        return await asyncio.to_thread(
+            self._validate_title_sync,
+            title,
         )
 
     async def solve(
@@ -313,6 +334,23 @@ class GraphSolverRuntime:
         return RandomPageTitlesResponse(
             snapshot_id=meta_response.snapshot_id,
             titles=sampled_titles,
+        )
+
+    def _validate_title_sync(
+        self,
+        title: str,
+    ) -> TitleValidationResponse:
+        graph = self._require_graph()
+        meta_response = self._require_meta()
+        stripped_title = title.strip()
+        node_id = graph.find_node_id(
+            stripped_title,
+        )
+        return TitleValidationResponse(
+            snapshot_id=meta_response.snapshot_id,
+            query_title=stripped_title,
+            exists=node_id is not None,
+            canonical_title=graph.title_for_node_id(node_id) if node_id is not None else None,
         )
 
     def _load_graph_resources(

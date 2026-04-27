@@ -3,15 +3,17 @@ import { WikipediaSearchService, type WikipediaSearchResult } from "./wikipedia-
 interface TitleAutocompleteOptions {
   inputElement: HTMLInputElement;
   suggestionListElement: HTMLElement;
+  onCommit?: () => void;
 }
 
 export function attachTitleAutocomplete(options: TitleAutocompleteOptions): void {
-  const { inputElement, suggestionListElement } = options;
+  const { inputElement, suggestionListElement, onCommit } = options;
   const searchService = new WikipediaSearchService();
 
   let activeIndex = -1;
   let currentResults: WikipediaSearchResult[] = [];
   let debounceTimer: number | null = null;
+  let suppressNextSearch = false;
 
   function clearSuggestions(): void {
     activeIndex = -1;
@@ -23,8 +25,10 @@ export function attachTitleAutocomplete(options: TitleAutocompleteOptions): void
   async function applySelection(selectedTitle: string): Promise<void> {
     const resolution = await searchService.resolveTitle(selectedTitle);
     inputElement.value = resolution.canonicalTitle ?? selectedTitle;
-    inputElement.dispatchEvent(new Event("input", { bubbles: true }));
+    suppressNextSearch = true;
     clearSuggestions();
+    inputElement.dispatchEvent(new Event("input", { bubbles: true }));
+    onCommit?.();
   }
 
   function renderSuggestions(results: WikipediaSearchResult[]): void {
@@ -96,6 +100,10 @@ export function attachTitleAutocomplete(options: TitleAutocompleteOptions): void
   }
 
   inputElement.addEventListener("input", () => {
+    if (suppressNextSearch) {
+      suppressNextSearch = false;
+      return;
+    }
     if (debounceTimer !== null) {
       window.clearTimeout(debounceTimer);
     }
@@ -118,6 +126,12 @@ export function attachTitleAutocomplete(options: TitleAutocompleteOptions): void
   });
 
   inputElement.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && currentResults.length === 0) {
+      clearSuggestions();
+      onCommit?.();
+      return;
+    }
+
     if (currentResults.length === 0) {
       return;
     }
@@ -142,6 +156,12 @@ export function attachTitleAutocomplete(options: TitleAutocompleteOptions): void
       if (result !== undefined) {
         void applySelection(result.title);
       }
+      return;
+    }
+
+    if (event.key === "Enter") {
+      clearSuggestions();
+      onCommit?.();
       return;
     }
 

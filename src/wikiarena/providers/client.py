@@ -6,30 +6,28 @@ import os
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import UTC
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
-from typing import Protocol
+from typing import Any, Protocol
 
-from anthropic import APITimeoutError as AnthropicTimeoutError
-from anthropic import AsyncAnthropic
-from anthropic import AnthropicError
-from anthropic import RateLimitError as AnthropicRateLimitError
 import httpx
+from anthropic import AnthropicError, AsyncAnthropic
+from anthropic import APITimeoutError as AnthropicTimeoutError
+from anthropic import RateLimitError as AnthropicRateLimitError
 from openai import APITimeoutError as OpenAITimeoutError
-from openai import AsyncOpenAI
-from openai import OpenAIError
+from openai import AsyncOpenAI, OpenAIError
 from openai import RateLimitError as OpenAIRateLimitError
 
-from wikiarena.providers.types import ProviderMessage
-from wikiarena.providers.types import ProviderMessageRole
-from wikiarena.providers.types import ProviderReasoningItem
-from wikiarena.providers.types import ProviderRequest
-from wikiarena.providers.types import ProviderResponse
-from wikiarena.providers.types import ProviderToolCall
-from wikiarena.providers.types import ProviderUsage
+from wikiarena.providers.types import (
+    ProviderMessage,
+    ProviderMessageRole,
+    ProviderReasoningItem,
+    ProviderRequest,
+    ProviderResponse,
+    ProviderToolCall,
+    ProviderUsage,
+)
 
 
 class ProviderError(Exception):
@@ -54,6 +52,20 @@ _CODEX_OAUTH_TOKEN_URL = "https://auth.openai.com/oauth/token"
 _CODEX_DEFAULT_ORIGINATOR = "wikiarena"
 _CODEX_DEFAULT_USER_AGENT = "wikiarena/codex"
 _CODEX_AUTH_REFRESH_MARGIN_S = 60.0
+_PROMPT_CACHE_KEY_PREFIX = "wikiarena"
+
+_CODEX_IGNORED_SETTINGS = {
+    # The ChatGPT Codex endpoint rejects these even though other OpenAI APIs accept them.
+    "max_tokens",
+    "prompt_cache_retention",
+    "temperature",
+    "top_p",
+}
+_CODEX_PASSTHROUGH_SETTINGS = {
+    "client_metadata",
+    "parallel_tool_calls",
+    "text",
+}
 
 
 def _strip_internal_pricing_settings(
@@ -67,6 +79,85 @@ def _strip_internal_pricing_settings(
         "output_cost_per_1m_tokens",
         None,
     )
+    call_settings.pop(
+        "cache_read_input_cost_per_1m_tokens",
+        None,
+    )
+    call_settings.pop(
+        "cached_input_cost_per_1m_tokens",
+        None,
+    )
+    call_settings.pop(
+        "cache_creation_input_cost_per_1m_tokens",
+        None,
+    )
+    call_settings.pop(
+        "long_context_threshold_input_tokens",
+        None,
+    )
+    call_settings.pop(
+        "long_context_input_cost_per_1m_tokens",
+        None,
+    )
+    call_settings.pop(
+        "long_context_output_cost_per_1m_tokens",
+        None,
+    )
+    call_settings.pop(
+        "long_context_cache_read_input_cost_per_1m_tokens",
+        None,
+    )
+    call_settings.pop(
+        "long_context_cached_input_cost_per_1m_tokens",
+        None,
+    )
+    call_settings.pop(
+        "long_context_cache_creation_input_cost_per_1m_tokens",
+        None,
+    )
+
+
+def _default_prompt_cache_key() -> str:
+    return f"{_PROMPT_CACHE_KEY_PREFIX}-{uuid.uuid4()}"
+
+
+def _strip_openai_internal_settings(
+    call_settings: dict[str, Any],
+) -> None:
+    for key in (
+        "openai_api_mode",
+        "openai_include_encrypted_reasoning",
+        "openai_reasoning_summary",
+        "openai_use_previous_response_id",
+        "output_config",
+        "thinking",
+    ):
+        call_settings.pop(
+            key,
+            None,
+        )
+
+
+def _reject_priority_service_tier(
+    call_settings: dict[str, Any],
+    *,
+    provider_name: str,
+) -> None:
+    service_tier = call_settings.get(
+        "service_tier",
+    )
+    if service_tier is None:
+        return
+    normalized_service_tier = str(
+        service_tier,
+    ).strip().lower()
+    if normalized_service_tier in {
+        "fast",
+        "priority",
+    }:
+        raise ProviderConfigurationError(
+            f"{provider_name} provider priority service_tier is disabled",
+        )
 
 
 class ModelProvider(Protocol):
@@ -91,6 +182,41 @@ class _CodexAuthRefreshRequired(ProviderError):
     pass
 
 
+@dataclass(frozen=True)
+class _TokenPricing:
+    input_cost_per_1m_tokens: float
+    output_cost_per_1m_tokens: float
+    cache_read_input_cost_per_1m_tokens: float | None = None
+    cache_creation_input_cost_per_1m_tokens: float | None = None
+    long_context_threshold_input_tokens: int | None = None
+    long_context_input_cost_per_1m_tokens: float | None = None
+    long_context_output_cost_per_1m_tokens: float | None = None
+    long_context_cache_read_input_cost_per_1m_tokens: float | None = None
+    long_context_cache_creation_input_cost_per_1m_tokens: float | None = None
+
+
+_OPENAI_STANDARD_MODEL_PRICING = {
+    "gpt-5.5": _TokenPricing(5.0, 30.0, 0.50, None, 272_000, 10.0, 45.0, 1.0),
+    "gpt-5.5-pro": _TokenPricing(30.0, 180.0, None, None, 272_000, 60.0, 270.0),
+    "gpt-5.4": _TokenPricing(2.50, 15.0, 0.25, None, 272_000, 5.0, 22.50, 0.50),
+    "gpt-5.4-mini": _TokenPricing(0.75, 4.50, 0.075),
+    "gpt-5.4-nano": _TokenPricing(0.20, 1.25, 0.02),
+    "gpt-5.4-pro": _TokenPricing(30.0, 180.0, None, None, 272_000, 60.0, 270.0),
+}
+
+_ANTHROPIC_MODEL_PRICING = {
+    "claude-opus-4-7": _TokenPricing(5.0, 25.0, 0.50, 6.25),
+    "claude-opus-4-6": _TokenPricing(5.0, 25.0, 0.50, 6.25),
+    "claude-opus-4-5": _TokenPricing(5.0, 25.0, 0.50, 6.25),
+    "claude-sonnet-4-6": _TokenPricing(3.0, 15.0, 0.30, 3.75),
+    "claude-sonnet-4-5": _TokenPricing(3.0, 15.0, 0.30, 3.75),
+    "claude-sonnet-4": _TokenPricing(3.0, 15.0, 0.30, 3.75),
+    "claude-haiku-4-5": _TokenPricing(1.0, 5.0, 0.10, 1.25),
+    "claude-haiku-3-5": _TokenPricing(0.80, 4.0, 0.08, 1.0),
+    "claude-haiku-3": _TokenPricing(0.25, 1.25, 0.03, 0.30),
+}
+
+
 class OpenAIChatProvider:
     def __init__(
         self,
@@ -101,6 +227,8 @@ class OpenAIChatProvider:
         timeout_s: float | None = None,
         default_api_mode: str = "chat_completions",
         supported_api_modes: set[str] | None = None,
+        prompt_cache_key: str | None = None,
+        pricing_provider_name: str = "openai",
     ):
         self.base_url = base_url
         self.timeout_s = timeout_s
@@ -108,6 +236,8 @@ class OpenAIChatProvider:
         self.supported_api_modes = frozenset(
             supported_api_modes or {"chat_completions", "responses"},
         )
+        self.prompt_cache_key = prompt_cache_key
+        self.pricing_provider_name = pricing_provider_name
         self._previous_response_id: str | None = None
         self._last_request_message_count = 0
         self._last_response_message: ProviderMessage | None = None
@@ -136,10 +266,20 @@ class OpenAIChatProvider:
                 f"Supported modes for this provider: {supported_modes}",
             )
         if resolved_api_mode == "responses":
+            _require_token_pricing(
+                settings=request.settings,
+                model_id=request.model_id,
+                provider_name=self.pricing_provider_name,
+            )
             return await self._generate_with_responses_api(
                 request,
             )
         if resolved_api_mode == "chat_completions":
+            _require_token_pricing(
+                settings=request.settings,
+                model_id=request.model_id,
+                provider_name=self.pricing_provider_name,
+            )
             return await self._generate_with_chat_completions(
                 request,
             )
@@ -167,6 +307,13 @@ class OpenAIChatProvider:
         timeout_s = call_settings.pop(
             "timeout_s",
             self.timeout_s,
+        )
+        _strip_openai_internal_settings(
+            call_settings,
+        )
+        _reject_priority_service_tier(
+            call_settings,
+            provider_name="OpenAI",
         )
         if timeout_s is not None:
             call_settings["timeout"] = timeout_s
@@ -227,6 +374,8 @@ class OpenAIChatProvider:
         )
         usage = _usage_from_openai_response(
             response,
+            model_id=request.model_id,
+            provider_name=self.pricing_provider_name,
             duration_ms=duration_ms,
             settings=request.settings,
         )
@@ -282,6 +431,10 @@ class OpenAIChatProvider:
             "max_tokens",
             None,
         )
+        prompt_cache_key = call_settings.pop(
+            "prompt_cache_key",
+            self.prompt_cache_key,
+        )
         call_settings.pop(
             "thinking",
             None,
@@ -289,6 +442,10 @@ class OpenAIChatProvider:
         call_settings.pop(
             "output_config",
             None,
+        )
+        _reject_priority_service_tier(
+            call_settings,
+            provider_name="OpenAI",
         )
 
         previous_response_id = None
@@ -322,6 +479,8 @@ class OpenAIChatProvider:
             call_payload["previous_response_id"] = previous_response_id
         if max_output_tokens is not None:
             call_payload["max_output_tokens"] = max_output_tokens
+        if prompt_cache_key is not None:
+            call_payload["prompt_cache_key"] = prompt_cache_key
         reasoning_config = _build_openai_responses_reasoning_config(
             effort=reasoning_effort,
             summary=openai_reasoning_summary,
@@ -362,6 +521,8 @@ class OpenAIChatProvider:
         )
         usage = _usage_from_openai_responses_response(
             response,
+            model_id=request.model_id,
+            provider_name=self.pricing_provider_name,
             duration_ms=duration_ms,
             settings=request.settings,
         )
@@ -392,6 +553,7 @@ class CodexChatProvider:
         timeout_s: float | None = None,
         originator: str = _CODEX_DEFAULT_ORIGINATOR,
         user_agent: str = _CODEX_DEFAULT_USER_AGENT,
+        prompt_cache_key: str | None = None,
         http_client: Any | None = None,
     ):
         self.auth_file = Path(
@@ -401,6 +563,7 @@ class CodexChatProvider:
         self.timeout_s = timeout_s
         self.originator = originator
         self.user_agent = user_agent
+        self.prompt_cache_key = prompt_cache_key or _default_prompt_cache_key()
         self.client = http_client or httpx.AsyncClient(
             timeout=timeout_s,
         )
@@ -409,13 +572,11 @@ class CodexChatProvider:
         self,
         request: ProviderRequest,
     ) -> ProviderResponse:
-        auth_state = _load_codex_auth_state(
-            self.auth_file,
+        _require_token_pricing(
+            settings=request.settings,
+            model_id=request.model_id,
+            provider_name="codex",
         )
-        auth_state = await self._refresh_auth_state_if_needed(
-            auth_state,
-        )
-
         call_settings = dict(
             request.settings,
         )
@@ -426,9 +587,17 @@ class CodexChatProvider:
             "reasoning_effort",
             None,
         )
-        max_output_tokens = call_settings.pop(
-            "max_tokens",
-            None,
+        for setting_name in _CODEX_IGNORED_SETTINGS:
+            call_settings.pop(
+                setting_name,
+                None,
+            )
+        prompt_cache_key = call_settings.pop(
+            "prompt_cache_key",
+            self.prompt_cache_key,
+        )
+        service_tier = _pop_codex_service_tier(
+            call_settings,
         )
         call_settings.pop(
             "openai_api_mode",
@@ -438,21 +607,22 @@ class CodexChatProvider:
             "openai_use_previous_response_id",
             None,
         )
-        if call_settings.pop(
+        openai_reasoning_summary = call_settings.pop(
             "openai_reasoning_summary",
             None,
-        ) is not None:
-            raise ProviderConfigurationError(
-                "Codex provider does not support openai_reasoning_summary",
-            )
-        if bool(
+        )
+        openai_include_encrypted_reasoning = bool(
             call_settings.pop(
                 "openai_include_encrypted_reasoning",
                 False,
             ),
-        ):
-            raise ProviderConfigurationError(
-                "Codex provider does not support openai_include_encrypted_reasoning",
+        )
+        include_values = _pop_include_values(
+            call_settings,
+        )
+        if openai_include_encrypted_reasoning:
+            include_values.append(
+                "reasoning.encrypted_content",
             )
         call_settings.pop(
             "thinking",
@@ -466,6 +636,18 @@ class CodexChatProvider:
             "timeout_s",
             None,
         )
+        passthrough_settings = _pop_codex_passthrough_settings(
+            call_settings,
+        )
+        if call_settings:
+            unsupported_settings = ", ".join(
+                sorted(
+                    call_settings,
+                ),
+            )
+            raise ProviderConfigurationError(
+                f"Codex provider does not support settings: {unsupported_settings}",
+            )
 
         instructions, response_input = _split_system_instructions_for_codex(
             request.messages,
@@ -478,21 +660,34 @@ class CodexChatProvider:
             ),
             "store": False,
             "stream": True,
-            **call_settings,
+            "prompt_cache_key": prompt_cache_key,
+            **passthrough_settings,
         }
+        if service_tier is not None:
+            call_payload["service_tier"] = service_tier
         formatted_tools = _format_tools_for_openai_responses(
             request,
         )
         if formatted_tools:
             call_payload["tools"] = formatted_tools
             call_payload["tool_choice"] = request.tool_choice
-        if max_output_tokens is not None:
-            call_payload["max_output_tokens"] = max_output_tokens
         reasoning_config = _build_codex_reasoning_config(
             effort=reasoning_effort,
+            summary=openai_reasoning_summary,
         )
         if reasoning_config is not None:
             call_payload["reasoning"] = reasoning_config
+        if include_values:
+            call_payload["include"] = _unique_preserving_order(
+                include_values,
+            )
+
+        auth_state = _load_codex_auth_state(
+            self.auth_file,
+        )
+        auth_state = await self._refresh_auth_state_if_needed(
+            auth_state,
+        )
 
         try:
             output_items, completed_response, duration_ms = (
@@ -534,6 +729,8 @@ class CodexChatProvider:
                     ),
                 },
             ),
+            model_id=request.model_id,
+            provider_name="codex",
             duration_ms=duration_ms,
             settings=request.settings,
         )
@@ -719,6 +916,14 @@ class AnthropicChatProvider:
         self,
         request: ProviderRequest,
     ) -> ProviderResponse:
+        _require_token_pricing(
+            settings=request.settings,
+            model_id=request.model_id,
+            provider_name="anthropic",
+            anthropic_cache_pricing=_anthropic_prompt_caching_enabled(
+                request.settings,
+            ),
+        )
         cache_control = _build_anthropic_cache_control(
             request.settings,
         )
@@ -738,6 +943,10 @@ class AnthropicChatProvider:
         )
         call_settings.pop(
             "anthropic_prompt_caching",
+            None,
+        )
+        call_settings.pop(
+            "anthropic_cache_ttl",
             None,
         )
         output_config = call_settings.pop(
@@ -850,10 +1059,13 @@ class AnthropicChatProvider:
             },
             estimated_cost_usd=_estimate_token_cost_usd(
                 settings=request.settings,
+                model_id=request.model_id,
+                provider_name="anthropic",
                 input_tokens=response.usage.input_tokens,
                 output_tokens=response.usage.output_tokens,
                 cache_creation_input_tokens=cache_creation_input_tokens,
                 cache_read_input_tokens=cache_read_input_tokens,
+                input_tokens_include_cache_tokens=False,
                 anthropic_cache_pricing=_anthropic_prompt_caching_enabled(
                     request.settings,
                 ),
@@ -912,6 +1124,16 @@ def create_provider_client(
                 if normalized_provider_name == "openai"
                 else {"chat_completions", "responses"}
             ),
+            prompt_cache_key=_pick_first(
+                resolved_provider_settings.pop(
+                    "prompt_cache_key",
+                    None,
+                ),
+                _default_prompt_cache_key()
+                if normalized_provider_name == "openai"
+                else None,
+            ),
+            pricing_provider_name=normalized_provider_name,
         )
 
     if normalized_provider_name == "codex":
@@ -950,6 +1172,10 @@ def create_provider_client(
                 _CODEX_DEFAULT_USER_AGENT,
             )
             or _CODEX_DEFAULT_USER_AGENT,
+            prompt_cache_key=resolved_provider_settings.pop(
+                "prompt_cache_key",
+                None,
+            ),
         )
 
     if normalized_provider_name == "openrouter":
@@ -980,6 +1206,7 @@ def create_provider_client(
             ),
             default_api_mode="chat_completions",
             supported_api_modes={"chat_completions"},
+            pricing_provider_name="openrouter",
         )
 
     if normalized_provider_name == "anthropic":
@@ -1355,15 +1582,109 @@ def _split_system_instructions_for_codex(
     return instructions, remaining_messages
 
 
+def _pop_codex_service_tier(
+    call_settings: dict[str, Any],
+) -> str | None:
+    service_tier = call_settings.pop(
+        "service_tier",
+        None,
+    )
+    if service_tier is None:
+        return None
+
+    normalized_service_tier = str(
+        service_tier,
+    ).strip().lower()
+    if normalized_service_tier in {
+        "",
+        "auto",
+        "default",
+    }:
+        return None
+    if normalized_service_tier in {
+        "fast",
+        "priority",
+    }:
+        raise ProviderConfigurationError(
+            "Codex provider priority service_tier is disabled",
+        )
+    raise ProviderConfigurationError(
+        "Codex provider only supports service_tier='auto' or service_tier='default'",
+    )
+
+
+def _pop_include_values(
+    call_settings: dict[str, Any],
+) -> list[str]:
+    include_value = call_settings.pop(
+        "include",
+        None,
+    )
+    if include_value is None:
+        return []
+    if isinstance(
+        include_value,
+        str,
+    ):
+        return [include_value]
+    if isinstance(
+        include_value,
+        list,
+    ):
+        return [
+            item
+            for item in include_value
+            if isinstance(
+                item,
+                str,
+            )
+        ]
+    raise ProviderConfigurationError(
+        "Codex provider include setting must be a string or list of strings",
+    )
+
+
+def _pop_codex_passthrough_settings(
+    call_settings: dict[str, Any],
+) -> dict[str, Any]:
+    passthrough_settings: dict[str, Any] = {}
+    for setting_name in _CODEX_PASSTHROUGH_SETTINGS:
+        if setting_name not in call_settings:
+            continue
+        passthrough_settings[setting_name] = call_settings.pop(
+            setting_name,
+        )
+    return passthrough_settings
+
+
+def _unique_preserving_order(
+    values: list[str],
+) -> list[str]:
+    unique_values: list[str] = []
+    seen_values: set[str] = set()
+    for value in values:
+        if value in seen_values:
+            continue
+        seen_values.add(
+            value,
+        )
+        unique_values.append(
+            value,
+        )
+    return unique_values
+
+
 def _build_codex_reasoning_config(
     *,
     effort: str | None,
+    summary: str | None,
 ) -> dict[str, str] | None:
-    if effort is None:
-        return None
-    return {
-        "effort": effort,
-    }
+    reasoning_config: dict[str, str] = {}
+    if effort is not None:
+        reasoning_config["effort"] = effort
+    if summary is not None:
+        reasoning_config["summary"] = summary
+    return reasoning_config or None
 
 
 def _build_codex_request_headers(
@@ -2237,6 +2558,8 @@ def _messages_since_last_openai_response(
 def _usage_from_openai_response(
     response: Any,
     *,
+    model_id: str,
+    provider_name: str,
     duration_ms: float,
     settings: dict[str, Any],
 ) -> ProviderUsage:
@@ -2300,8 +2623,14 @@ def _usage_from_openai_response(
         output_token_details=output_token_details,
         estimated_cost_usd=_estimate_token_cost_usd(
             settings=settings,
+            model_id=model_id,
+            provider_name=provider_name,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            cache_read_input_tokens=input_token_details.get(
+                "cached_tokens",
+                0,
+            ),
         ),
         response_time_ms=duration_ms,
     )
@@ -2310,6 +2639,8 @@ def _usage_from_openai_response(
 def _usage_from_openai_responses_response(
     response: Any,
     *,
+    model_id: str,
+    provider_name: str,
     duration_ms: float,
     settings: dict[str, Any],
 ) -> ProviderUsage:
@@ -2373,8 +2704,14 @@ def _usage_from_openai_responses_response(
         output_token_details=output_token_details,
         estimated_cost_usd=_estimate_token_cost_usd(
             settings=settings,
+            model_id=model_id,
+            provider_name=provider_name,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            cache_read_input_tokens=input_token_details.get(
+                "cached_tokens",
+                0,
+            ),
         ),
         response_time_ms=duration_ms,
     )
@@ -2461,38 +2798,399 @@ def _resolve_openai_api_mode(
 def _estimate_token_cost_usd(
     *,
     settings: dict[str, Any],
+    model_id: str | None = None,
+    provider_name: str | None = None,
     input_tokens: int,
     output_tokens: int,
     cache_creation_input_tokens: int = 0,
     cache_read_input_tokens: int = 0,
+    input_tokens_include_cache_tokens: bool = True,
     anthropic_cache_pricing: bool = False,
 ) -> float:
-    input_cost_per_1m_tokens = settings.get(
-        "input_cost_per_1m_tokens",
+    pricing = _resolve_token_pricing(
+        settings=settings,
+        model_id=model_id,
+        provider_name=provider_name,
+        anthropic_cache_pricing=anthropic_cache_pricing,
     )
-    output_cost_per_1m_tokens = settings.get(
-        "output_cost_per_1m_tokens",
+    if pricing is None:
+        raise _missing_pricing_error(
+            model_id=model_id,
+            provider_name=provider_name,
+        )
+    pricing = _apply_long_context_pricing(
+        pricing=pricing,
+        context_input_tokens=_context_input_tokens_for_pricing(
+            input_tokens=input_tokens,
+            cache_creation_input_tokens=cache_creation_input_tokens,
+            cache_read_input_tokens=cache_read_input_tokens,
+            input_tokens_include_cache_tokens=input_tokens_include_cache_tokens,
+        ),
     )
-    if input_cost_per_1m_tokens is None or output_cost_per_1m_tokens is None:
-        return 0.0
 
-    estimated_cost = (input_tokens / 1_000_000) * float(input_cost_per_1m_tokens) + (
-        output_tokens / 1_000_000
-    ) * float(output_cost_per_1m_tokens)
+    input_cost_per_1m_tokens = pricing.input_cost_per_1m_tokens
+    output_cost_per_1m_tokens = pricing.output_cost_per_1m_tokens
+    cache_read_input_cost_per_1m_tokens = (
+        pricing.cache_read_input_cost_per_1m_tokens
+        if pricing.cache_read_input_cost_per_1m_tokens is not None
+        else input_cost_per_1m_tokens
+    )
+    cache_creation_input_cost_per_1m_tokens = (
+        pricing.cache_creation_input_cost_per_1m_tokens
+        if pricing.cache_creation_input_cost_per_1m_tokens is not None
+        else input_cost_per_1m_tokens
+    )
+    non_cached_input_tokens = input_tokens
+    if input_tokens_include_cache_tokens and not anthropic_cache_pricing:
+        non_cached_input_tokens = max(
+            input_tokens - cache_creation_input_tokens - cache_read_input_tokens,
+            0,
+        )
 
-    if anthropic_cache_pricing:
-        estimated_cost += (
-            (cache_creation_input_tokens / 1_000_000)
-            * float(input_cost_per_1m_tokens)
-            * 1.25
-        )
-        estimated_cost += (
-            (cache_read_input_tokens / 1_000_000)
-            * float(input_cost_per_1m_tokens)
-            * 0.1
-        )
+    estimated_cost = (
+        (non_cached_input_tokens / 1_000_000) * input_cost_per_1m_tokens
+        + (cache_creation_input_tokens / 1_000_000)
+        * cache_creation_input_cost_per_1m_tokens
+        + (cache_read_input_tokens / 1_000_000)
+        * cache_read_input_cost_per_1m_tokens
+        + (output_tokens / 1_000_000) * output_cost_per_1m_tokens
+    )
 
     return estimated_cost
+
+
+def _require_token_pricing(
+    *,
+    settings: dict[str, Any],
+    model_id: str,
+    provider_name: str,
+    anthropic_cache_pricing: bool = False,
+) -> None:
+    if _resolve_token_pricing(
+        settings=settings,
+        model_id=model_id,
+        provider_name=provider_name,
+        anthropic_cache_pricing=anthropic_cache_pricing,
+    ) is not None:
+        return
+    raise _missing_pricing_error(
+        model_id=model_id,
+        provider_name=provider_name,
+    )
+
+
+def _missing_pricing_error(
+    *,
+    model_id: str | None,
+    provider_name: str | None,
+) -> ProviderConfigurationError:
+    provider_label = provider_name or "unknown"
+    model_label = model_id or "unknown"
+    return ProviderConfigurationError(
+        "Missing pricing for "
+        f"provider '{provider_label}' model '{model_label}'. "
+        "Add input_cost_per_1m_tokens and output_cost_per_1m_tokens "
+        "to model settings, or add the model to the default pricing table.",
+    )
+
+
+def _resolve_token_pricing(
+    *,
+    settings: dict[str, Any],
+    model_id: str | None,
+    provider_name: str | None,
+    anthropic_cache_pricing: bool,
+) -> _TokenPricing | None:
+    default_pricing = _default_token_pricing(
+        model_id=model_id,
+        provider_name=provider_name,
+        settings=settings,
+    )
+    explicit_base_pricing = (
+        "input_cost_per_1m_tokens" in settings
+        or "output_cost_per_1m_tokens" in settings
+    )
+    default_optional_pricing = None if explicit_base_pricing else default_pricing
+
+    input_cost = _float_setting(
+        settings,
+        "input_cost_per_1m_tokens",
+        default_pricing.input_cost_per_1m_tokens if default_pricing else None,
+    )
+    output_cost = _float_setting(
+        settings,
+        "output_cost_per_1m_tokens",
+        default_pricing.output_cost_per_1m_tokens if default_pricing else None,
+    )
+    if input_cost is None or output_cost is None:
+        return None
+
+    cache_read_cost = _float_setting(
+        settings,
+        "cache_read_input_cost_per_1m_tokens",
+        _float_setting(
+            settings,
+            "cached_input_cost_per_1m_tokens",
+            default_optional_pricing.cache_read_input_cost_per_1m_tokens
+            if default_optional_pricing
+            else None,
+        ),
+    )
+    if "cache_creation_input_cost_per_1m_tokens" in settings:
+        cache_creation_cost = _float_setting(
+            settings,
+            "cache_creation_input_cost_per_1m_tokens",
+            None,
+        )
+    elif anthropic_cache_pricing:
+        cache_creation_cost = input_cost * _anthropic_cache_creation_multiplier(
+            settings,
+        )
+    else:
+        cache_creation_cost = (
+            default_optional_pricing.cache_creation_input_cost_per_1m_tokens
+            if default_optional_pricing
+            else None
+        )
+
+    if cache_read_cost is None and anthropic_cache_pricing:
+        cache_read_cost = input_cost * 0.1
+
+    return _TokenPricing(
+        input_cost_per_1m_tokens=input_cost,
+        output_cost_per_1m_tokens=output_cost,
+        cache_read_input_cost_per_1m_tokens=cache_read_cost,
+        cache_creation_input_cost_per_1m_tokens=cache_creation_cost,
+        long_context_threshold_input_tokens=_int_setting(
+            settings,
+            "long_context_threshold_input_tokens",
+            default_optional_pricing.long_context_threshold_input_tokens
+            if default_optional_pricing
+            else None,
+        ),
+        long_context_input_cost_per_1m_tokens=_float_setting(
+            settings,
+            "long_context_input_cost_per_1m_tokens",
+            default_optional_pricing.long_context_input_cost_per_1m_tokens
+            if default_optional_pricing
+            else None,
+        ),
+        long_context_output_cost_per_1m_tokens=_float_setting(
+            settings,
+            "long_context_output_cost_per_1m_tokens",
+            default_optional_pricing.long_context_output_cost_per_1m_tokens
+            if default_optional_pricing
+            else None,
+        ),
+        long_context_cache_read_input_cost_per_1m_tokens=_float_setting(
+            settings,
+            "long_context_cache_read_input_cost_per_1m_tokens",
+            _float_setting(
+                settings,
+                "long_context_cached_input_cost_per_1m_tokens",
+                default_optional_pricing.long_context_cache_read_input_cost_per_1m_tokens
+                if default_optional_pricing
+                else None,
+            ),
+        ),
+        long_context_cache_creation_input_cost_per_1m_tokens=_float_setting(
+            settings,
+            "long_context_cache_creation_input_cost_per_1m_tokens",
+            default_optional_pricing.long_context_cache_creation_input_cost_per_1m_tokens
+            if default_optional_pricing
+            else None,
+        ),
+    )
+
+
+def _default_token_pricing(
+    *,
+    model_id: str | None,
+    provider_name: str | None,
+    settings: dict[str, Any],
+) -> _TokenPricing | None:
+    normalized_model_id = _normalize_pricing_model_id(
+        model_id,
+    )
+    if normalized_model_id is None:
+        return None
+
+    if _pricing_provider_uses_anthropic_pricing(
+        provider_name,
+        normalized_model_id,
+    ):
+        return _lookup_model_pricing(
+            normalized_model_id,
+            _ANTHROPIC_MODEL_PRICING,
+        )
+
+    if _pricing_provider_uses_openai_pricing(
+        provider_name,
+        normalized_model_id,
+    ):
+        return _lookup_model_pricing(
+            normalized_model_id,
+            _OPENAI_STANDARD_MODEL_PRICING,
+        )
+
+    return None
+
+
+def _normalize_pricing_model_id(
+    model_id: str | None,
+) -> str | None:
+    if model_id is None:
+        return None
+    normalized_model_id = model_id.strip().lower()
+    if not normalized_model_id:
+        return None
+    if "/" in normalized_model_id:
+        normalized_model_id = normalized_model_id.rsplit(
+            "/",
+            1,
+        )[-1]
+    if ":" in normalized_model_id:
+        normalized_model_id = normalized_model_id.split(
+            ":",
+            1,
+        )[0]
+    return normalized_model_id
+
+
+def _pricing_provider_uses_openai_pricing(
+    provider_name: str | None,
+    model_id: str,
+) -> bool:
+    return (provider_name or "").strip().lower() in {
+        "codex",
+        "openai",
+        "openai_compatible",
+        "openrouter",
+    } or model_id.startswith(
+        "gpt-",
+    )
+
+
+def _pricing_provider_uses_anthropic_pricing(
+    provider_name: str | None,
+    model_id: str,
+) -> bool:
+    return (provider_name or "").strip().lower() == "anthropic" or model_id.startswith(
+        "claude-",
+    )
+
+
+def _lookup_model_pricing(
+    model_id: str,
+    pricing_table: dict[str, _TokenPricing],
+) -> _TokenPricing | None:
+    if model_id in pricing_table:
+        return pricing_table[model_id]
+    matching_model_ids = [
+        pricing_model_id
+        for pricing_model_id in pricing_table
+        if model_id.startswith(
+            f"{pricing_model_id}-",
+        )
+    ]
+    if not matching_model_ids:
+        return None
+    return pricing_table[
+        max(
+            matching_model_ids,
+            key=len,
+        )
+    ]
+
+
+def _context_input_tokens_for_pricing(
+    *,
+    input_tokens: int,
+    cache_creation_input_tokens: int,
+    cache_read_input_tokens: int,
+    input_tokens_include_cache_tokens: bool,
+) -> int:
+    if input_tokens_include_cache_tokens:
+        return input_tokens
+    return input_tokens + cache_creation_input_tokens + cache_read_input_tokens
+
+
+def _apply_long_context_pricing(
+    *,
+    pricing: _TokenPricing,
+    context_input_tokens: int,
+) -> _TokenPricing:
+    threshold = pricing.long_context_threshold_input_tokens
+    if threshold is None or context_input_tokens <= threshold:
+        return pricing
+    return _TokenPricing(
+        input_cost_per_1m_tokens=(
+            pricing.long_context_input_cost_per_1m_tokens
+            if pricing.long_context_input_cost_per_1m_tokens is not None
+            else pricing.input_cost_per_1m_tokens
+        ),
+        output_cost_per_1m_tokens=(
+            pricing.long_context_output_cost_per_1m_tokens
+            if pricing.long_context_output_cost_per_1m_tokens is not None
+            else pricing.output_cost_per_1m_tokens
+        ),
+        cache_read_input_cost_per_1m_tokens=(
+            pricing.long_context_cache_read_input_cost_per_1m_tokens
+            if pricing.long_context_cache_read_input_cost_per_1m_tokens is not None
+            else pricing.cache_read_input_cost_per_1m_tokens
+        ),
+        cache_creation_input_cost_per_1m_tokens=(
+            pricing.long_context_cache_creation_input_cost_per_1m_tokens
+            if pricing.long_context_cache_creation_input_cost_per_1m_tokens is not None
+            else pricing.cache_creation_input_cost_per_1m_tokens
+        ),
+    )
+
+
+def _anthropic_cache_creation_multiplier(
+    settings: dict[str, Any],
+) -> float:
+    cache_ttl = str(
+        settings.get(
+            "anthropic_cache_ttl",
+            "5m",
+        ),
+    ).strip().lower()
+    if cache_ttl == "1h":
+        return 2.0
+    return 1.25
+
+
+def _int_setting(
+    settings: dict[str, Any],
+    setting_name: str,
+    default: int | None,
+) -> int | None:
+    value = settings.get(
+        setting_name,
+        default,
+    )
+    if value is None:
+        return None
+    return int(
+        value,
+    )
+
+
+def _float_setting(
+    settings: dict[str, Any],
+    setting_name: str,
+    default: float | None,
+) -> float | None:
+    value = settings.get(
+        setting_name,
+        default,
+    )
+    if value is None:
+        return None
+    return float(
+        value,
+    )
 
 
 def _anthropic_prompt_caching_enabled(

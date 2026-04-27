@@ -9,20 +9,27 @@ from typer.testing import CliRunner
 
 from wikiarena.cli import app
 from wikiarena.core import RunExecutionArtifact
-from wikiarena.eval import BenchmarkExecutionArtifact, build_ruleset_hash
+from wikiarena.eval import (
+    BenchmarkExecutionArtifact,
+    build_ruleset_hash,
+    build_taskset_hash,
+)
 from wikiarena.graph.info import GraphInfoResult
 from wikiarena.graph.install import GraphInstallResult
 from wikiarena.protocol import (
     ErrorRecord,
+    EventEnvelope,
     HarnessConfig,
     MoveRecord,
     NavigationBackend,
     NavigationRules,
     RaceResult,
     ResponseContract,
+    RunEventType,
     RunResult,
     ScoringRules,
     SolverBackend,
+    TaskSpec,
     TerminalOutcome,
     TerminationReason,
 )
@@ -85,6 +92,18 @@ def _build_run_result(
         started_at=datetime(2026, 1, 1, 0, 0, 0),
         ended_at=datetime(2026, 1, 1, 0, 0, 1),
         duration_ms=1000.0,
+    )
+
+
+def _single_apple_banana_taskset_hash() -> str:
+    return build_taskset_hash(
+        [
+            TaskSpec(
+                language="en",
+                start_page_title="Apple",
+                target_page_title="Banana",
+            ),
+        ],
     )
 
 
@@ -159,6 +178,8 @@ class FakeBenchmarkRunner:
         self.last_benchmark_spec = None
         self.last_concurrency = None
         self.last_run_options = None
+        self.last_resume = None
+        self.last_taskset_hash_override = None
 
         class FakeRunExecutor:
             protocol_version = "1.0.0-test"
@@ -174,22 +195,44 @@ class FakeBenchmarkRunner:
         *,
         concurrency,
         run_options,
-        result_store,
+        resume=None,
+        taskset_hash_override=None,
+        result_store=None,
         event_sink=None,
     ) -> BenchmarkExecutionArtifact:
         self.last_benchmark_spec = benchmark_spec
         self.last_concurrency = concurrency
         self.last_run_options = run_options
+        self.last_resume = resume
+        self.last_taskset_hash_override = taskset_hash_override
 
         run_result = _build_run_result(
             run_id="run-benchmark-1",
             race_id="race-benchmark-1",
             participant_id=benchmark_spec.participants[0].participant_id,
             committed_moves=4,
+            taskset_hash=taskset_hash_override or "taskset-1",
         )
-        result_store.append_run_result(
-            run_result,
+        result_store.append_artifact(
+            RunExecutionArtifact(
+                run_result=run_result,
+                events=[],
+            ),
         )
+        if event_sink is not None:
+            await event_sink(
+                EventEnvelope(
+                    event_id="run-benchmark-1:1",
+                    event_type=RunEventType.RUN_STARTED,
+                    benchmark_id=benchmark_spec.benchmark_id,
+                    race_id="race-benchmark-1",
+                    run_id="run-benchmark-1",
+                    sequence=1,
+                    payload={
+                        "participant_id": benchmark_spec.participants[0].participant_id,
+                    },
+                ),
+            )
 
         return BenchmarkExecutionArtifact(
             benchmark_id=benchmark_spec.benchmark_id,
@@ -367,7 +410,9 @@ def test_run_command_defaults_codex_reasoning_effort_to_high(monkeypatch) -> Non
         fake_services.run_service.last_request.model_settings["reasoning_effort"]
         == "high"
     )
-    assert "openai_api_mode" not in fake_services.run_service.last_request.model_settings
+    assert (
+        "openai_api_mode" not in fake_services.run_service.last_request.model_settings
+    )
 
 
 def test_run_command_does_not_default_anthropic_reasoning_effort(monkeypatch) -> None:
@@ -396,8 +441,7 @@ def test_run_command_does_not_default_anthropic_reasoning_effort(monkeypatch) ->
     assert result.exit_code == 0
     assert fake_services.run_service.last_request is not None
     assert (
-        "reasoning_effort"
-        not in fake_services.run_service.last_request.model_settings
+        "reasoning_effort" not in fake_services.run_service.last_request.model_settings
     )
     assert "thinking" not in fake_services.run_service.last_request.model_settings
     assert "output_config" not in fake_services.run_service.last_request.model_settings
@@ -488,7 +532,9 @@ def test_run_command_enables_openai_responses_reasoning_options(monkeypatch) -> 
     )
 
 
-def test_run_command_trace_defaults_openai_reasoning_summary_to_detailed(monkeypatch) -> None:
+def test_run_command_trace_defaults_openai_reasoning_summary_to_detailed(
+    monkeypatch,
+) -> None:
     fake_services = FakeCliServices()
     monkeypatch.setattr(
         "wikiarena.cli.get_cli_services",
@@ -521,7 +567,9 @@ def test_run_command_trace_defaults_openai_reasoning_summary_to_detailed(monkeyp
     )
 
 
-def test_run_command_openai_compatible_only_uses_responses_when_requested(monkeypatch) -> None:
+def test_run_command_openai_compatible_only_uses_responses_when_requested(
+    monkeypatch,
+) -> None:
     fake_services = FakeCliServices()
     monkeypatch.setattr(
         "wikiarena.cli.get_cli_services",
@@ -546,7 +594,9 @@ def test_run_command_openai_compatible_only_uses_responses_when_requested(monkey
 
     assert result.exit_code == 0
     assert fake_services.run_service.last_request is not None
-    assert "openai_api_mode" not in fake_services.run_service.last_request.model_settings
+    assert (
+        "openai_api_mode" not in fake_services.run_service.last_request.model_settings
+    )
 
 
 def test_run_command_rejects_openai_responses_flags_for_anthropic(monkeypatch) -> None:
@@ -1751,7 +1801,7 @@ def test_run_command_rejects_conflicting_thinking_flags(monkeypatch) -> None:
     assert "thinking-budget-tokens" in result.stdout
 
 
-def test_eval_run_requires_append_or_overwrite_for_existing_output(
+def test_eval_run_defaults_to_resume_for_existing_output(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -1815,6 +1865,7 @@ def test_eval_run_requires_append_or_overwrite_for_existing_output(
                 participant_id="model_a",
                 committed_moves=4,
                 ruleset_hash=matching_ruleset_hash,
+                taskset_hash=_single_apple_banana_taskset_hash(),
             ).model_dump(mode="json"),
         )
         + "\n",
@@ -1833,8 +1884,12 @@ def test_eval_run_requires_append_or_overwrite_for_existing_output(
         ],
     )
 
-    assert result.exit_code != 0
-    assert "output path already exists" in result.stdout
+    assert result.exit_code == 0
+    lines = output_path.read_text(
+        encoding="utf-8",
+    ).splitlines()
+    assert json.loads(lines[0])["run_id"] == "existing-run"
+    assert len(lines) == 2
 
 
 def test_eval_run_overwrite_replaces_existing_output(
@@ -1901,6 +1956,7 @@ def test_eval_run_overwrite_replaces_existing_output(
                 participant_id="model_a",
                 committed_moves=4,
                 ruleset_hash=matching_ruleset_hash,
+                taskset_hash=_single_apple_banana_taskset_hash(),
             ).model_dump(mode="json"),
         )
         + "\n",
@@ -1931,12 +1987,13 @@ def test_eval_run_overwrite_replaces_existing_output(
                 race_id="race-benchmark-1",
                 participant_id="model_a",
                 committed_moves=4,
+                taskset_hash=_single_apple_banana_taskset_hash(),
             ).model_dump(mode="json"),
         ),
     ]
 
 
-def test_eval_run_append_preserves_existing_output(
+def test_eval_run_rejects_append_option(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -1982,16 +2039,70 @@ def test_eval_run_append_preserves_existing_output(
         encoding="utf-8",
     )
     output_path = tmp_path / "results.jsonl"
-    matching_ruleset_hash = build_ruleset_hash(
-        protocol_version="1.0.0-test",
-        navigation_rules=NavigationRules(),
-        harness_config=HarnessConfig(
-            harness_id="tool_v1",
-            response_contract=ResponseContract.TOOL_CALL_ONLY,
-            tool_name="navigate",
-        ),
-        scoring_rules=ScoringRules(),
+
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "run",
+            "--config",
+            str(config_path),
+            "--output",
+            str(output_path),
+            "--append",
+        ],
     )
+
+    assert result.exit_code != 0
+    assert "No such option" in result.stdout
+
+
+def test_eval_run_resume_passes_existing_results_to_runner(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    fake_services = FakeCliServices()
+    monkeypatch.setattr(
+        "wikiarena.cli.get_cli_services",
+        lambda: fake_services,
+    )
+
+    taskset_path = tmp_path / "tasks.jsonl"
+    taskset_path.write_text(
+        json.dumps(
+            {
+                "language": "en",
+                "start_page_title": "Apple",
+                "target_page_title": "Banana",
+            },
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "eval.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                'benchmark_id = "benchmark_cli"',
+                'taskset_id = "taskset_cli"',
+                'taskset_path = "tasks.jsonl"',
+                "",
+                "[rules.harness]",
+                'harness_id = "tool_v1"',
+                'response_contract = "tool_call_only"',
+                'tool_name = "navigate"',
+                "",
+                "[[participants]]",
+                'participant_id = "model_a"',
+                'display_name = "Model A"',
+                "[participants.driver_config]",
+                'provider = "openai"',
+                'model = "gpt-x"',
+            ],
+        ),
+        encoding="utf-8",
+    )
+    output_path = tmp_path / "results.jsonl"
     output_path.write_text(
         json.dumps(
             _build_run_result(
@@ -1999,7 +2110,17 @@ def test_eval_run_append_preserves_existing_output(
                 race_id="existing-race",
                 participant_id="model_a",
                 committed_moves=4,
-                ruleset_hash=matching_ruleset_hash,
+                ruleset_hash=build_ruleset_hash(
+                    protocol_version="1.0.0-test",
+                    navigation_rules=NavigationRules(),
+                    harness_config=HarnessConfig(
+                        harness_id="tool_v1",
+                        response_contract=ResponseContract.TOOL_CALL_ONLY,
+                        tool_name="navigate",
+                    ),
+                    scoring_rules=ScoringRules(),
+                ),
+                taskset_hash=_single_apple_banana_taskset_hash(),
             ).model_dump(mode="json"),
         )
         + "\n",
@@ -2015,19 +2136,172 @@ def test_eval_run_append_preserves_existing_output(
             str(config_path),
             "--output",
             str(output_path),
-            "--append",
+            "--resume",
         ],
     )
 
     assert result.exit_code == 0
-    lines = output_path.read_text(
+    assert fake_services.benchmark_runner.last_resume is not None
+    assert len(fake_services.benchmark_runner.last_resume.existing_run_results) == 1
+
+
+def test_eval_run_persists_frontend_race_artifacts(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    fake_services = FakeCliServices()
+    monkeypatch.setattr(
+        "wikiarena.cli.get_cli_services",
+        lambda: fake_services,
+    )
+
+    taskset_path = tmp_path / "tasks.jsonl"
+    taskset_path.write_text(
+        json.dumps(
+            {
+                "language": "en",
+                "start_page_title": "Apple",
+                "target_page_title": "Banana",
+            },
+        )
+        + "\n",
         encoding="utf-8",
-    ).splitlines()
-    assert json.loads(lines[0])["run_id"] == "existing-run"
-    assert len(lines) == 2
+    )
+    config_path = tmp_path / "eval.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                'benchmark_id = "benchmark_cli"',
+                'taskset_id = "taskset_cli"',
+                'taskset_path = "tasks.jsonl"',
+                "",
+                "[rules.harness]",
+                'harness_id = "tool_v1"',
+                'response_contract = "tool_call_only"',
+                'tool_name = "navigate"',
+                "",
+                "[[participants]]",
+                'participant_id = "model_a"',
+                'display_name = "Model A"',
+                "[participants.driver_config]",
+                'provider = "openai"',
+                'model = "gpt-x"',
+            ],
+        ),
+        encoding="utf-8",
+    )
+    output_path = tmp_path / "results.jsonl"
+    artifact_dir = tmp_path / "artifacts"
+
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "run",
+            "--config",
+            str(config_path),
+            "--output",
+            str(output_path),
+            "--artifact-dir",
+            str(artifact_dir),
+        ],
+    )
+
+    assert result.exit_code == 0
+    race_dir = artifact_dir / "races" / "race-benchmark-1"
+    assert (race_dir / "race.json").exists()
+    assert (race_dir / "events.jsonl").exists()
+    assert (race_dir / "runs" / "run-benchmark-1.events.jsonl").exists()
+    assert (race_dir / "runs" / "run-benchmark-1.result.json").exists()
+    metadata = json.loads((race_dir / "race.json").read_text(encoding="utf-8"))
+    assert metadata["status"] == "completed"
+    assert metadata["participants"][0]["run_id"] == "run-benchmark-1"
 
 
-def test_eval_run_append_rejects_different_ruleset_hash(
+def test_eval_run_race_limit_preserves_full_taskset_hash(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    fake_services = FakeCliServices()
+    monkeypatch.setattr(
+        "wikiarena.cli.get_cli_services",
+        lambda: fake_services,
+    )
+
+    tasks = [
+        {
+            "language": "en",
+            "start_page_title": "Apple",
+            "target_page_title": "Banana",
+        },
+        {
+            "language": "en",
+            "start_page_title": "Carrot",
+            "target_page_title": "Daikon",
+        },
+    ]
+    taskset_path = tmp_path / "tasks.jsonl"
+    taskset_path.write_text(
+        "".join(
+            json.dumps(
+                task,
+            )
+            + "\n"
+            for task in tasks
+        ),
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "eval.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                'benchmark_id = "benchmark_cli"',
+                'taskset_id = "taskset_cli"',
+                'taskset_path = "tasks.jsonl"',
+                "",
+                "[rules.harness]",
+                'harness_id = "tool_v1"',
+                'response_contract = "tool_call_only"',
+                'tool_name = "navigate"',
+                "",
+                "[[participants]]",
+                'participant_id = "model_a"',
+                'display_name = "Model A"',
+                "[participants.driver_config]",
+                'provider = "openai"',
+                'model = "gpt-x"',
+            ],
+        ),
+        encoding="utf-8",
+    )
+    output_path = tmp_path / "results.jsonl"
+
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "run",
+            "--config",
+            str(config_path),
+            "--output",
+            str(output_path),
+            "--race-limit",
+            "1",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert fake_services.benchmark_runner.last_benchmark_spec is not None
+    assert len(fake_services.benchmark_runner.last_benchmark_spec.tasks) == 1
+    assert (
+        fake_services.benchmark_runner.last_taskset_hash_override
+        == build_taskset_hash(
+            [TaskSpec.model_validate(task) for task in tasks],
+        )
+    )
+
+
+def test_eval_run_rejects_different_ruleset_hash_by_default(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -2096,7 +2370,6 @@ def test_eval_run_append_rejects_different_ruleset_hash(
             str(config_path),
             "--output",
             str(output_path),
-            "--append",
         ],
     )
 

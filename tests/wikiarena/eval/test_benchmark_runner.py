@@ -12,10 +12,14 @@ from pydantic import ValidationError
 from wikiarena.core import RunExecutionArtifact
 from wikiarena.eval import (
     BenchmarkConcurrencyConfig,
+    BenchmarkResumeConfig,
     BenchmarkRunner,
     BenchmarkRunOptions,
     RunPlan,
     RunResultStore,
+    build_race_id,
+    build_run_id,
+    plan_benchmark_identity,
 )
 from wikiarena.protocol import (
     BenchmarkRules,
@@ -30,9 +34,9 @@ from wikiarena.protocol import (
     RunResult,
     RunSpec,
     SolverBackend,
-    TaskSpec,
     TaskExecutionAnnotation,
     TaskExecutionAnnotationStatus,
+    TaskSpec,
     TerminalOutcome,
     TerminationReason,
 )
@@ -53,6 +57,9 @@ class FakeLiveRunService:
         self.max_active_runs = 0
         self.active_by_provider: dict[str, int] = defaultdict(int)
         self.max_active_by_provider: dict[str, int] = defaultdict(int)
+        self.active_by_participant: dict[str, int] = defaultdict(int)
+        self.max_active_by_participant: dict[str, int] = defaultdict(int)
+        self.executed_run_ids: list[str] = []
 
     async def execute_live_run(
         self,
@@ -108,16 +115,25 @@ class FakeLiveRunService:
     ) -> RunExecutionArtifact:
         async with self._lock:
             self.active_runs += 1
+            self.executed_run_ids.append(
+                run_plan.run_spec.run_id,
+            )
             self.max_active_runs = max(
                 self.max_active_runs,
                 self.active_runs,
             )
 
             provider = run_plan.participant_spec.driver_config.provider
+            participant_id = run_plan.participant_spec.participant_id
             self.active_by_provider[provider] += 1
             self.max_active_by_provider[provider] = max(
                 self.max_active_by_provider[provider],
                 self.active_by_provider[provider],
+            )
+            self.active_by_participant[participant_id] += 1
+            self.max_active_by_participant[participant_id] = max(
+                self.max_active_by_participant[participant_id],
+                self.active_by_participant[participant_id],
             )
 
         if event_sink is not None:
@@ -167,6 +183,7 @@ class FakeLiveRunService:
         async with self._lock:
             self.active_runs -= 1
             self.active_by_provider[provider] -= 1
+            self.active_by_participant[participant_id] -= 1
 
         return RunExecutionArtifact(
             run_result=run_result,
@@ -211,6 +228,128 @@ def _build_benchmark_spec(
 
 
 @pytest.mark.asyncio
+async def test_benchmark_runner_resume_skips_existing_non_system_failures() -> None:
+    benchmark_spec = _build_benchmark_spec(
+        task_count=1,
+        participants=[
+            ("p1", "provider_a", "m1"),
+            ("p2", "provider_b", "m2"),
+        ],
+    )
+    fake_service = FakeLiveRunService(
+        latency_seconds=0.01,
+    )
+    runner = BenchmarkRunner(
+        live_run_service=fake_service,
+    )
+    identity = plan_benchmark_identity(
+        benchmark_spec,
+        protocol_version="1.0.0-draft",
+    )
+    task = benchmark_spec.tasks[0]
+    assert task.task_id is not None
+    race_id = build_race_id(
+        benchmark_id=benchmark_spec.benchmark_id,
+        task_id=task.task_id,
+        task_index=1,
+    )
+    now = datetime.now()
+    existing_run_result = RunResult(
+        run_id=build_run_id(
+            race_id=race_id,
+            participant_id="p1",
+        ),
+        race_id=race_id,
+        benchmark_id=benchmark_spec.benchmark_id,
+        task_id=task.task_id,
+        participant_id="p1",
+        terminal_outcome=TerminalOutcome.SUCCESS,
+        termination_reason=TerminationReason.TASK_COMPLETED,
+        ruleset_hash=identity.ruleset_hash,
+        taskset_hash=identity.taskset_hash,
+        participant_hash=identity.participant_hashes["p1"],
+        navigation_backend=NavigationBackend.LIVE,
+        solver_backend=SolverBackend.NONE,
+        started_at=now,
+        ended_at=now,
+    )
+
+    artifact = await runner.run_benchmark(
+        benchmark_spec,
+        resume=BenchmarkResumeConfig(
+            existing_run_results=[existing_run_result],
+        ),
+    )
+
+    assert artifact.total_runs == 2
+    assert existing_run_result.run_id not in fake_service.executed_run_ids
+    assert (
+        build_run_id(
+            race_id=race_id,
+            participant_id="p2",
+        )
+        in fake_service.executed_run_ids
+    )
+
+
+@pytest.mark.asyncio
+async def test_benchmark_runner_resume_reruns_existing_system_failures() -> None:
+    benchmark_spec = _build_benchmark_spec(
+        task_count=1,
+        participants=[
+            ("p1", "provider_a", "m1"),
+        ],
+    )
+    fake_service = FakeLiveRunService(
+        latency_seconds=0.01,
+    )
+    runner = BenchmarkRunner(
+        live_run_service=fake_service,
+    )
+    identity = plan_benchmark_identity(
+        benchmark_spec,
+        protocol_version="1.0.0-draft",
+    )
+    task = benchmark_spec.tasks[0]
+    assert task.task_id is not None
+    race_id = build_race_id(
+        benchmark_id=benchmark_spec.benchmark_id,
+        task_id=task.task_id,
+        task_index=1,
+    )
+    run_id = build_run_id(
+        race_id=race_id,
+        participant_id="p1",
+    )
+    now = datetime.now()
+    existing_run_result = RunResult(
+        run_id=run_id,
+        race_id=race_id,
+        benchmark_id=benchmark_spec.benchmark_id,
+        task_id=task.task_id,
+        participant_id="p1",
+        terminal_outcome=TerminalOutcome.SYSTEM_FAILURE,
+        termination_reason=TerminationReason.HARNESS_ERROR,
+        ruleset_hash=identity.ruleset_hash,
+        taskset_hash=identity.taskset_hash,
+        participant_hash=identity.participant_hashes["p1"],
+        navigation_backend=NavigationBackend.LIVE,
+        solver_backend=SolverBackend.NONE,
+        started_at=now,
+        ended_at=now,
+    )
+
+    await runner.run_benchmark(
+        benchmark_spec,
+        resume=BenchmarkResumeConfig(
+            existing_run_results=[existing_run_result],
+        ),
+    )
+
+    assert fake_service.executed_run_ids == [run_id]
+
+
+@pytest.mark.asyncio
 async def test_benchmark_runner_parallelizes_runs_within_race() -> None:
     benchmark_spec = _build_benchmark_spec(
         task_count=1,
@@ -236,6 +375,8 @@ async def test_benchmark_runner_parallelizes_runs_within_race() -> None:
     assert artifact.total_runs == 3
     assert len(artifact.race_results) == 1
     assert fake_service.max_active_runs >= 2
+    assert fake_service.max_active_by_participant["p1"] == 1
+    assert fake_service.max_active_by_participant["p2"] == 1
 
 
 @pytest.mark.asyncio
@@ -263,6 +404,32 @@ async def test_benchmark_runner_respects_provider_concurrency_limits() -> None:
     )
 
     assert fake_service.max_active_by_provider["provider_a"] == 1
+    assert fake_service.max_active_runs >= 2
+
+
+@pytest.mark.asyncio
+async def test_benchmark_runner_respects_participant_concurrency_limits() -> None:
+    benchmark_spec = _build_benchmark_spec(
+        task_count=3,
+        participants=[
+            ("p1", "provider_a", "m1"),
+            ("p2", "provider_a", "m2"),
+        ],
+    )
+    fake_service = FakeLiveRunService()
+    runner = BenchmarkRunner(
+        live_run_service=fake_service,
+    )
+
+    await runner.run_benchmark(
+        benchmark_spec,
+        concurrency=BenchmarkConcurrencyConfig(
+            max_concurrent_tasks=3,
+            max_concurrent_runs=6,
+            participant_max_concurrency={"p1": 1, "p2": 1},
+        ),
+    )
+
     assert fake_service.max_active_runs >= 2
 
 

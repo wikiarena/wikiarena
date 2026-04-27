@@ -12,12 +12,16 @@ from wikiarena.server.config import ServerConfig
 from wikiarena.server.errors import GraphNotReadyError, UnknownTitleError
 from wikiarena.server.graph_runtime import GraphSolverRuntime, SolverRuntime
 from wikiarena.server.models import ErrorResponse
+from wikiarena.server.race_manager import RaceManager
 from wikiarena.server.routers.health import router as health_router
 from wikiarena.server.routers.meta import router as meta_router
+from wikiarena.server.routers.races import get_race_manager
+from wikiarena.server.routers.races import router as races_router
 from wikiarena.server.routers.random_page_titles import (
     router as random_page_titles_router,
 )
 from wikiarena.server.routers.solve import router as solve_router
+from wikiarena.server.routers.title_validation import router as title_validation_router
 
 logger = logging.getLogger(
     __name__,
@@ -43,6 +47,9 @@ def create_app(
         app: FastAPI,
     ):
         app.state.runtime = resolved_runtime
+        app.state.race_manager = RaceManager(
+            config=resolved_config,
+        )
         await resolved_runtime.startup()
         yield
         await resolved_runtime.shutdown()
@@ -72,8 +79,15 @@ def create_app(
         random_page_titles_router,
     )
     app.include_router(
+        title_validation_router,
+    )
+    app.include_router(
         solve_router,
     )
+    app.include_router(
+        races_router,
+    )
+    app.dependency_overrides[get_race_manager] = lambda: app.state.race_manager
 
     _register_exception_handlers(
         app,

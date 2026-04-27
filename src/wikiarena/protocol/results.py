@@ -161,6 +161,7 @@ class RunResult(BaseModel):
     total_step_attempts: int = 0
     total_committed_moves: int = 0
     total_invalid_attempts: int = 0
+    estimated_cost_usd: float = 0.0
 
     ranking_eligible: bool | None = None
     ranking_exclusion_reason: str | None = None
@@ -200,6 +201,11 @@ class RunResult(BaseModel):
         )
         self.total_invalid_attempts = (
             self.total_step_attempts - self.total_committed_moves
+        )
+        self.estimated_cost_usd = sum(
+            step_attempt.model_metrics.estimated_cost_usd
+            for step_attempt in self.step_attempts
+            if step_attempt.model_metrics is not None
         )
 
         if not self.committed_moves:

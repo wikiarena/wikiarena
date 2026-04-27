@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, date, datetime
 import json
 import random
 import re
@@ -8,7 +9,7 @@ from typing import Protocol
 
 from pydantic import BaseModel, Field
 
-from wikiarena.protocol import TaskSpec
+from wikiarena.protocol import PathSource, SolverShortestPath, TaskSpec
 from wikiarena.solver.binary.search import (
     BinarySearchGraph,
     find_shortest_path_by_node_ids,
@@ -16,10 +17,6 @@ from wikiarena.solver.binary.search import (
 
 DEFAULT_EXCLUDED_TITLE_PATTERNS = (
     r"\(disambiguation\)$",
-    r"^List of ",
-    r"^Index of ",
-    r"^Outline of ",
-    r"^\d{3,4}$",
 )
 
 
@@ -45,6 +42,15 @@ class CandidateGraph(BinarySearchGraph, Protocol):
     ) -> int: ...
 
 
+def default_task_candidate_seed(
+    today: date | None = None,
+) -> int:
+    resolved_today = today or date.today()
+    return int(
+        resolved_today.strftime("%Y%m%d"),
+    )
+
+
 def generate_task_candidates(
     graph: CandidateGraph,
     *,
@@ -52,6 +58,8 @@ def generate_task_candidates(
     language: str = "en",
     seed: int = 0,
     max_attempts: int = 100_000,
+    solver_snapshot_id: str | None = None,
+    generated_at: datetime | None = None,
     excluded_title_patterns: tuple[str, ...] = DEFAULT_EXCLUDED_TITLE_PATTERNS,
 ) -> TaskCandidateGenerationResult:
     normalized_counts = _normalize_counts_by_distance(
@@ -71,6 +79,9 @@ def generate_task_candidates(
     ]
     rng = random.Random(
         seed,
+    )
+    resolved_generated_at = generated_at or datetime.now(
+        UTC,
     )
 
     generated_counts = {
@@ -147,7 +158,7 @@ def generate_task_candidates(
         ):
             continue
 
-        reference_shortest_path = [
+        solver_shortest_path = [
             graph.title_for_node_id(
                 node_id,
             )
@@ -158,11 +169,16 @@ def generate_task_candidates(
                 language=language,
                 start_page_title=start_title,
                 target_page_title=target_title,
+                shortest_path_length=shortest_path_length,
+                solver_shortest_path=SolverShortestPath(
+                    page_titles=solver_shortest_path,
+                    computed_at=resolved_generated_at,
+                    solver_snapshot_id=solver_snapshot_id,
+                    source=PathSource.LOCAL_GRAPH,
+                ),
                 metadata={
-                    "shortest_path_length": shortest_path_length,
                     "start_node_id": start_node_id,
                     "target_node_id": target_node_id,
-                    "reference_shortest_path": reference_shortest_path,
                     "generator": "random_static_graph_pairs_v1",
                     "generator_seed": seed,
                     "sample_attempt": attempts,
@@ -175,9 +191,7 @@ def generate_task_candidates(
         tasks=sorted(
             tasks,
             key=lambda task: (
-                int(
-                    task.metadata["shortest_path_length"],
-                ),
+                task.shortest_path_length or -1,
                 task.start_page_title,
                 task.target_page_title,
             ),

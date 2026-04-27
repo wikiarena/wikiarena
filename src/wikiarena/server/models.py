@@ -35,6 +35,13 @@ class RandomPageTitlesResponse(BaseModel):
     )
 
 
+class TitleValidationResponse(BaseModel):
+    snapshot_id: str
+    query_title: str
+    exists: bool
+    canonical_title: str | None = None
+
+
 class SolveRequest(BaseModel):
     start_title: Annotated[str, Field(min_length=1)]
     target_title: Annotated[str, Field(min_length=1)]

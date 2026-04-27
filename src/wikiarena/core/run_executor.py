@@ -360,6 +360,12 @@ class RunExecutor:
                 "total_step_attempts": run_result.total_step_attempts,
                 "total_committed_moves": run_result.total_committed_moves,
                 "total_invalid_attempts": run_result.total_invalid_attempts,
+                "estimated_cost_usd": run_result.estimated_cost_usd,
+                "total_model_tokens": sum(
+                    step_attempt.model_metrics.total_tokens
+                    for step_attempt in run_result.step_attempts
+                    if step_attempt.model_metrics is not None
+                ),
                 "ranking_eligible": run_result.ranking_eligible,
             },
             error=run_result.error,
