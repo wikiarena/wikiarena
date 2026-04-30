@@ -2363,7 +2363,8 @@ input {
 }
 
 .results-panel.is-visible {
-  max-height: 2400px;
+  max-height: none;
+  overflow: visible;
   margin-top: 8px;
   opacity: 1;
   transform: translateY(0);
@@ -2476,8 +2477,8 @@ input {
 
 .path-graph-shell {
   overflow-x: auto;
-  overflow-y: hidden;
-  padding-bottom: 4px;
+  overflow-y: visible;
+  padding-bottom: 12px;
 }
 
 .path-graph-svg {

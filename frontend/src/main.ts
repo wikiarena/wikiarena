@@ -11,6 +11,14 @@ import { attachTitleAutocomplete } from "./lib/autocomplete";
 import { formatDurationMs, formatInteger } from "./lib/format";
 import { renderPathGraph } from "./lib/path-graph";
 import { WikipediaRandomService } from "./lib/random-pages";
+import {
+  buildSolverLinkUrl,
+  readSolverLinkParams,
+} from "./lib/solver-link";
+import {
+  getSolverResultTitle,
+  getSolverResultView,
+} from "./lib/solver-result-view";
 import { createRandomTitleField } from "./lib/title-field";
 import { WikipediaSearchService } from "./lib/wikipedia-search";
 
@@ -95,6 +103,7 @@ function renderSinglePathTimeline(resultsContainer: HTMLElement, path: string[])
 
 function renderSolveResponse(
   solveResponse: SolveResponse,
+  pathMode: SolvePathMode,
   solverExperienceElement: HTMLElement,
   resultsPanelElement: HTMLElement,
   resultsTitleElement: HTMLElement,
@@ -104,7 +113,7 @@ function renderSolveResponse(
 ): void {
   solverExperienceElement.classList.add("is-solved");
   resultsPanelElement.classList.add("is-visible");
-  resultsTitleElement.textContent = solveResponse.paths.length > 1 ? "Shortest Paths" : "Shortest Path";
+  resultsTitleElement.textContent = getSolverResultTitle(pathMode);
 
   summaryElement.innerHTML = `
     <span class="summary-token">${solveResponse.paths.length} path${solveResponse.paths.length === 1 ? "" : "s"}</span>
@@ -126,7 +135,7 @@ function renderSolveResponse(
   }
 
   emptyStateElement.classList.add("hidden");
-  if (solveResponse.paths.length <= 1) {
+  if (getSolverResultView(pathMode) === "timeline") {
     renderSinglePathTimeline(resultsContainer, solveResponse.paths[0] ?? []);
   } else {
     renderPathGraph(resultsContainer, solveResponse);
@@ -168,6 +177,7 @@ async function initializeHomePage(): Promise<void> {
   const targetFieldRandomService = new WikipediaRandomService();
   const titleResolutionService = new WikipediaSearchService();
   const pathModeButtons = [pathModeSingleButton, pathModeAllButton];
+  const initialSolverLinkParams = readSolverLinkParams(window.location.search);
 
   let lastSolvedPair: ArticlePair | null = null;
   let lastSolvedPathMode: SolvePathMode | null = null;
@@ -305,6 +315,14 @@ async function initializeHomePage(): Promise<void> {
     } else {
       selectedPathMode = supportedPathModes.values().next().value ?? "single";
     }
+    const linkedPathMode = initialSolverLinkParams?.pathMode;
+    if (
+      linkedPathMode !== null &&
+      linkedPathMode !== undefined &&
+      supportedPathModes.has(linkedPathMode)
+    ) {
+      selectedPathMode = linkedPathMode;
+    }
   } catch (error) {
     heroSnapshotElement.textContent = "Snapshot unavailable";
     heroNodeCountElement.textContent = "Graph unavailable";
@@ -312,6 +330,14 @@ async function initializeHomePage(): Promise<void> {
   }
 
   updateSolveButtonState();
+
+  function replaceSolverLinkUrl(articlePair: ArticlePair, pathMode: SolvePathMode): void {
+    window.history.replaceState(
+      window.history.state,
+      "",
+      buildSolverLinkUrl(window.location.href, articlePair, pathMode),
+    );
+  }
 
   async function executeSolve(articlePair: ArticlePair, pathMode: SolvePathMode): Promise<void> {
     isSolving = true;
@@ -342,8 +368,10 @@ async function initializeHomePage(): Promise<void> {
         targetTitle: solveResponse.target_title,
       };
       lastSolvedPathMode = pathMode;
+      replaceSolverLinkUrl(lastSolvedPair, pathMode);
       renderSolveResponse(
         solveResponse,
+        pathMode,
         solverExperienceElement,
         resultsPanelElement,
         resultsTitleElement,
@@ -366,6 +394,16 @@ async function initializeHomePage(): Promise<void> {
       targetRandomController.setDisabled(false);
       updateSolveButtonState();
     }
+  }
+
+  if (initialSolverLinkParams !== null) {
+    const linkedPair = {
+      startTitle: initialSolverLinkParams.startTitle,
+      targetTitle: initialSolverLinkParams.targetTitle,
+    };
+    startRandomController.setValue(linkedPair.startTitle);
+    targetRandomController.setValue(linkedPair.targetTitle);
+    void executeSolve(linkedPair, selectedPathMode);
   }
 
   solveForm.addEventListener("submit", async (event) => {
