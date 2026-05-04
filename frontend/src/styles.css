@@ -2273,6 +2273,48 @@ input {
   margin-top: 18px;
 }
 
+.solve-button-wrap {
+  position: relative;
+  display: inline-flex;
+  justify-content: center;
+}
+
+.solve-nudge {
+  --solve-nudge-transform: rotate(-5deg);
+  position: absolute;
+  top: 6px;
+  left: calc(100% + 16px);
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  box-shadow: 4px 4px 0 var(--shadow);
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transform: var(--solve-nudge-transform);
+  animation: solve-nudge-pop 260ms ease;
+}
+
+.solve-nudge::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: -8px;
+  width: 12px;
+  height: 12px;
+  border-left: 2px solid var(--border);
+  border-bottom: 2px solid var(--border);
+  background: var(--surface);
+  transform: translateY(-50%) rotate(45deg);
+}
+
 .path-mode-toggle {
   display: inline-flex;
   align-items: center;
@@ -2343,6 +2385,17 @@ input {
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.08em;
+}
+
+@keyframes solve-nudge-pop {
+  from {
+    opacity: 0;
+    transform: translateY(6px) var(--solve-nudge-transform);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) var(--solve-nudge-transform);
+  }
 }
 
 .form-message {
@@ -2901,6 +2954,26 @@ input {
 
   .solve-button {
     width: 100%;
+  }
+
+  .solve-button-wrap {
+    width: 100%;
+  }
+
+  .solve-button-wrap.is-nudged {
+    margin-bottom: 46px;
+  }
+
+  .solve-nudge {
+    --solve-nudge-transform: translateX(-50%) rotate(-3deg);
+    top: calc(100% + 8px);
+    left: 50%;
+  }
+
+  .solve-nudge::before {
+    top: -8px;
+    left: 50%;
+    transform: translateX(-50%) rotate(135deg);
   }
 
   .title-input {

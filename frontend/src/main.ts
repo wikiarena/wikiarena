@@ -153,6 +153,8 @@ async function initializeHomePage(): Promise<void> {
   const targetRandomButton = getRequiredElement<HTMLButtonElement>("target-random-button");
   const solveForm = getRequiredElement<HTMLFormElement>("solve-form");
   const solveButton = getRequiredElement<HTMLButtonElement>("solve-button");
+  const solveNudge = getRequiredElement<HTMLElement>("solve-nudge");
+  const solveButtonWrap = solveButton.closest(".solve-button-wrap");
   const swapButton = getRequiredElement<HTMLButtonElement>("swap-button");
   const pathModeSingleButton = getRequiredElement<HTMLButtonElement>("path-mode-single");
   const pathModeAllButton = getRequiredElement<HTMLButtonElement>("path-mode-all");
@@ -168,9 +170,14 @@ async function initializeHomePage(): Promise<void> {
   const startBoxElement = startInput.closest(".title-box");
   const targetBoxElement = targetInput.closest(".title-box");
 
-  if (!(startBoxElement instanceof HTMLElement) || !(targetBoxElement instanceof HTMLElement)) {
-    throw new Error("Title box containers are missing.");
+  if (
+    !(startBoxElement instanceof HTMLElement) ||
+    !(targetBoxElement instanceof HTMLElement) ||
+    !(solveButtonWrap instanceof HTMLElement)
+  ) {
+    throw new Error("Required solver form containers are missing.");
   }
+  const solveButtonWrapElement = solveButtonWrap;
 
   const sharedRandomService = new WikipediaRandomService();
   const startFieldRandomService = new WikipediaRandomService();
@@ -200,6 +207,9 @@ async function initializeHomePage(): Promise<void> {
 
   function setSolveButtonMode(mode: SolveButtonMode): void {
     solveButtonMode = mode;
+    const showNudge = mode === "another";
+    solveNudge.classList.toggle("hidden", !showNudge);
+    solveButtonWrapElement.classList.toggle("is-nudged", showNudge);
     if (mode === "solving") {
       solveButton.textContent = "Solving...";
       return;
