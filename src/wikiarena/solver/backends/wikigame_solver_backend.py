@@ -1,4 +1,4 @@
-"""Archived WikiGameSolver backend retained for migration audits only."""
+"""Optional adapter for a local external WikiGameSolver binary."""
 
 from __future__ import annotations
 

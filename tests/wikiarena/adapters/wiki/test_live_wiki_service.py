@@ -1,4 +1,4 @@
-from wiki_arena.wikipedia.live_service import LiveWikiService
+from wikiarena.wikipedia.live_service import LiveWikiService
 
 
 def test_live_wiki_service_sets_required_user_agent_header() -> None:

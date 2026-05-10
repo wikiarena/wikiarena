@@ -2,9 +2,6 @@
 
 The official production backend is `BinarySolverBackend`, powered by
 a dated graph binary like `wikiarena_graph_enwiki_20260301.bin`.
-
-Archived SQLite and WikiGameSolver integrations remain available under
-`wikiarena.archive` for debugging and historical comparison only.
 """
 
 from .backend import SolverBackend, SolverCapabilities, SolverTargetSession

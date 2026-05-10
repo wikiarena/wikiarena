@@ -1,1 +1,0 @@
-# Wiki Arena utilities package 
