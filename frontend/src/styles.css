@@ -1684,11 +1684,12 @@ input {
   width: min(1180px, calc(100% - 32px));
 }
 
-.leaderboard-hero {
+.leaderboard-hero,
+.diameter-hero {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(260px, 360px);
   gap: 24px;
-  align-items: end;
+  align-items: start;
 }
 
 .benchmark-summary-card {
@@ -1696,6 +1697,230 @@ input {
   flex-wrap: wrap;
   gap: 10px;
   justify-content: flex-end;
+}
+
+.diameter-main {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding-top: 44px;
+}
+
+.diameter-hero {
+  background: var(--surface);
+  border: 2px solid var(--border);
+  box-shadow: 8px 8px 0 var(--shadow);
+  padding: 34px;
+}
+
+.diameter-hero-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.diameter-tabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.diameter-tab {
+  min-height: 38px;
+}
+
+.diameter-wavefront-map {
+  display: block;
+  grid-column: 1 / -1;
+  width: 100%;
+  height: auto;
+  margin-top: 4px;
+  border: 2px solid var(--border);
+  background: var(--surface-quiet);
+}
+
+.diameter-wavefront-map-bg {
+  fill: var(--surface-quiet);
+}
+
+.diameter-wavefront-ring {
+  fill: none;
+  stroke: var(--border-soft);
+  stroke-dasharray: 4 7;
+}
+
+.diameter-wavefront-tail-line {
+  fill: none;
+  stroke: #d64a2f;
+  stroke-dasharray: 5 6;
+  stroke-linecap: round;
+  stroke-width: 2;
+  opacity: 0.82;
+}
+
+.diameter-wavefront-dot {
+  stroke: var(--border);
+  stroke-width: 1.6;
+}
+
+.diameter-wavefront-dot.is-source,
+.diameter-wavefront-dot.is-target {
+  stroke-width: 3;
+}
+
+.diameter-wavefront-dot.is-largest-frontier {
+  stroke-width: 1.9;
+}
+
+.diameter-wavefront-label,
+.diameter-wavefront-caption {
+  fill: var(--text);
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 800;
+}
+
+.diameter-wavefront-label {
+  font-size: 0.84rem;
+}
+
+.diameter-wavefront-label.is-target {
+  fill: #d64a2f;
+}
+
+.diameter-wavefront-caption {
+  fill: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.diameter-witness-summary {
+  grid-column: 1 / -1;
+  margin: -6px 0 0;
+}
+
+.diameter-metrics {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 0;
+}
+
+.diameter-metric {
+  min-width: 0;
+  padding: 14px;
+  border: 2px solid var(--border);
+  background: var(--surface-quiet);
+}
+
+.diameter-metric strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 1.12rem;
+}
+
+.diameter-metric .note-copy {
+  display: block;
+  margin-top: 6px;
+}
+
+.diameter-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 22px;
+  overflow: visible;
+}
+
+.diameter-chart-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-end;
+  max-width: 380px;
+}
+
+.diameter-scale-toggle {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.diameter-scale-button {
+  min-height: 34px;
+  padding: 7px 10px;
+}
+
+.diameter-chart-axis path,
+.diameter-chart-axis line {
+  stroke: var(--border);
+}
+
+.diameter-chart-axis text,
+.diameter-chart-label,
+.diameter-chart-callout {
+  fill: var(--text);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.diameter-chart-grid line {
+  stroke: var(--border-soft);
+  stroke-dasharray: 3 5;
+}
+
+.diameter-chart-grid path {
+  display: none;
+}
+
+.diameter-bar {
+  fill: #246b5f;
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.wavefront-bar {
+  fill: #2f6f8f;
+}
+
+.wavefront-bar.is-target {
+  fill: #d64a2f;
+}
+
+.histogram-bar {
+  fill: #6b7f2a;
+}
+
+.diameter-target-line {
+  stroke: #d64a2f;
+  stroke-width: 2;
+  stroke-dasharray: 5 5;
+}
+
+.diameter-chart-callout {
+  fill: #d64a2f;
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-linejoin: round;
+  stroke-width: 5px;
+}
+
+.diameter-prior-work {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.diameter-reference {
+  display: block;
+  padding: 14px;
+  border: 2px solid var(--border);
+  background: var(--surface-quiet);
+  font-weight: 800;
+  text-decoration: none;
 }
 
 .leaderboard-table {
@@ -2799,11 +3024,21 @@ input {
   .home-hero,
   .landing-grid,
   .analysis-grid,
-  .leaderboard-hero {
+  .leaderboard-hero,
+  .diameter-hero,
+  .diameter-metrics {
     grid-template-columns: 1fr;
   }
 
   .benchmark-summary-card {
+    justify-content: flex-start;
+  }
+
+  .diameter-hero-controls,
+  .diameter-chart-actions,
+  .diameter-scale-toggle,
+  .diameter-tabs {
+    align-items: flex-start;
     justify-content: flex-start;
   }
 
@@ -2885,6 +3120,7 @@ input {
   .hero-panel,
   .home-race-preview,
   .leaderboard-hero,
+  .diameter-hero,
   .leaderboard-panel,
   .landing-card,
   .solver-experience,

@@ -7,6 +7,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         home: resolve(__dirname, "index.html"),
+        diameter: resolve(__dirname, "diameter.html"),
         leaderboard: resolve(__dirname, "leaderboard.html"),
         race: resolve(__dirname, "race.html"),
         solver: resolve(__dirname, "solver.html"),

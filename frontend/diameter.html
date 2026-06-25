@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WikiArena Diameter Explorer</title>
+    <meta
+      name="description"
+      content="Explore long-tail shortest paths and random-pair distance distributions in the English Wikipedia hyperlink graph."
+    />
+    <link rel="icon" type="image/png" sizes="32x32" href="./assets/icons/wikiarena-favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="./assets/icons/wikiarena-favicon-16.png" />
+    <link rel="apple-touch-icon" href="./assets/icons/wikiarena_logo2.png" />
+  </head>
+  <body class="page-home page-diameter">
+    <div class="page-frame leaderboard-frame">
+      <header class="topbar reveal reveal-delay-1">
+        <a class="brand" href="./index.html" aria-label="WikiArena home">
+          <img class="brand-mark" src="./assets/icons/wikiarena_logo2.png" alt="WikiArena logo" />
+          <span class="brand-lockup">
+            <span class="brand-name">wikiarena</span>
+          </span>
+        </a>
+
+        <nav class="nav-links nav-links-primary" aria-label="Primary">
+          <a class="nav-link" href="./race.html">Race</a>
+          <a class="nav-link" href="./leaderboard.html">Leaderboard</a>
+          <a class="nav-link" href="./solver.html">Solver</a>
+          <a class="nav-link is-current" href="./diameter.html">Diameter</a>
+        </nav>
+
+        <nav class="nav-links nav-links-secondary" aria-label="External">
+          <a class="nav-link github-link" href="https://github.com/wikiarena/wikiarena" target="_blank" rel="noreferrer" aria-label="WikiArena on GitHub">
+            <img src="./assets/providers/github.svg" alt="" />
+          </a>
+        </nav>
+      </header>
+
+      <main class="home-main diameter-main">
+        <section class="diameter-hero reveal reveal-delay-2">
+          <div>
+            <p class="kicker">wikipedia graph research</p>
+            <h1 class="display-title display-title-minimal">The long tail of Wikipedia</h1>
+            <p class="lede">
+              Most random page pairs are only a few clicks apart. The hardest pairs hide in thin directed tails.
+            </p>
+            <p id="diameter-method-note" class="note-copy"></p>
+          </div>
+          <div class="diameter-hero-controls">
+            <span id="diameter-hero-distance" class="meta-token">41 click lower bound</span>
+            <div id="diameter-snapshot-tabs" class="diameter-tabs" role="tablist" aria-label="Wikipedia snapshot"></div>
+            <a id="diameter-solver-link" class="path-mode-button cta-link" href="./solver.html">Open in solver</a>
+          </div>
+
+          <svg id="wavefront-map" class="diameter-wavefront-map" viewBox="0 0 920 430" role="img" aria-label="Compressed BFS wavefront expansion map"></svg>
+          <p id="diameter-witness-summary" class="diameter-witness-summary note-copy"></p>
+          <div id="diameter-metrics" class="diameter-metrics" aria-live="polite"></div>
+        </section>
+
+        <section class="leaderboard-panel reveal reveal-delay-3" aria-labelledby="wavefront-title">
+          <div class="section-header-simple">
+            <div>
+              <p class="kicker">wavefront</p>
+              <h2 id="wavefront-title" class="section-title">Frontier size by BFS layer</h2>
+            </div>
+            <div class="diameter-chart-actions">
+              <p id="wavefront-summary" class="note-copy"></p>
+              <div class="diameter-scale-toggle" role="group" aria-label="Frontier chart scale">
+                <button id="wavefront-scale-log" class="path-mode-button diameter-scale-button is-active" type="button" data-scale="log">Log</button>
+                <button id="wavefront-scale-linear" class="path-mode-button diameter-scale-button" type="button" data-scale="linear">Linear</button>
+              </div>
+            </div>
+          </div>
+          <svg id="wavefront-chart" class="diameter-chart" viewBox="0 0 920 380" role="img" aria-label="BFS frontier size by distance"></svg>
+        </section>
+
+        <section class="leaderboard-panel reveal reveal-delay-3" aria-labelledby="histogram-title">
+          <div class="section-header-simple">
+            <div>
+              <p class="kicker">100k random pairs</p>
+              <h2 id="histogram-title" class="section-title">Typical shortest paths are much shorter</h2>
+            </div>
+            <p id="histogram-summary" class="note-copy"></p>
+          </div>
+          <svg id="distance-histogram-chart" class="diameter-chart" viewBox="0 0 920 380" role="img" aria-label="Random pair shortest path length histogram"></svg>
+        </section>
+
+        <section class="leaderboard-panel reveal reveal-delay-3" aria-labelledby="prior-work-title">
+          <div class="section-header-simple">
+            <div>
+              <p class="kicker">context</p>
+              <h2 id="prior-work-title" class="section-title">Prior work</h2>
+            </div>
+          </div>
+          <div id="diameter-prior-work" class="diameter-prior-work"></div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="/src/diameter.ts"></script>
+  </body>
+</html>

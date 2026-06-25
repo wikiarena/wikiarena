@@ -1,0 +1,998 @@
+{
+  "generatedAt": "2026-05-10T14:58:53.360634+00:00",
+  "methodNote": "The witness path is an exact shortest path for the listed page pair. It is a diameter lower bound, not an exact global diameter proof.",
+  "snapshots": [
+    {
+      "snapshotId": "enwiki-20260301",
+      "nodeCount": 7146840,
+      "edgeCount": 692595870,
+      "witness": {
+        "sourceTitle": "Yu ssi samdaerok",
+        "targetTitle": "2009 California League season",
+        "sourceNodeId": 7063980,
+        "targetNodeId": 233577,
+        "distance": 41,
+        "pagesVisited": 117840,
+        "linksScanned": 704228,
+        "pathTitles": [
+          "Yu ssi samdaerok",
+          "Story of So Hyeonseong",
+          "Lists of ISO 639 codes",
+          "International Organization for Standardization",
+          "London",
+          "1932 Summer Olympics",
+          "1962 Los Angeles Dodgers season",
+          "Reno Silver Sox",
+          "1976 California League season",
+          "1977 California League season",
+          "1978 California League season",
+          "1979 California League season",
+          "1980 California League season",
+          "1981 California League season",
+          "1982 California League season",
+          "1983 California League season",
+          "1984 California League season",
+          "1985 California League season",
+          "1986 California League season",
+          "1987 California League season",
+          "1988 California League season",
+          "1989 California League season",
+          "1990 California League season",
+          "1991 California League season",
+          "1992 California League season",
+          "1993 California League season",
+          "1994 California League season",
+          "1995 California League season",
+          "1996 California League season",
+          "1997 California League season",
+          "1998 California League season",
+          "1999 California League season",
+          "2000 California League season",
+          "2001 California League season",
+          "2002 California League season",
+          "2003 California League season",
+          "2004 California League season",
+          "2005 California League season",
+          "2006 California League season",
+          "2007 California League season",
+          "2008 California League season",
+          "2009 California League season"
+        ],
+        "solverUrl": "./solver.html?start=Yu+ssi+samdaerok&target=2009+California+League+season&mode=all_shortest"
+      },
+      "wavefront": {
+        "originTitle": "Yu ssi samdaerok",
+        "targetTitle": "2009 California League season",
+        "direction": "outgoing",
+        "targetDistance": 41,
+        "reachablePages": 6824752,
+        "linksScanned": 689600251,
+        "layers": [
+          {
+            "distance": 0,
+            "frontierSize": 1,
+            "newPagesDiscovered": 1,
+            "linksScanned": 1,
+            "cumulativePages": 2,
+            "cumulativeLinksScanned": 1,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 1,
+            "frontierSize": 1,
+            "newPagesDiscovered": 1,
+            "linksScanned": 1,
+            "cumulativePages": 3,
+            "cumulativeLinksScanned": 2,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 2,
+            "frontierSize": 1,
+            "newPagesDiscovered": 7,
+            "linksScanned": 7,
+            "cumulativePages": 10,
+            "cumulativeLinksScanned": 9,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 3,
+            "frontierSize": 7,
+            "newPagesDiscovered": 1582,
+            "linksScanned": 2820,
+            "cumulativePages": 1592,
+            "cumulativeLinksScanned": 2829,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 4,
+            "frontierSize": 1582,
+            "newPagesDiscovered": 100583,
+            "linksScanned": 672681,
+            "cumulativePages": 102175,
+            "cumulativeLinksScanned": 675510,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 5,
+            "frontierSize": 100583,
+            "newPagesDiscovered": 2017057,
+            "linksScanned": 31223509,
+            "cumulativePages": 2119232,
+            "cumulativeLinksScanned": 31899019,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 6,
+            "frontierSize": 2017057,
+            "newPagesDiscovered": 3867486,
+            "linksScanned": 330708614,
+            "cumulativePages": 5986718,
+            "cumulativeLinksScanned": 362607633,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 7,
+            "frontierSize": 3867486,
+            "newPagesDiscovered": 695654,
+            "linksScanned": 304141601,
+            "cumulativePages": 6682372,
+            "cumulativeLinksScanned": 666749234,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 8,
+            "frontierSize": 695654,
+            "newPagesDiscovered": 124578,
+            "linksScanned": 19894472,
+            "cumulativePages": 6806950,
+            "cumulativeLinksScanned": 686643706,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 9,
+            "frontierSize": 124578,
+            "newPagesDiscovered": 15213,
+            "linksScanned": 2566430,
+            "cumulativePages": 6822163,
+            "cumulativeLinksScanned": 689210136,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 10,
+            "frontierSize": 15213,
+            "newPagesDiscovered": 1239,
+            "linksScanned": 280236,
+            "cumulativePages": 6823402,
+            "cumulativeLinksScanned": 689490372,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 11,
+            "frontierSize": 1239,
+            "newPagesDiscovered": 453,
+            "linksScanned": 28008,
+            "cumulativePages": 6823855,
+            "cumulativeLinksScanned": 689518380,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 12,
+            "frontierSize": 453,
+            "newPagesDiscovered": 271,
+            "linksScanned": 13418,
+            "cumulativePages": 6824126,
+            "cumulativeLinksScanned": 689531798,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 13,
+            "frontierSize": 271,
+            "newPagesDiscovered": 198,
+            "linksScanned": 8493,
+            "cumulativePages": 6824324,
+            "cumulativeLinksScanned": 689540291,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 14,
+            "frontierSize": 198,
+            "newPagesDiscovered": 149,
+            "linksScanned": 7446,
+            "cumulativePages": 6824473,
+            "cumulativeLinksScanned": 689547737,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 15,
+            "frontierSize": 149,
+            "newPagesDiscovered": 85,
+            "linksScanned": 6108,
+            "cumulativePages": 6824558,
+            "cumulativeLinksScanned": 689553845,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 16,
+            "frontierSize": 85,
+            "newPagesDiscovered": 47,
+            "linksScanned": 4403,
+            "cumulativePages": 6824605,
+            "cumulativeLinksScanned": 689558248,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 17,
+            "frontierSize": 47,
+            "newPagesDiscovered": 20,
+            "linksScanned": 3580,
+            "cumulativePages": 6824625,
+            "cumulativeLinksScanned": 689561828,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 18,
+            "frontierSize": 20,
+            "newPagesDiscovered": 14,
+            "linksScanned": 3006,
+            "cumulativePages": 6824639,
+            "cumulativeLinksScanned": 689564834,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 19,
+            "frontierSize": 14,
+            "newPagesDiscovered": 11,
+            "linksScanned": 2793,
+            "cumulativePages": 6824650,
+            "cumulativeLinksScanned": 689567627,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 20,
+            "frontierSize": 11,
+            "newPagesDiscovered": 8,
+            "linksScanned": 2637,
+            "cumulativePages": 6824658,
+            "cumulativeLinksScanned": 689570264,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 21,
+            "frontierSize": 8,
+            "newPagesDiscovered": 7,
+            "linksScanned": 2044,
+            "cumulativePages": 6824665,
+            "cumulativeLinksScanned": 689572308,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 22,
+            "frontierSize": 7,
+            "newPagesDiscovered": 7,
+            "linksScanned": 1711,
+            "cumulativePages": 6824672,
+            "cumulativeLinksScanned": 689574019,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 23,
+            "frontierSize": 7,
+            "newPagesDiscovered": 6,
+            "linksScanned": 1718,
+            "cumulativePages": 6824678,
+            "cumulativeLinksScanned": 689575737,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 24,
+            "frontierSize": 6,
+            "newPagesDiscovered": 6,
+            "linksScanned": 1709,
+            "cumulativePages": 6824684,
+            "cumulativeLinksScanned": 689577446,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 25,
+            "frontierSize": 6,
+            "newPagesDiscovered": 6,
+            "linksScanned": 1801,
+            "cumulativePages": 6824690,
+            "cumulativeLinksScanned": 689579247,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 26,
+            "frontierSize": 6,
+            "newPagesDiscovered": 5,
+            "linksScanned": 1761,
+            "cumulativePages": 6824695,
+            "cumulativeLinksScanned": 689581008,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 27,
+            "frontierSize": 5,
+            "newPagesDiscovered": 5,
+            "linksScanned": 1670,
+            "cumulativePages": 6824700,
+            "cumulativeLinksScanned": 689582678,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 28,
+            "frontierSize": 5,
+            "newPagesDiscovered": 5,
+            "linksScanned": 1678,
+            "cumulativePages": 6824705,
+            "cumulativeLinksScanned": 689584356,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 29,
+            "frontierSize": 5,
+            "newPagesDiscovered": 5,
+            "linksScanned": 1670,
+            "cumulativePages": 6824710,
+            "cumulativeLinksScanned": 689586026,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 30,
+            "frontierSize": 5,
+            "newPagesDiscovered": 5,
+            "linksScanned": 1669,
+            "cumulativePages": 6824715,
+            "cumulativeLinksScanned": 689587695,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 31,
+            "frontierSize": 5,
+            "newPagesDiscovered": 5,
+            "linksScanned": 1676,
+            "cumulativePages": 6824720,
+            "cumulativeLinksScanned": 689589371,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 32,
+            "frontierSize": 5,
+            "newPagesDiscovered": 5,
+            "linksScanned": 1663,
+            "cumulativePages": 6824725,
+            "cumulativeLinksScanned": 689591034,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 33,
+            "frontierSize": 5,
+            "newPagesDiscovered": 5,
+            "linksScanned": 1668,
+            "cumulativePages": 6824730,
+            "cumulativeLinksScanned": 689592702,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 34,
+            "frontierSize": 5,
+            "newPagesDiscovered": 5,
+            "linksScanned": 1667,
+            "cumulativePages": 6824735,
+            "cumulativeLinksScanned": 689594369,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 35,
+            "frontierSize": 5,
+            "newPagesDiscovered": 4,
+            "linksScanned": 1662,
+            "cumulativePages": 6824739,
+            "cumulativeLinksScanned": 689596031,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 36,
+            "frontierSize": 4,
+            "newPagesDiscovered": 4,
+            "linksScanned": 1152,
+            "cumulativePages": 6824743,
+            "cumulativeLinksScanned": 689597183,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 37,
+            "frontierSize": 4,
+            "newPagesDiscovered": 4,
+            "linksScanned": 1147,
+            "cumulativePages": 6824747,
+            "cumulativeLinksScanned": 689598330,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 38,
+            "frontierSize": 4,
+            "newPagesDiscovered": 3,
+            "linksScanned": 1141,
+            "cumulativePages": 6824750,
+            "cumulativeLinksScanned": 689599471,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 39,
+            "frontierSize": 3,
+            "newPagesDiscovered": 1,
+            "linksScanned": 636,
+            "cumulativePages": 6824751,
+            "cumulativeLinksScanned": 689600107,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 40,
+            "frontierSize": 1,
+            "newPagesDiscovered": 1,
+            "linksScanned": 73,
+            "cumulativePages": 6824752,
+            "cumulativeLinksScanned": 689600180,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 41,
+            "frontierSize": 1,
+            "newPagesDiscovered": 0,
+            "linksScanned": 71,
+            "cumulativePages": 6824752,
+            "cumulativeLinksScanned": 689600251,
+            "targetOnFrontier": true
+          }
+        ]
+      }
+    },
+    {
+      "snapshotId": "enwiki-20260401",
+      "nodeCount": 7162815,
+      "edgeCount": 695907957,
+      "witness": {
+        "sourceTitle": "Yu ssi samdaerok",
+        "targetTitle": "2009 California League season",
+        "sourceNodeId": 7079685,
+        "targetNodeId": 233940,
+        "distance": 41,
+        "pagesVisited": 118162,
+        "linksScanned": 707255,
+        "pathTitles": [
+          "Yu ssi samdaerok",
+          "Story of So Hyeonseong",
+          "Lists of ISO 639 codes",
+          "International Organization for Standardization",
+          "London",
+          "1932 Summer Olympics",
+          "1962 Los Angeles Dodgers season",
+          "Reno Silver Sox",
+          "1976 California League season",
+          "1977 California League season",
+          "1978 California League season",
+          "1979 California League season",
+          "1980 California League season",
+          "1981 California League season",
+          "1982 California League season",
+          "1983 California League season",
+          "1984 California League season",
+          "1985 California League season",
+          "1986 California League season",
+          "1987 California League season",
+          "1988 California League season",
+          "1989 California League season",
+          "1990 California League season",
+          "1991 California League season",
+          "1992 California League season",
+          "1993 California League season",
+          "1994 California League season",
+          "1995 California League season",
+          "1996 California League season",
+          "1997 California League season",
+          "1998 California League season",
+          "1999 California League season",
+          "2000 California League season",
+          "2001 California League season",
+          "2002 California League season",
+          "2003 California League season",
+          "2004 California League season",
+          "2005 California League season",
+          "2006 California League season",
+          "2007 California League season",
+          "2008 California League season",
+          "2009 California League season"
+        ],
+        "solverUrl": "./solver.html?start=Yu+ssi+samdaerok&target=2009+California+League+season&mode=all_shortest"
+      },
+      "wavefront": {
+        "originTitle": "Yu ssi samdaerok",
+        "targetTitle": "2009 California League season",
+        "direction": "outgoing",
+        "targetDistance": 41,
+        "reachablePages": 6841258,
+        "linksScanned": 692906103,
+        "layers": [
+          {
+            "distance": 0,
+            "frontierSize": 1,
+            "newPagesDiscovered": 1,
+            "linksScanned": 1,
+            "cumulativePages": 2,
+            "cumulativeLinksScanned": 1,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 1,
+            "frontierSize": 1,
+            "newPagesDiscovered": 1,
+            "linksScanned": 1,
+            "cumulativePages": 3,
+            "cumulativeLinksScanned": 2,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 2,
+            "frontierSize": 1,
+            "newPagesDiscovered": 7,
+            "linksScanned": 7,
+            "cumulativePages": 10,
+            "cumulativeLinksScanned": 9,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 3,
+            "frontierSize": 7,
+            "newPagesDiscovered": 1586,
+            "linksScanned": 2827,
+            "cumulativePages": 1596,
+            "cumulativeLinksScanned": 2836,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 4,
+            "frontierSize": 1586,
+            "newPagesDiscovered": 100865,
+            "linksScanned": 675656,
+            "cumulativePages": 102461,
+            "cumulativeLinksScanned": 678492,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 5,
+            "frontierSize": 100865,
+            "newPagesDiscovered": 2003465,
+            "linksScanned": 31456280,
+            "cumulativePages": 2105926,
+            "cumulativeLinksScanned": 32134772,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 6,
+            "frontierSize": 2003465,
+            "newPagesDiscovered": 3886727,
+            "linksScanned": 329729236,
+            "cumulativePages": 5992653,
+            "cumulativeLinksScanned": 361864008,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 7,
+            "frontierSize": 3886727,
+            "newPagesDiscovered": 705341,
+            "linksScanned": 307870163,
+            "cumulativePages": 6697994,
+            "cumulativeLinksScanned": 669734171,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 8,
+            "frontierSize": 705341,
+            "newPagesDiscovered": 125409,
+            "linksScanned": 20190869,
+            "cumulativePages": 6823403,
+            "cumulativeLinksScanned": 689925040,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 9,
+            "frontierSize": 125409,
+            "newPagesDiscovered": 15257,
+            "linksScanned": 2588410,
+            "cumulativePages": 6838660,
+            "cumulativeLinksScanned": 692513450,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 10,
+            "frontierSize": 15257,
+            "newPagesDiscovered": 1234,
+            "linksScanned": 283703,
+            "cumulativePages": 6839894,
+            "cumulativeLinksScanned": 692797153,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 11,
+            "frontierSize": 1234,
+            "newPagesDiscovered": 455,
+            "linksScanned": 27305,
+            "cumulativePages": 6840349,
+            "cumulativeLinksScanned": 692824458,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 12,
+            "frontierSize": 455,
+            "newPagesDiscovered": 273,
+            "linksScanned": 13139,
+            "cumulativePages": 6840622,
+            "cumulativeLinksScanned": 692837597,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 13,
+            "frontierSize": 273,
+            "newPagesDiscovered": 205,
+            "linksScanned": 8524,
+            "cumulativePages": 6840827,
+            "cumulativeLinksScanned": 692846121,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 14,
+            "frontierSize": 205,
+            "newPagesDiscovered": 149,
+            "linksScanned": 7516,
+            "cumulativePages": 6840976,
+            "cumulativeLinksScanned": 692853637,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 15,
+            "frontierSize": 149,
+            "newPagesDiscovered": 85,
+            "linksScanned": 6100,
+            "cumulativePages": 6841061,
+            "cumulativeLinksScanned": 692859737,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 16,
+            "frontierSize": 85,
+            "newPagesDiscovered": 49,
+            "linksScanned": 4409,
+            "cumulativePages": 6841110,
+            "cumulativeLinksScanned": 692864146,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 17,
+            "frontierSize": 49,
+            "newPagesDiscovered": 21,
+            "linksScanned": 3588,
+            "cumulativePages": 6841131,
+            "cumulativeLinksScanned": 692867734,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 18,
+            "frontierSize": 21,
+            "newPagesDiscovered": 14,
+            "linksScanned": 3010,
+            "cumulativePages": 6841145,
+            "cumulativeLinksScanned": 692870744,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 19,
+            "frontierSize": 14,
+            "newPagesDiscovered": 11,
+            "linksScanned": 2788,
+            "cumulativePages": 6841156,
+            "cumulativeLinksScanned": 692873532,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 20,
+            "frontierSize": 11,
+            "newPagesDiscovered": 8,
+            "linksScanned": 2636,
+            "cumulativePages": 6841164,
+            "cumulativeLinksScanned": 692876168,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 21,
+            "frontierSize": 8,
+            "newPagesDiscovered": 7,
+            "linksScanned": 2041,
+            "cumulativePages": 6841171,
+            "cumulativeLinksScanned": 692878209,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 22,
+            "frontierSize": 7,
+            "newPagesDiscovered": 7,
+            "linksScanned": 1708,
+            "cumulativePages": 6841178,
+            "cumulativeLinksScanned": 692879917,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 23,
+            "frontierSize": 7,
+            "newPagesDiscovered": 6,
+            "linksScanned": 1715,
+            "cumulativePages": 6841184,
+            "cumulativeLinksScanned": 692881632,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 24,
+            "frontierSize": 6,
+            "newPagesDiscovered": 6,
+            "linksScanned": 1706,
+            "cumulativePages": 6841190,
+            "cumulativeLinksScanned": 692883338,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 25,
+            "frontierSize": 6,
+            "newPagesDiscovered": 6,
+            "linksScanned": 1798,
+            "cumulativePages": 6841196,
+            "cumulativeLinksScanned": 692885136,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 26,
+            "frontierSize": 6,
+            "newPagesDiscovered": 5,
+            "linksScanned": 1758,
+            "cumulativePages": 6841201,
+            "cumulativeLinksScanned": 692886894,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 27,
+            "frontierSize": 5,
+            "newPagesDiscovered": 5,
+            "linksScanned": 1667,
+            "cumulativePages": 6841206,
+            "cumulativeLinksScanned": 692888561,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 28,
+            "frontierSize": 5,
+            "newPagesDiscovered": 5,
+            "linksScanned": 1675,
+            "cumulativePages": 6841211,
+            "cumulativeLinksScanned": 692890236,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 29,
+            "frontierSize": 5,
+            "newPagesDiscovered": 5,
+            "linksScanned": 1667,
+            "cumulativePages": 6841216,
+            "cumulativeLinksScanned": 692891903,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 30,
+            "frontierSize": 5,
+            "newPagesDiscovered": 5,
+            "linksScanned": 1666,
+            "cumulativePages": 6841221,
+            "cumulativeLinksScanned": 692893569,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 31,
+            "frontierSize": 5,
+            "newPagesDiscovered": 5,
+            "linksScanned": 1673,
+            "cumulativePages": 6841226,
+            "cumulativeLinksScanned": 692895242,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 32,
+            "frontierSize": 5,
+            "newPagesDiscovered": 5,
+            "linksScanned": 1660,
+            "cumulativePages": 6841231,
+            "cumulativeLinksScanned": 692896902,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 33,
+            "frontierSize": 5,
+            "newPagesDiscovered": 5,
+            "linksScanned": 1665,
+            "cumulativePages": 6841236,
+            "cumulativeLinksScanned": 692898567,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 34,
+            "frontierSize": 5,
+            "newPagesDiscovered": 5,
+            "linksScanned": 1664,
+            "cumulativePages": 6841241,
+            "cumulativeLinksScanned": 692900231,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 35,
+            "frontierSize": 5,
+            "newPagesDiscovered": 4,
+            "linksScanned": 1659,
+            "cumulativePages": 6841245,
+            "cumulativeLinksScanned": 692901890,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 36,
+            "frontierSize": 4,
+            "newPagesDiscovered": 4,
+            "linksScanned": 1150,
+            "cumulativePages": 6841249,
+            "cumulativeLinksScanned": 692903040,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 37,
+            "frontierSize": 4,
+            "newPagesDiscovered": 4,
+            "linksScanned": 1145,
+            "cumulativePages": 6841253,
+            "cumulativeLinksScanned": 692904185,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 38,
+            "frontierSize": 4,
+            "newPagesDiscovered": 3,
+            "linksScanned": 1139,
+            "cumulativePages": 6841256,
+            "cumulativeLinksScanned": 692905324,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 39,
+            "frontierSize": 3,
+            "newPagesDiscovered": 1,
+            "linksScanned": 635,
+            "cumulativePages": 6841257,
+            "cumulativeLinksScanned": 692905959,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 40,
+            "frontierSize": 1,
+            "newPagesDiscovered": 1,
+            "linksScanned": 73,
+            "cumulativePages": 6841258,
+            "cumulativeLinksScanned": 692906032,
+            "targetOnFrontier": false
+          },
+          {
+            "distance": 41,
+            "frontierSize": 1,
+            "newPagesDiscovered": 0,
+            "linksScanned": 71,
+            "cumulativePages": 6841258,
+            "cumulativeLinksScanned": 692906103,
+            "targetOnFrontier": true
+          }
+        ]
+      }
+    }
+  ],
+  "randomPairHistogram": {
+    "sampleSize": 100000,
+    "seed": 42,
+    "reachablePairs": 95450,
+    "unreachablePairs": 4550,
+    "reachableShare": 0.9545,
+    "histogram": [
+      {
+        "distance": 1,
+        "count": 1,
+        "shareOfReachablePairs": 0.000010476689366160294
+      },
+      {
+        "distance": 2,
+        "count": 155,
+        "shareOfReachablePairs": 0.0016238868517548454
+      },
+      {
+        "distance": 3,
+        "count": 8434,
+        "shareOfReachablePairs": 0.08836039811419591
+      },
+      {
+        "distance": 4,
+        "count": 50311,
+        "shareOfReachablePairs": 0.5270927187008905
+      },
+      {
+        "distance": 5,
+        "count": 31105,
+        "shareOfReachablePairs": 0.32587742273441594
+      },
+      {
+        "distance": 6,
+        "count": 4541,
+        "shareOfReachablePairs": 0.047574646411733895
+      },
+      {
+        "distance": 7,
+        "count": 820,
+        "shareOfReachablePairs": 0.008590885280251441
+      },
+      {
+        "distance": 8,
+        "count": 56,
+        "shareOfReachablePairs": 0.0005866946045049765
+      },
+      {
+        "distance": 9,
+        "count": 11,
+        "shareOfReachablePairs": 0.00011524358302776323
+      },
+      {
+        "distance": 10,
+        "count": 5,
+        "shareOfReachablePairs": 0.00005238344683080147
+      },
+      {
+        "distance": 11,
+        "count": 3,
+        "shareOfReachablePairs": 0.00003143006809848088
+      },
+      {
+        "distance": 12,
+        "count": 4,
+        "shareOfReachablePairs": 0.000041906757464641176
+      },
+      {
+        "distance": 13,
+        "count": 1,
+        "shareOfReachablePairs": 0.000010476689366160294
+      },
+      {
+        "distance": 15,
+        "count": 2,
+        "shareOfReachablePairs": 0.000020953378732320588
+      },
+      {
+        "distance": 18,
+        "count": 1,
+        "shareOfReachablePairs": 0.000010476689366160294
+      }
+    ]
+  },
+  "priorWork": [
+    {
+      "title": "Fast diameter and radius BFS-based computation in real-world graphs",
+      "url": "https://doi.org/10.1016/j.tcs.2015.02.033"
+    },
+    {
+      "title": "SNAP English Wikipedia hyperlink network",
+      "url": "https://snap.stanford.edu/data/enwiki-2013.html"
+    },
+    {
+      "title": "The Difficulty of Path Traversal in Information Networks",
+      "url": "https://research.thewikigame.com/papers/the-difficulty-of-path-traversal-in-information-networks.pdf"
+    }
+  ]
+}
