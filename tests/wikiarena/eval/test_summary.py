@@ -2,11 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from wikiarena.eval.summary import compare_run_results
-from wikiarena.eval.summary import summarize_run_results
-from wikiarena.protocol import RunResult
-from wikiarena.protocol import TerminalOutcome
-from wikiarena.protocol import TerminationReason
+from wikiarena.eval.summary import compare_run_results, summarize_run_results
+from wikiarena.protocol import RunResult, TerminalOutcome, TerminationReason
 
 
 def _build_run_result(
@@ -113,3 +110,75 @@ def test_summarize_run_results_orders_participants_by_elo() -> None:
     assert summary.total_races == 1
     assert summary.participants[0].participant_id == "winner"
     assert summary.participants[0].elo is not None
+
+
+def test_summarize_run_results_skips_unsolved_pairs_by_default() -> None:
+    failed_a = _build_run_result(
+        run_id="run-a",
+        race_id="race-1",
+        participant_id="a",
+        terminal_outcome=TerminalOutcome.MODEL_FAILURE,
+        termination_reason=TerminationReason.MAX_MOVES_EXHAUSTED,
+        total_committed_moves=50,
+        duration_ms=100.0,
+    )
+    failed_b = _build_run_result(
+        run_id="run-b",
+        race_id="race-1",
+        participant_id="b",
+        terminal_outcome=TerminalOutcome.MODEL_FAILURE,
+        termination_reason=TerminationReason.MAX_MOVES_EXHAUSTED,
+        total_committed_moves=50,
+        duration_ms=100.0,
+    )
+
+    summary = summarize_run_results(
+        [failed_a, failed_b],
+    )
+
+    assert summary.unsolved_pair_policy == "skip"
+    assert summary.pairwise_comparisons == 0
+    assert summary.pairwise_skipped_comparisons == 1
+    participant_by_id = {
+        participant.participant_id: participant for participant in summary.participants
+    }
+    assert participant_by_id["a"].pairwise_draws == 0
+    assert participant_by_id["a"].pairwise_skipped == 1
+    assert participant_by_id["b"].pairwise_draws == 0
+    assert participant_by_id["b"].pairwise_skipped == 1
+
+
+def test_summarize_run_results_can_count_unsolved_pairs_as_legacy_draws() -> None:
+    failed_a = _build_run_result(
+        run_id="run-a",
+        race_id="race-1",
+        participant_id="a",
+        terminal_outcome=TerminalOutcome.MODEL_FAILURE,
+        termination_reason=TerminationReason.MAX_MOVES_EXHAUSTED,
+        total_committed_moves=50,
+        duration_ms=100.0,
+    )
+    failed_b = _build_run_result(
+        run_id="run-b",
+        race_id="race-1",
+        participant_id="b",
+        terminal_outcome=TerminalOutcome.MODEL_FAILURE,
+        termination_reason=TerminationReason.MAX_MOVES_EXHAUSTED,
+        total_committed_moves=50,
+        duration_ms=100.0,
+    )
+
+    summary = summarize_run_results(
+        [failed_a, failed_b],
+        unsolved_pair_policy="draw",
+    )
+
+    assert summary.pairwise_comparisons == 1
+    assert summary.pairwise_skipped_comparisons == 0
+    participant_by_id = {
+        participant.participant_id: participant for participant in summary.participants
+    }
+    assert participant_by_id["a"].pairwise_draws == 1
+    assert participant_by_id["a"].pairwise_skipped == 0
+    assert participant_by_id["b"].pairwise_draws == 1
+    assert participant_by_id["b"].pairwise_skipped == 0

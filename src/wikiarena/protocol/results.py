@@ -15,6 +15,7 @@ from wikiarena.protocol.enums import (
     TerminationReason,
 )
 from wikiarena.protocol.errors import ErrorRecord
+from wikiarena.protocol.version import DEFAULT_PROTOCOL_VERSION
 
 
 class ModelCallMetrics(BaseModel):
@@ -168,7 +169,7 @@ class RunResult(BaseModel):
 
     error: ErrorRecord | None = None
 
-    protocol_version: str = "1.0.0-draft"
+    protocol_version: str = DEFAULT_PROTOCOL_VERSION
     engine_commit: str | None = None
     ruleset_hash: str | None = None
     taskset_hash: str | None = None

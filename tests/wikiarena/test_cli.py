@@ -447,7 +447,7 @@ def test_run_command_does_not_default_anthropic_reasoning_effort(monkeypatch) ->
     assert "output_config" not in fake_services.run_service.last_request.model_settings
 
 
-def test_run_command_trace_defaults_anthropic_thinking_to_high(monkeypatch) -> None:
+def test_run_command_trace_does_not_change_anthropic_thinking(monkeypatch) -> None:
     fake_services = FakeCliServices()
     monkeypatch.setattr(
         "wikiarena.cli.get_cli_services",
@@ -472,12 +472,8 @@ def test_run_command_trace_defaults_anthropic_thinking_to_high(monkeypatch) -> N
 
     assert result.exit_code == 0
     assert fake_services.run_service.last_request is not None
-    assert fake_services.run_service.last_request.model_settings["thinking"] == {
-        "type": "adaptive",
-    }
-    assert fake_services.run_service.last_request.model_settings["output_config"] == {
-        "effort": "high",
-    }
+    assert "thinking" not in fake_services.run_service.last_request.model_settings
+    assert "output_config" not in fake_services.run_service.last_request.model_settings
 
 
 def test_run_command_enables_openai_responses_reasoning_options(monkeypatch) -> None:
@@ -532,7 +528,7 @@ def test_run_command_enables_openai_responses_reasoning_options(monkeypatch) -> 
     )
 
 
-def test_run_command_trace_defaults_openai_reasoning_summary_to_detailed(
+def test_run_command_trace_does_not_change_openai_reasoning_summary(
     monkeypatch,
 ) -> None:
     fake_services = FakeCliServices()
@@ -560,10 +556,8 @@ def test_run_command_trace_defaults_openai_reasoning_summary_to_detailed(
     assert result.exit_code == 0
     assert fake_services.run_service.last_request is not None
     assert (
-        fake_services.run_service.last_request.model_settings[
-            "openai_reasoning_summary"
-        ]
-        == "detailed"
+        "openai_reasoning_summary"
+        not in fake_services.run_service.last_request.model_settings
     )
 
 
@@ -583,7 +577,7 @@ def test_run_command_openai_compatible_only_uses_responses_when_requested(
             "--model",
             "gpt-x",
             "--provider",
-            "openai_compatible",
+            "openai-compatible",
             "--start",
             "Apple",
             "--target",

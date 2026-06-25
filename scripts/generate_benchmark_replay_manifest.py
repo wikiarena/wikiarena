@@ -17,10 +17,33 @@ def main() -> None:
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--artifact-dir", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--unsolved-pair-policy",
+        choices=("skip", "draw"),
+        default="skip",
+        help="How to score ranking-eligible pairs where neither run solved the task.",
+    )
+    parser.add_argument(
+        "--exclude-participant",
+        "--hide-participant",
+        action="append",
+        default=[],
+        dest="excluded_participants",
+        help="Participant id to omit from public replay manifest.",
+    )
     args = parser.parse_args()
 
-    run_results = load_run_results(args.input)
-    summary = summarize_run_results(run_results)
+    all_run_results = load_run_results(args.input)
+    excluded_participants = set(args.excluded_participants)
+    run_results = [
+        run_result
+        for run_result in all_run_results
+        if run_result.participant_id not in excluded_participants
+    ]
+    summary = summarize_run_results(
+        run_results,
+        unsolved_pair_policy=args.unsolved_pair_policy,
+    )
     elo_by_participant = {
         participant.participant_id: participant.elo
         for participant in summary.participants
@@ -84,6 +107,15 @@ def main() -> None:
     payload = {
         "sourcePath": str(args.input),
         "artifactDir": str(args.artifact_dir),
+        "generatedFromRuns": len(all_run_results),
+        "rankedFromRuns": summary.total_runs,
+        "excludedParticipants": sorted(
+            excluded_participants,
+        ),
+        "scoringPolicy": {
+            "tieBreaker": summary.tie_breaker,
+            "unsolvedPairPolicy": summary.unsolved_pair_policy,
+        },
         "totalRaces": len(races),
         "races": races,
     }
@@ -95,19 +127,31 @@ def main() -> None:
 
 
 def _winner_participant_id(race_run_results: list[Any]) -> str | None:
-    eligible = [run_result for run_result in race_run_results if run_result.ranking_eligible]
-    if len(eligible) != 2:
+    eligible = [
+        run_result for run_result in race_run_results if run_result.ranking_eligible
+    ]
+    if len(eligible) < 2:
         return None
-    outcome = compare_run_results(
-        eligible[0],
-        eligible[1],
-        tie_breaker="fewest_moves_then_draw",
-    )
-    if outcome > 0:
-        return eligible[0].participant_id
-    if outcome < 0:
-        return eligible[1].participant_id
-    return None
+
+    winners = []
+    for candidate in eligible:
+        if all(
+            compare_run_results(
+                candidate,
+                opponent,
+                tie_breaker="fewest_moves_then_draw",
+            )
+            > 0
+            for opponent in eligible
+            if opponent.participant_id != candidate.participant_id
+        ):
+            winners.append(
+                candidate,
+            )
+
+    if len(winners) != 1:
+        return None
+    return winners[0].participant_id
 
 
 def _participant_by_id(
@@ -132,13 +176,14 @@ def _loser_participant(
 ) -> dict[str, Any] | None:
     if winner_participant_id is None:
         return None
-    return next(
+    return min(
         (
             participant
             for participant in participants
             if participant["participantId"] != winner_participant_id
         ),
-        None,
+        key=lambda participant: participant["scoreMoves"],
+        default=None,
     )
 
 

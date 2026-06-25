@@ -180,6 +180,7 @@ class RunService:
         if request.navigation_runtime.backend == NavigationBackend.GRAPH:
             resolved_graph_path = resolve_graph_file_path(
                 request.navigation_runtime.graph_path,
+                snapshot_id=resolved_navigation_snapshot_id,
             )
             resolved_navigation_runtime = request.navigation_runtime.model_copy(
                 update={
@@ -203,6 +204,7 @@ class RunService:
             resolved_solver_graph_path = resolve_solver_graph_file_path(
                 request.solver_runtime.graph_path,
                 fallback_graph_path=fallback_navigation_graph_path,
+                snapshot_id=resolved_solver_snapshot_id,
             )
             resolved_solver_runtime = request.solver_runtime.model_copy(
                 update={

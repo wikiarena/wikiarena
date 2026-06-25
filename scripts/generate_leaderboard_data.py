@@ -10,6 +10,8 @@ from wikiarena.eval import load_run_results, summarize_run_results
 DISPLAY_NAMES = {
     "gpt_5_5": "GPT-5.5",
     "claude_sonnet_4_6": "Claude Sonnet 4.6",
+    "gpt_5_4_xhigh": "GPT-5.4 xhigh",
+    "claude_opus_4_6_max": "Claude Opus 4.6 max",
 }
 
 
@@ -21,11 +23,34 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--benchmark-id", default="wikiarena_v0")
     parser.add_argument("--snapshot-id", default="enwiki-20260401")
-    parser.add_argument("--artifact-dir", default="artifacts/benchmark/v0")
+    parser.add_argument("--artifact-dir", default="artifacts/wikiarena/v0")
+    parser.add_argument(
+        "--unsolved-pair-policy",
+        choices=("skip", "draw"),
+        default="skip",
+        help="How to score ranking-eligible pairs where neither run solved the task.",
+    )
+    parser.add_argument(
+        "--exclude-participant",
+        "--hide-participant",
+        action="append",
+        default=[],
+        dest="excluded_participants",
+        help="Participant id to omit from public leaderboard ranking and metrics.",
+    )
     args = parser.parse_args()
 
-    run_results = load_run_results(args.input)
-    summary = summarize_run_results(run_results)
+    all_run_results = load_run_results(args.input)
+    excluded_participants = set(args.excluded_participants)
+    run_results = [
+        run_result
+        for run_result in all_run_results
+        if run_result.participant_id not in excluded_participants
+    ]
+    summary = summarize_run_results(
+        run_results,
+        unsolved_pair_policy=args.unsolved_pair_policy,
+    )
     cost_by_participant: dict[str, float] = {}
     latency_by_participant: dict[str, float] = {}
     step_attempts_by_participant: dict[str, int] = {}
@@ -90,6 +115,7 @@ def main() -> None:
                 "pairwiseWins": participant.pairwise_wins,
                 "pairwiseLosses": participant.pairwise_losses,
                 "pairwiseDraws": participant.pairwise_draws,
+                "pairwiseSkipped": participant.pairwise_skipped,
                 "elo": participant.elo,
             },
         )
@@ -99,8 +125,18 @@ def main() -> None:
         "snapshotId": args.snapshot_id,
         "sourcePath": str(args.input),
         "artifactDir": args.artifact_dir,
-        "generatedFromRuns": summary.total_runs,
+        "generatedFromRuns": len(all_run_results),
+        "rankedFromRuns": summary.total_runs,
         "totalRaces": summary.total_races,
+        "excludedParticipants": sorted(
+            excluded_participants,
+        ),
+        "scoringPolicy": {
+            "tieBreaker": summary.tie_breaker,
+            "unsolvedPairPolicy": summary.unsolved_pair_policy,
+        },
+        "pairwiseComparisons": summary.pairwise_comparisons,
+        "pairwiseSkippedComparisons": summary.pairwise_skipped_comparisons,
         "rulesetHashes": summary.ruleset_hashes,
         "tasksetHashes": summary.taskset_hashes,
         "participants": participants,

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from pydantic import BaseModel
-from pydantic import Field
+from typing import Literal
 
-from wikiarena.protocol.enums import LinkPolicy
-from wikiarena.protocol.enums import RedirectPolicy
-from wikiarena.protocol.enums import ResponseContract
+from pydantic import BaseModel, Field
+
+from wikiarena.protocol.enums import LinkPolicy, RedirectPolicy, ResponseContract
+
+UnsolvedPairPolicy = Literal["skip", "draw"]
 
 
 class NavigationRules(BaseModel):
@@ -70,6 +71,7 @@ class ExecutionPolicy(BaseModel):
 class ScoringRules(BaseModel):
     exclude_system_failures_from_ranking: bool = True
     tie_breaker: str = "fewest_moves_then_draw"
+    unsolved_pair_policy: UnsolvedPairPolicy = "skip"
 
 
 class BenchmarkRules(BaseModel):

@@ -47,11 +47,13 @@ from wikiarena.protocol.specs import (
     TaskSpec,
     build_task_id,
 )
+from wikiarena.protocol.version import DEFAULT_PROTOCOL_VERSION
 
 __all__ = [
     "BenchmarkResult",
     "BenchmarkRules",
     "BenchmarkSpec",
+    "DEFAULT_PROTOCOL_VERSION",
     "DriverConfig",
     "ErrorRecord",
     "ErrorScope",

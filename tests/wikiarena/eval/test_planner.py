@@ -160,11 +160,13 @@ def test_build_race_and_run_ids_are_deterministic() -> None:
         benchmark_id="My Benchmark",
         task_id="en__apple__banana",
         task_index=1,
+        start_page_title="Apple",
+        target_page_title="Banana",
     )
     run_id = build_run_id(
         race_id=race_id,
         participant_id="participant-1",
     )
 
-    assert race_id == "race_my_benchmark_0001_en_apple_banana"
-    assert run_id == "run_race_my_benchmark_0001_en_apple_banana_participant-1"
+    assert race_id == "race_my_benchmark_0001_en_apple__banana"
+    assert run_id == "run_my_benchmark_0001_participant_1"

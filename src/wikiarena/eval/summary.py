@@ -4,12 +4,13 @@ import json
 import math
 from collections import defaultdict
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel
-from pydantic import Field
 
-from wikiarena.protocol import RunResult
-from wikiarena.protocol import TerminalOutcome
+from wikiarena.protocol import RunResult, TerminalOutcome
+
+UnsolvedPairPolicy = Literal["skip", "draw"]
 
 
 class ParticipantSummary(BaseModel):
@@ -24,12 +25,17 @@ class ParticipantSummary(BaseModel):
     pairwise_wins: float = 0.0
     pairwise_losses: float = 0.0
     pairwise_draws: float = 0.0
+    pairwise_skipped: float = 0.0
     elo: int | None = None
 
 
 class EvaluationSummary(BaseModel):
     total_runs: int
     total_races: int
+    pairwise_comparisons: int
+    pairwise_skipped_comparisons: int
+    tie_breaker: str
+    unsolved_pair_policy: UnsolvedPairPolicy
     ruleset_hashes: list[str]
     taskset_hashes: list[str]
     participants: list[ParticipantSummary]
@@ -78,6 +84,7 @@ def summarize_run_results(
     run_results: list[RunResult],
     *,
     tie_breaker: str = "fewest_moves_then_draw",
+    unsolved_pair_policy: UnsolvedPairPolicy = "skip",
 ) -> EvaluationSummary:
     race_groups: dict[str, list[RunResult]] = defaultdict(list)
     participant_groups: dict[str, list[RunResult]] = defaultdict(list)
@@ -106,8 +113,11 @@ def summarize_run_results(
             "wins": 0.0,
             "losses": 0.0,
             "draws": 0.0,
+            "skipped": 0.0,
         },
     )
+    pairwise_comparisons = 0
+    pairwise_skipped_comparisons = 0
 
     for race_run_results in race_groups.values():
         eligible_run_results = [
@@ -120,11 +130,26 @@ def summarize_run_results(
                 if run_result_a.participant_id == run_result_b.participant_id:
                     continue
 
+                if _should_skip_unsolved_pair(
+                    run_result_a,
+                    run_result_b,
+                    unsolved_pair_policy=unsolved_pair_policy,
+                ):
+                    participant_pairwise_totals[run_result_a.participant_id][
+                        "skipped"
+                    ] += 1.0
+                    participant_pairwise_totals[run_result_b.participant_id][
+                        "skipped"
+                    ] += 1.0
+                    pairwise_skipped_comparisons += 1
+                    continue
+
                 outcome = compare_run_results(
                     run_result_a,
                     run_result_b,
                     tie_breaker=tie_breaker,
                 )
+                pairwise_comparisons += 1
                 pairwise_scores.add_comparison(
                     run_result_a.participant_id,
                     run_result_b.participant_id,
@@ -198,6 +223,7 @@ def summarize_run_results(
                 pairwise_wins=pairwise_totals["wins"],
                 pairwise_losses=pairwise_totals["losses"],
                 pairwise_draws=pairwise_totals["draws"],
+                pairwise_skipped=pairwise_totals["skipped"],
                 elo=elo_ratings.get(
                     participant_id,
                 ),
@@ -216,6 +242,10 @@ def summarize_run_results(
     return EvaluationSummary(
         total_runs=len(run_results),
         total_races=len(race_groups),
+        pairwise_comparisons=pairwise_comparisons,
+        pairwise_skipped_comparisons=pairwise_skipped_comparisons,
+        tie_breaker=tie_breaker,
+        unsolved_pair_policy=unsolved_pair_policy,
         ruleset_hashes=sorted(
             ruleset_hashes,
         ),
@@ -223,6 +253,24 @@ def summarize_run_results(
             taskset_hashes,
         ),
         participants=participant_summaries,
+    )
+
+
+def _should_skip_unsolved_pair(
+    run_result_a: RunResult,
+    run_result_b: RunResult,
+    *,
+    unsolved_pair_policy: UnsolvedPairPolicy,
+) -> bool:
+    if unsolved_pair_policy == "draw":
+        return False
+    if unsolved_pair_policy != "skip":
+        raise ValueError(
+            f"unsupported unsolved_pair_policy: {unsolved_pair_policy!r}",
+        )
+    return (
+        run_result_a.terminal_outcome != TerminalOutcome.SUCCESS
+        and run_result_b.terminal_outcome != TerminalOutcome.SUCCESS
     )
 
 

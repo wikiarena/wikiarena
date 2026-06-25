@@ -40,6 +40,7 @@ from wikiarena.protocol import (
     TerminalOutcome,
     TerminationReason,
 )
+from wikiarena.protocol.version import DEFAULT_PROTOCOL_VERSION
 from wikiarena.solver_runtime import SolverRuntimeConfig
 from wikiarena.wiki_runtime import NavigationRuntimeConfig
 
@@ -244,7 +245,7 @@ async def test_benchmark_runner_resume_skips_existing_non_system_failures() -> N
     )
     identity = plan_benchmark_identity(
         benchmark_spec,
-        protocol_version="1.0.0-draft",
+        protocol_version=DEFAULT_PROTOCOL_VERSION,
     )
     task = benchmark_spec.tasks[0]
     assert task.task_id is not None
@@ -252,6 +253,8 @@ async def test_benchmark_runner_resume_skips_existing_non_system_failures() -> N
         benchmark_id=benchmark_spec.benchmark_id,
         task_id=task.task_id,
         task_index=1,
+        start_page_title=task.start_page_title,
+        target_page_title=task.target_page_title,
     )
     now = datetime.now()
     existing_run_result = RunResult(
@@ -308,7 +311,7 @@ async def test_benchmark_runner_resume_reruns_existing_system_failures() -> None
     )
     identity = plan_benchmark_identity(
         benchmark_spec,
-        protocol_version="1.0.0-draft",
+        protocol_version=DEFAULT_PROTOCOL_VERSION,
     )
     task = benchmark_spec.tasks[0]
     assert task.task_id is not None
@@ -316,6 +319,8 @@ async def test_benchmark_runner_resume_reruns_existing_system_failures() -> None
         benchmark_id=benchmark_spec.benchmark_id,
         task_id=task.task_id,
         task_index=1,
+        start_page_title=task.start_page_title,
+        target_page_title=task.target_page_title,
     )
     run_id = build_run_id(
         race_id=race_id,

@@ -45,6 +45,7 @@ from wikiarena.protocol import (
     StepAttemptRecord,
     TerminalOutcome,
 )
+from wikiarena.protocol.version import DEFAULT_PROTOCOL_VERSION
 from wikiarena.server.race_models import RaceMetadata, RaceParticipantSummary
 from wikiarena.server.race_store import LocalRaceArtifactStore
 from wikiarena.solver.binary import MappedBinarySolverGraph
@@ -84,6 +85,11 @@ class SummaryFormat(str, Enum):
 class TieBreaker(str, Enum):
     FEWEST_MOVES_THEN_DRAW = "fewest_moves_then_draw"
     FEWEST_MOVES_THEN_FASTEST_MS = "fewest_moves_then_fastest_ms"
+
+
+class UnsolvedPairPolicy(str, Enum):
+    SKIP = "skip"
+    DRAW = "draw"
 
 
 class ThinkingEffort(str, Enum):
@@ -324,7 +330,7 @@ def run_command(
     openai_use_responses_api: bool = typer.Option(
         False,
         "--openai-use-responses-api/--openai-use-chat-completions",
-        help="Use the OpenAI Responses API for openai_compatible providers; provider openai already uses Responses by default",
+        help="Use the OpenAI Responses API for openai-compatible providers; provider openai already uses Responses by default",
     ),
     openai_reasoning_summary: OpenAIReasoningSummary | None = typer.Option(
         None,
@@ -775,6 +781,11 @@ def eval_summarize_command(
         "--tie-breaker",
         help="Pairwise comparison tie-breaker",
     ),
+    unsolved_pair_policy: UnsolvedPairPolicy = typer.Option(
+        UnsolvedPairPolicy.SKIP,
+        "--unsolved-pair-policy",
+        help="How to score ranking-eligible pairs where neither run solved the task",
+    ),
 ) -> None:
     run_results = load_run_results(
         input_path,
@@ -782,6 +793,7 @@ def eval_summarize_command(
     evaluation_summary = summarize_run_results(
         run_results,
         tie_breaker=tie_breaker.value,
+        unsolved_pair_policy=unsolved_pair_policy.value,
     )
 
     if format == SummaryFormat.JSON:
@@ -850,6 +862,8 @@ def _build_expected_run_race_ids(
             benchmark_id=benchmark_spec.benchmark_id,
             task_id=task_spec.task_id,
             task_index=task_index,
+            start_page_title=task_spec.start_page_title,
+            target_page_title=task_spec.target_page_title,
         )
         for participant in benchmark_spec.participants:
             run_race_ids[
@@ -954,6 +968,8 @@ def _clear_eval_race_artifacts(
                 benchmark_id=benchmark_spec.benchmark_id,
                 task_id=task_spec.task_id,
                 task_index=task_index,
+                start_page_title=task_spec.start_page_title,
+                target_page_title=task_spec.target_page_title,
             ),
         )
         if race_dir.exists():
@@ -1111,6 +1127,8 @@ def _write_eval_race_metadata(
                 benchmark_id=benchmark_spec.benchmark_id,
                 task_id=task_spec.task_id,
                 task_index=task_index,
+                start_page_title=task_spec.start_page_title,
+                target_page_title=task_spec.target_page_title,
             )
         race_result = race_results_by_id.get(
             race_id,
@@ -1457,7 +1475,7 @@ def _build_model_settings(
     normalized_provider = provider.strip().lower()
     openai_provider = normalized_provider in {
         "openai",
-        "openai_compatible",
+        "openai-compatible",
     }
     openai_responses_flags = (
         openai_use_responses_api
@@ -1472,7 +1490,7 @@ def _build_model_settings(
     if resolved_reasoning_effort is None and normalized_provider in {
         "codex",
         "openai",
-        "openai_compatible",
+        "openai-compatible",
         "openrouter",
     }:
         resolved_reasoning_effort = "high"
@@ -1483,13 +1501,6 @@ def _build_model_settings(
             "--thinking-effort and --thinking-budget-tokens are mutually exclusive",
         )
     resolved_thinking_effort = thinking_effort
-    if (
-        trace
-        and normalized_provider == "anthropic"
-        and resolved_thinking_effort is None
-        and thinking_budget_tokens is None
-    ):
-        resolved_thinking_effort = ThinkingEffort.HIGH
     if resolved_thinking_effort is not None:
         model_settings["thinking"] = {
             "type": "adaptive",
@@ -1510,25 +1521,13 @@ def _build_model_settings(
     elif openai_responses_flags:
         if not openai_provider:
             raise typer.BadParameter(
-                "OpenAI Responses API options require --provider openai or --provider openai_compatible",
+                "OpenAI Responses API options require --provider openai or --provider openai-compatible",
             )
         model_settings["openai_api_mode"] = "responses"
         model_settings["openai_use_previous_response_id"] = (
             openai_use_previous_response_id
         )
     resolved_openai_reasoning_summary = openai_reasoning_summary
-    if (
-        trace
-        and resolved_openai_reasoning_summary is None
-        and (
-            normalized_provider == "openai"
-            or (
-                openai_provider
-                and (openai_use_responses_api or openai_include_encrypted_reasoning)
-            )
-        )
-    ):
-        resolved_openai_reasoning_summary = OpenAIReasoningSummary.DETAILED
     if resolved_openai_reasoning_summary is not None:
         model_settings["openai_reasoning_summary"] = (
             resolved_openai_reasoning_summary.value
@@ -1957,9 +1956,11 @@ def _format_summary_table(
         f"Races: {evaluation_summary.total_races}",
         f"Rulesets: {', '.join(evaluation_summary.ruleset_hashes) or 'n/a'}",
         f"Tasksets: {', '.join(evaluation_summary.taskset_hashes) or 'n/a'}",
+        f"Pairwise comparisons: {evaluation_summary.pairwise_comparisons}",
+        f"Skipped unsolved pairs: {evaluation_summary.pairwise_skipped_comparisons}",
         "",
-        "participant_id | elo | successes | eligible | wins | losses | draws | avg_moves_success",
-        "--- | --- | --- | --- | --- | --- | --- | ---",
+        "participant_id | elo | successes | eligible | wins | losses | draws | skipped | avg_moves_success",
+        "--- | --- | --- | --- | --- | --- | --- | --- | ---",
     ]
     for participant_summary in evaluation_summary.participants:
         avg_moves = (
@@ -1977,6 +1978,7 @@ def _format_summary_table(
                     f"{participant_summary.pairwise_wins:.1f}",
                     f"{participant_summary.pairwise_losses:.1f}",
                     f"{participant_summary.pairwise_draws:.1f}",
+                    f"{participant_summary.pairwise_skipped:.1f}",
                     avg_moves,
                 ],
             ),
@@ -2001,7 +2003,7 @@ def _resolve_protocol_version_from_runner(
         None,
     )
     if run_service is None:
-        return "1.0.0-draft"
+        return DEFAULT_PROTOCOL_VERSION
 
     run_executor = getattr(
         run_service,
@@ -2009,7 +2011,7 @@ def _resolve_protocol_version_from_runner(
         None,
     )
     if run_executor is None:
-        return "1.0.0-draft"
+        return DEFAULT_PROTOCOL_VERSION
 
     protocol_version = getattr(
         run_executor,
@@ -2024,7 +2026,7 @@ def _resolve_protocol_version_from_runner(
         and protocol_version
     ):
         return protocol_version
-    return "1.0.0-draft"
+    return DEFAULT_PROTOCOL_VERSION
 
 
 def main() -> None:

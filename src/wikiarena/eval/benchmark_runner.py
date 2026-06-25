@@ -33,6 +33,7 @@ from wikiarena.protocol import (
 )
 from wikiarena.protocol.results import TaskExecutionAnnotation
 from wikiarena.protocol.specs import ParticipantSpec
+from wikiarena.protocol.version import DEFAULT_PROTOCOL_VERSION
 from wikiarena.solver.binary import MappedBinarySolverGraph
 from wikiarena.solver_runtime import SolverRuntimeConfig
 from wikiarena.wiki_runtime import NavigationRuntimeConfig, resolve_graph_file_path
@@ -245,6 +246,8 @@ class BenchmarkRunner:
                 benchmark_id=benchmark_spec.benchmark_id,
                 task_id=task_id,
                 task_index=task_index,
+                start_page_title=task_spec.start_page_title,
+                target_page_title=task_spec.target_page_title,
             )
 
             race_run_semaphore = None
@@ -582,7 +585,7 @@ def _resolve_protocol_version(
         None,
     )
     if run_executor is None:
-        return "1.0.0-draft"
+        return DEFAULT_PROTOCOL_VERSION
 
     protocol_version = getattr(
         run_executor,
@@ -598,7 +601,7 @@ def _resolve_protocol_version(
     ):
         return protocol_version
 
-    return "1.0.0-draft"
+    return DEFAULT_PROTOCOL_VERSION
 
 
 def _create_default_run_service(

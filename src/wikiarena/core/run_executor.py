@@ -32,6 +32,7 @@ from wikiarena.protocol.results import (
 )
 from wikiarena.protocol.rules import HarnessConfig, ScoringRules
 from wikiarena.protocol.specs import RunSpec, TaskSpec
+from wikiarena.protocol.version import DEFAULT_PROTOCOL_VERSION
 from wikiarena.solver.backend import SolverTargetSession
 from wikiarena.solver.models import PositionSolverFacts
 
@@ -49,7 +50,7 @@ class RunExecutor:
     def __init__(
         self,
         *,
-        protocol_version: str = "1.0.0-draft",
+        protocol_version: str = DEFAULT_PROTOCOL_VERSION,
         engine_commit: str | None = None,
     ):
         self.protocol_version = protocol_version

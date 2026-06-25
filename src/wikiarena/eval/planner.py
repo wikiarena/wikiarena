@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Any
 
 from pydantic import BaseModel
@@ -112,7 +113,18 @@ def build_race_id(
     benchmark_id: str,
     task_id: str,
     task_index: int,
+    start_page_title: str | None = None,
+    target_page_title: str | None = None,
 ) -> str:
+    if start_page_title is not None and target_page_title is not None:
+        language = task_id.split(
+            "__",
+            1,
+        )[0] or "task"
+        return (
+            f"race_{_slugify(benchmark_id)}_{task_index:04d}_{_slugify(language)}_"
+            f"{_slugify(start_page_title)}__{_slugify(target_page_title)}"
+        )
     return f"race_{_slugify(benchmark_id)}_{task_index:04d}_{_slugify(task_id)}"
 
 
@@ -121,14 +133,33 @@ def build_run_id(
     race_id: str,
     participant_id: str,
 ) -> str:
+    match = re.match(
+        r"^race_(?P<benchmark>.+?)_(?P<task_index>\d{4})_.+$",
+        race_id,
+    )
+    if match is not None:
+        return (
+            f"run_{match.group('benchmark')}_{match.group('task_index')}_"
+            f"{_slugify(participant_id)}"
+        )
     return f"run_{_slugify(race_id)}_{_slugify(participant_id)}"
 
 
 def _slugify(value: str) -> str:
+    normalized = unicodedata.normalize(
+        "NFKD",
+        value,
+    )
+    normalized = normalized.encode(
+        "ascii",
+        "ignore",
+    ).decode(
+        "ascii",
+    )
     slug = re.sub(
-        r"[^0-9A-Za-z_\-]+",
+        r"[^0-9A-Za-z]+",
         "_",
-        value.strip(),
+        normalized.strip(),
     )
     slug = re.sub(
         r"_+",

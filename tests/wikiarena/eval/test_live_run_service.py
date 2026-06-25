@@ -6,6 +6,7 @@ from datetime import datetime
 import pytest
 from pydantic import ValidationError
 
+import wikiarena.wiki_runtime as wiki_runtime
 from wikiarena.core import (
     NavigationResolution,
     PageSnapshot,
@@ -319,6 +320,63 @@ async def test_live_run_service_infers_snapshot_id_from_dated_graph_file(
 
     assert captured["navigation_runtime"].graph_path == graph_path.resolve()
     assert artifact.run_result.navigation_snapshot_id == "enwiki-20260301"
+
+
+@pytest.mark.asyncio
+async def test_live_run_service_resolves_pinned_installed_graph_snapshot(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    participant = StubParticipant()
+    install_dir = tmp_path / "graphs"
+    install_dir.mkdir()
+    pinned_graph_path = install_dir / "wikiarena_graph_enwiki_20260301.bin"
+    newer_graph_path = install_dir / "wikiarena_graph_enwiki_20260401.bin"
+    _write_toy_graph(
+        pinned_graph_path,
+    )
+    _write_toy_graph(
+        newer_graph_path,
+    )
+    monkeypatch.setattr(
+        wiki_runtime,
+        "get_default_graph_install_dir",
+        lambda: install_dir,
+    )
+    monkeypatch.delenv(wiki_runtime.GRAPH_PATH_ENV_VAR, raising=False)
+    captured = {}
+
+    def wiki_factory(run_plan):
+        captured["navigation_runtime"] = run_plan.navigation_runtime
+        captured["solver_runtime"] = run_plan.solver_runtime
+        return StubWikiNavigator()
+
+    service = LiveRunService(
+        participant_factory=lambda spec: participant,
+        wiki_navigator_factory=wiki_factory,
+        run_executor=RunExecutor(),
+    )
+
+    artifact = await service.execute_live_run(
+        LiveRunRequest(
+            model_id="openai/gpt-4o-mini-2024-07-18",
+            start_page_title="Apple",
+            target_page_title="Banana",
+            navigation_runtime=NavigationRuntimeConfig(
+                backend=NavigationBackend.GRAPH,
+                snapshot_id="enwiki-20260301",
+            ),
+            solver_runtime=SolverRuntimeConfig(
+                backend=SolverBackend.LOCAL,
+                snapshot_id="enwiki-20260301",
+            ),
+        ),
+    )
+
+    assert captured["navigation_runtime"].graph_path == pinned_graph_path.resolve()
+    assert captured["solver_runtime"].graph_path == pinned_graph_path.resolve()
+    assert artifact.run_result.navigation_snapshot_id == "enwiki-20260301"
+    assert artifact.run_result.solver_snapshot_id == "enwiki-20260301"
 
 
 @pytest.mark.asyncio
