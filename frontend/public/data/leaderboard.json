@@ -1,10 +1,20 @@
 {
   "benchmarkId": "wikiarena_v0",
   "snapshotId": "enwiki-20260401",
-  "sourcePath": "dumps/eval_wikiarena_v0_results.jsonl",
-  "artifactDir": "artifacts/benchmark/v0",
-  "generatedFromRuns": 1000,
+  "sourcePath": "artifacts/wikiarena/v0/results.jsonl",
+  "artifactDir": "artifacts/wikiarena/v0",
+  "generatedFromRuns": 2000,
+  "rankedFromRuns": 1500,
   "totalRaces": 500,
+  "excludedParticipants": [
+    "gpt_5_5"
+  ],
+  "scoringPolicy": {
+    "tieBreaker": "fewest_moves_then_draw",
+    "unsolvedPairPolicy": "skip"
+  },
+  "pairwiseComparisons": 947,
+  "pairwiseSkippedComparisons": 553,
   "rulesetHashes": [
     "e6f25d2836ac4eea7dc74ea92ee61a2507f0ace8a4785e5edd4f24a035ff7cc9"
   ],
@@ -13,23 +23,44 @@
   ],
   "participants": [
     {
-      "participantId": "gpt_5_5",
-      "displayName": "GPT-5.5",
+      "participantId": "gpt_5_4_xhigh",
+      "displayName": "GPT-5.4 xhigh",
       "runs": 500,
       "rankingEligibleRuns": 500,
-      "successes": 315,
-      "modelFailures": 185,
+      "successes": 319,
+      "modelFailures": 181,
       "systemFailures": 0,
-      "totalEstimatedCostUsd": 1856.048927,
-      "estimatedCostUsdPerSuccess": 5.892218815873016,
-      "totalStepAttempts": 12567,
-      "totalInvalidAttempts": 903,
-      "stepErrorRate": 0.07185485796132729,
-      "totalModelResponseTimeMs": 80813849.40269983,
-      "pairwiseWins": 182.0,
-      "pairwiseLosses": 72.0,
-      "pairwiseDraws": 246.0,
-      "elo": 1235
+      "totalEstimatedCostUsd": 589.8564440000001,
+      "estimatedCostUsdPerSuccess": 1.8490797617554864,
+      "totalStepAttempts": 13124,
+      "totalInvalidAttempts": 977,
+      "stepErrorRate": 0.07444376714416337,
+      "totalModelResponseTimeMs": 182948692.42824703,
+      "pairwiseWins": 356.0,
+      "pairwiseLosses": 156.0,
+      "pairwiseDraws": 142.0,
+      "pairwiseSkipped": 346.0,
+      "elo": 1264
+    },
+    {
+      "participantId": "claude_opus_4_6_max",
+      "displayName": "Claude Opus 4.6 max",
+      "runs": 500,
+      "rankingEligibleRuns": 500,
+      "successes": 283,
+      "modelFailures": 217,
+      "systemFailures": 0,
+      "totalEstimatedCostUsd": 1023.511237,
+      "estimatedCostUsdPerSuccess": 3.616647480565371,
+      "totalStepAttempts": 14454,
+      "totalInvalidAttempts": 678,
+      "stepErrorRate": 0.04690743046907431,
+      "totalModelResponseTimeMs": 136397391.08038837,
+      "pairwiseWins": 235.0,
+      "pairwiseLosses": 241.0,
+      "pairwiseDraws": 148.0,
+      "pairwiseSkipped": 376.0,
+      "elo": 1190
     },
     {
       "participantId": "claude_sonnet_4_6",
@@ -45,10 +76,11 @@
       "totalInvalidAttempts": 2829,
       "stepErrorRate": 0.1729852023969671,
       "totalModelResponseTimeMs": 67143795.85933065,
-      "pairwiseWins": 72.0,
-      "pairwiseLosses": 182.0,
-      "pairwiseDraws": 246.0,
-      "elo": 1157
+      "pairwiseWins": 146.0,
+      "pairwiseLosses": 340.0,
+      "pairwiseDraws": 130.0,
+      "pairwiseSkipped": 384.0,
+      "elo": 1114
     }
   ]
 }

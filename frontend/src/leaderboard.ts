@@ -9,6 +9,7 @@ interface LeaderboardParticipant {
   pairwiseWins: number;
   pairwiseLosses: number;
   pairwiseDraws: number;
+  pairwiseSkipped: number;
   totalEstimatedCostUsd: number | null;
   estimatedCostUsdPerSuccess: number | null;
   totalStepAttempts: number;
@@ -24,7 +25,15 @@ interface LeaderboardData {
   sourcePath: string;
   artifactDir: string;
   generatedFromRuns: number;
+  rankedFromRuns: number;
   totalRaces: number;
+  excludedParticipants: string[];
+  scoringPolicy: {
+    tieBreaker: string;
+    unsolvedPairPolicy: string;
+  };
+  pairwiseComparisons: number;
+  pairwiseSkippedComparisons: number;
   participants: LeaderboardParticipant[];
 }
 
@@ -53,6 +62,13 @@ interface ReplayRace {
 }
 
 interface ReplayManifest {
+  generatedFromRuns: number;
+  rankedFromRuns: number;
+  excludedParticipants: string[];
+  scoringPolicy: {
+    tieBreaker: string;
+    unsolvedPairPolicy: string;
+  };
   totalRaces: number;
   races: ReplayRace[];
 }
@@ -62,7 +78,9 @@ const MAX_SECTION_RACES = 30;
 
 const PARTICIPANT_LOGOS: Record<string, string> = {
   claude_sonnet_4_6: "./assets/providers/anthropic.svg",
+  claude_opus_4_6_max: "./assets/providers/anthropic.svg",
   gpt_5_5: "./assets/providers/openai.svg",
+  gpt_5_4_xhigh: "./assets/providers/openai.svg",
 };
 
 function getRequiredElement<T extends HTMLElement>(id: string): T {
@@ -200,7 +218,7 @@ function renderRaceSection(options: {
 }
 
 function renderRaceCard(race: ReplayRace, metric: (race: ReplayRace) => string): string {
-  const selectedParticipants = race.participants.slice(0, 2);
+  const selectedParticipants = displayParticipantsForRace(race);
   const replayUrl = `./race.html?replay=${encodeURIComponent(race.raceId)}&participants=${encodeURIComponent(selectedParticipants.map((participant) => participant.participantId).join(","))}`;
   const [left, right] = orderedScoreParticipants(race, selectedParticipants);
   const scoreOperator = race.winnerParticipantId === null ? "=" : "<";
@@ -225,6 +243,13 @@ function renderRaceCard(race: ReplayRace, metric: (race: ReplayRace) => string):
       <a class="path-mode-button cta-link race-browser-replay" href="${replayUrl}">Watch</a>
     </article>
   `;
+}
+
+function displayParticipantsForRace(race: ReplayRace): ReplayParticipant[] {
+  const [left, right] = orderedScoreParticipants(race, race.participants);
+  return [left, right].filter(
+    (participant): participant is ReplayParticipant => participant !== undefined,
+  );
 }
 
 function taskLengthMetric(race: ReplayRace): string {
@@ -276,11 +301,14 @@ function scoreOutcome(race: ReplayRace, participant: ReplayParticipant): "W" | "
 }
 
 function orderedScoreParticipants(race: ReplayRace, participants: ReplayParticipant[]): [ReplayParticipant | undefined, ReplayParticipant | undefined] {
+  const sortedParticipants = [...participants].sort(
+    (left, right) => left.scoreMoves - right.scoreMoves || left.displayName.localeCompare(right.displayName),
+  );
   if (race.winnerParticipantId === null) {
-    return [participants[0], participants[1]];
+    return [sortedParticipants[0], sortedParticipants[1]];
   }
   const winner = participants.find((participant) => participant.participantId === race.winnerParticipantId);
-  const loser = participants.find((participant) => participant.participantId !== race.winnerParticipantId);
+  const loser = sortedParticipants.find((participant) => participant.participantId !== race.winnerParticipantId);
   return [winner, loser];
 }
 

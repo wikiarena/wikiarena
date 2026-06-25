@@ -69,7 +69,9 @@ let wasRaceFinished = false;
 
 const PARTICIPANT_LOGOS: Record<string, string> = {
   claude_sonnet_4_6: "./assets/providers/anthropic.svg",
+  claude_opus_4_6_max: "./assets/providers/anthropic.svg",
   gpt_5_5: "./assets/providers/openai.svg",
+  gpt_5_4_xhigh: "./assets/providers/openai.svg",
 };
 
 const startValidation = createTitleValidationController({ inputElement: startInput, boxElement: startBox, role: "start" });

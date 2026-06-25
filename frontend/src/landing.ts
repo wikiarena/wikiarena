@@ -17,7 +17,9 @@ interface LeaderboardData {
 
 const PARTICIPANT_LOGOS: Record<string, string> = {
   claude_sonnet_4_6: "./assets/providers/anthropic.svg",
+  claude_opus_4_6_max: "./assets/providers/anthropic.svg",
   gpt_5_5: "./assets/providers/openai.svg",
+  gpt_5_4_xhigh: "./assets/providers/openai.svg",
 };
 
 const SVG_NS = "http://www.w3.org/2000/svg";
