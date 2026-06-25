@@ -1,0 +1,86 @@
+# OpenAI runs use the Codex provider. Provider credentials and endpoint routing
+# are resolved from the runtime environment, not from this tracked config.
+
+benchmark_id = "wikiarena_v0"
+taskset_id = "wikiarena_v0_500_seed20260419"
+taskset_path = "taskset.jsonl"
+
+[rules.harness]
+harness_id = "tool_strict_v1"
+response_contract = "tool_call_only"
+tool_name = "navigate"
+
+[rules.navigation]
+max_moves = 50
+max_invalid_attempts_per_run = 15
+max_invalid_attempts_per_step_context = 2
+invalid_attempt_consumes_step_budget = false
+terminate_on_invalid_budget_exhaustion = true
+link_policy = "raw_ordered"
+redirect_policy = "resolve_after_selection"
+
+[rules.scoring]
+exclude_system_failures_from_ranking = true
+tie_breaker = "fewest_moves_then_draw"
+unsolved_pair_policy = "skip"
+
+[rules.execution]
+request_timeout_ms = 180000
+max_transport_retries = 2
+initial_backoff_ms = 250
+max_backoff_ms = 10000
+jitter_ratio = 0.2
+max_concurrency = 16
+
+[run_options.navigation_runtime]
+backend = "graph"
+snapshot_id = "enwiki-20260401"
+
+[run_options.solver_runtime]
+backend = "local"
+snapshot_id = "enwiki-20260401"
+
+[concurrency]
+max_concurrent_tasks = 50
+max_concurrent_runs = 16
+
+[concurrency.participant_max_concurrency]
+gpt_5_5 = 3
+claude_sonnet_4_6 = 3
+gpt_5_4_xhigh = 3
+claude_opus_4_6_max = 3
+
+[concurrency.provider_max_concurrency]
+codex = 3
+anthropic = 3
+
+[metadata]
+purpose = "official v0 WikiArena eval over the validated 500-task taskset"
+taskset_summary_path = "taskset_summary.json"
+taskset_hash = "9e7c178197819d4b1d6ec529c0a964fecb371a8d0f8cc2b3a2dc36577e74ad7c"
+navigation_backend = "graph"
+solver_backend = "local"
+
+[[participants]]
+participant_id = "gpt_5_5"
+display_name = "GPT-5.5"
+participant_kind = "llm"
+driver_config = { provider = "codex", model = "gpt-5.5", settings = { reasoning_effort = "medium", timeout_s = 180 } }
+
+[[participants]]
+participant_id = "claude_sonnet_4_6"
+display_name = "Claude Sonnet 4.6"
+participant_kind = "llm"
+driver_config = { provider = "anthropic", model = "claude-sonnet-4-6", settings = { max_tokens = 4096, thinking = { type = "enabled", budget_tokens = 2048 }, anthropic_prompt_caching = false, timeout_s = 180 } }
+
+[[participants]]
+participant_id = "gpt_5_4_xhigh"
+display_name = "GPT-5.4 xhigh"
+participant_kind = "llm"
+driver_config = { provider = "codex", model = "gpt-5.4", settings = { reasoning_effort = "xhigh", timeout_s = 180, provider_settings = { codex_transport = "websocket" } } }
+
+[[participants]]
+participant_id = "claude_opus_4_6_max"
+display_name = "Claude Opus 4.6 max"
+participant_kind = "llm"
+driver_config = { provider = "anthropic", model = "claude-opus-4-6", settings = { thinking = { type = "adaptive" }, output_config = { effort = "max" }, anthropic_prompt_caching = false, timeout_s = 180 } }

@@ -1,0 +1,68 @@
+{
+  "output_path": "/Users/hupaulson/projects/wikiarena/work/dumps/taskset_wikiarena_v0_500_seed20260419_validated.jsonl",
+  "source_taskset_path": "/Users/hupaulson/projects/wikiarena/work/dumps/archive/wikiarena_v0_curation_seed20260419/taskset_wikiarena_v0_500_seed20260419.jsonl",
+  "source_audit_path": "/Users/hupaulson/projects/wikiarena/work/dumps/archive/wikiarena_v0_curation_seed20260419/taskset_wikiarena_v0_500_seed20260419_audit.jsonl",
+  "replacement_candidates_path": "/Users/hupaulson/projects/wikiarena/work/dumps/archive/wikiarena_v0_curation_seed20260419/taskset_wikiarena_v0_500_seed20260419_replacement_candidates.jsonl",
+  "replacement_candidates_audit_path": "/Users/hupaulson/projects/wikiarena/work/dumps/archive/wikiarena_v0_curation_seed20260419/taskset_wikiarena_v0_500_seed20260419_replacement_candidates_audit.jsonl",
+  "removed_task_ids": [
+    "en__bhandardaha__comeback",
+    "en__czelu_cin__naha_municipal_tsuboya_pottery_museum",
+    "en__height_of_land_township_becker_county_minnesota__chrostosoma_infuscatum",
+    "en__po_ss__us_swayvee_song"
+  ],
+  "replacement_task_ids": [
+    "en__2017_in_eswatini__garrick",
+    "en__jayakumar_jitendrasinh_rawal__platypria_echidna",
+    "en__list_of_towns_and_villages_in_new_france__tenmile_creek_snake_river_tributary",
+    "en__treasure_seeker__protosphaerion_punctatum"
+  ],
+  "replacement_details": [
+    {
+      "task_id": "en__2017_in_eswatini__garrick",
+      "task": "2017 in Eswatini -> Garrick",
+      "distance": 8,
+      "strict_pass": false,
+      "redirect_pass": true
+    },
+    {
+      "task_id": "en__jayakumar_jitendrasinh_rawal__platypria_echidna",
+      "task": "Jayakumar Jitendrasinh Rawal -> Platypria echidna",
+      "distance": 6,
+      "strict_pass": true,
+      "redirect_pass": true
+    },
+    {
+      "task_id": "en__list_of_towns_and_villages_in_new_france__tenmile_creek_snake_river_tributary",
+      "task": "List of towns and villages in New France -> Tenmile Creek (Snake River tributary)",
+      "distance": 6,
+      "strict_pass": false,
+      "redirect_pass": true
+    },
+    {
+      "task_id": "en__treasure_seeker__protosphaerion_punctatum",
+      "task": "Treasure Seeker -> Protosphaerion punctatum",
+      "distance": 8,
+      "strict_pass": true,
+      "redirect_pass": true
+    }
+  ],
+  "selected_task_count": 500,
+  "selected_distance_counts": {
+    "3": 30,
+    "4": 80,
+    "5": 120,
+    "6": 120,
+    "7": 100,
+    "8": 34,
+    "9": 5,
+    "10": 3,
+    "11": 2,
+    "12": 1,
+    "15": 1,
+    "16": 2,
+    "25": 1,
+    "32": 1
+  },
+  "taskset_hash": "9e7c178197819d4b1d6ec529c0a964fecb371a8d0f8cc2b3a2dc36577e74ad7c",
+  "taskset_file_sha256": "3a5a0d692f4c629acb25634205baf2b16a6eea98d65e348bf2dec8f04035ce20"
+}

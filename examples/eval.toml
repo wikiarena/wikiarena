@@ -1,0 +1,48 @@
+benchmark_id = "example_eval_v1"
+taskset_id = "example_taskset_v1"
+taskset_path = "taskset.jsonl"
+
+[rules.harness]
+harness_id = "tool_strict_v1"
+response_contract = "tool_call_only"
+tool_name = "navigate"
+
+[rules.navigation]
+max_moves = 50
+max_invalid_attempts_per_run = 15
+max_invalid_attempts_per_step_context = 2
+invalid_attempt_consumes_step_budget = false
+terminate_on_invalid_budget_exhaustion = true
+link_policy = "raw_ordered"
+redirect_policy = "resolve_after_selection"
+
+[rules.scoring]
+exclude_system_failures_from_ranking = true
+tie_breaker = "fewest_moves_then_draw"
+
+[rules.execution]
+request_timeout_ms = 45000
+max_transport_retries = 2
+initial_backoff_ms = 250
+max_backoff_ms = 10000
+jitter_ratio = 0.2
+max_concurrency = 2
+
+[run_options.solver_runtime]
+backend = "none"
+
+[concurrency]
+max_concurrent_tasks = 2
+max_concurrent_runs = 2
+
+[[participants]]
+participant_id = "claude_haiku_4_5"
+display_name = "Claude Haiku 4.5"
+participant_kind = "llm"
+driver_config = { provider = "anthropic", model = "claude-haiku-4-5-20251001", settings = { temperature = 0.0 } }
+
+[[participants]]
+participant_id = "claude_sonnet_4_6"
+display_name = "Claude Sonnet 4.6"
+participant_kind = "llm"
+driver_config = { provider = "anthropic", model = "claude-sonnet-4-6", settings = { temperature = 0.0 } }
