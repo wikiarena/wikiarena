@@ -6,6 +6,8 @@ import pytest
 
 from wikiarena.providers import (
     AnthropicChatProvider,
+    AnthropicVertexChatProvider,
+    ClaudeCodeProvider,
     CodexChatProvider,
     OpenAIChatProvider,
     ProviderConfigurationError,
@@ -52,7 +54,7 @@ def test_create_openai_compatible_client_keeps_chat_completions_compatibility(
     )
 
     provider_client = create_provider_client(
-        "openai_compatible",
+        "openai-compatible",
     )
 
     assert isinstance(
@@ -82,6 +84,53 @@ def test_create_anthropic_client_uses_standard_environment_settings(
         provider_client,
         AnthropicChatProvider,
     )
+
+
+def test_create_anthropic_client_can_use_vertex_transport_from_environment(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv(
+        "ANTHROPIC_API_KEY",
+        raising=False,
+    )
+    monkeypatch.setenv(
+        "WIKIARENA_ANTHROPIC_TRANSPORT",
+        "vertex",
+    )
+    monkeypatch.setenv(
+        "WIKIARENA_VERTEX_BASE_URL",
+        "https://vertex.example.test",
+    )
+    monkeypatch.setenv(
+        "WIKIARENA_VERTEX_PROJECT",
+        "test-project",
+    )
+    monkeypatch.setenv(
+        "WIKIARENA_VERTEX_COSMOS_APP_ID",
+        "test-app",
+    )
+    monkeypatch.setenv(
+        "WIKIARENA_VERTEX_COSMOS_APP_SCOPE",
+        "dev",
+    )
+    monkeypatch.setenv(
+        "WIKIARENA_VERTEX_AIML_GATEWAY_APP_CONTEXT_KEY_NAME",
+        "gateway-context",
+    )
+    monkeypatch.setenv(
+        "WIKIARENA_VERTEX_KEYMAKER_BASE_URL",
+        "https://keymaker.example.test",
+    )
+
+    provider_client = create_provider_client(
+        "anthropic",
+    )
+
+    assert isinstance(
+        provider_client,
+        AnthropicVertexChatProvider,
+    )
+    assert provider_client.config.project == "test-project"
 
 
 def test_create_codex_client_uses_codex_auth_file_environment_settings(
@@ -117,6 +166,38 @@ def test_create_codex_client_uses_codex_auth_file_environment_settings(
     assert provider_client.auth_file == auth_file
     assert provider_client.base_url == "https://chatgpt.com/backend-api/codex/responses"
     assert provider_client.prompt_cache_key.startswith("wikiarena-")
+
+
+def test_create_claude_code_client_uses_oauth_token_environment_settings(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv(
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "sk-ant-oat01-test",
+    )
+
+    provider_client = create_provider_client(
+        "claude-code",
+        provider_settings={
+            "claude_bin": "/bin/echo",
+        },
+    )
+
+    assert isinstance(
+        provider_client,
+        ClaudeCodeProvider,
+    )
+    assert provider_client.oauth_token == "sk-ant-oat01-test"
+
+
+def test_create_provider_client_rejects_snake_case_provider_name() -> None:
+    with pytest.raises(
+        ProviderConfigurationError,
+        match="Unsupported provider 'claude_code'",
+    ):
+        create_provider_client(
+            "claude_code",
+        )
 
 
 def test_create_provider_client_fails_without_required_api_key(

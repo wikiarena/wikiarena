@@ -38,7 +38,7 @@ _MISSING_PROVIDER_FIELD_PATTERN = re.compile(
 _PROVIDER_API_KEY_ENV_VARS = {
     "anthropic": "ANTHROPIC_API_KEY",
     "openai": "OPENAI_API_KEY",
-    "openai_compatible": "OPENAI_API_KEY",
+    "openai-compatible": "OPENAI_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
 }
 _PROVIDER_FIELD_HINTS = {

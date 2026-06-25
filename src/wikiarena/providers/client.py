@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import asyncio
 import base64
+import copy
 import json
 import os
+import re
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Protocol
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 from anthropic import AnthropicError, AsyncAnthropic
@@ -51,6 +55,7 @@ _CODEX_OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 _CODEX_OAUTH_TOKEN_URL = "https://auth.openai.com/oauth/token"
 _CODEX_DEFAULT_ORIGINATOR = "wikiarena"
 _CODEX_DEFAULT_USER_AGENT = "wikiarena/codex"
+_CODEX_WEBSOCKET_BETA_HEADER_VALUE = "responses_websockets=2026-02-06"
 _CODEX_AUTH_REFRESH_MARGIN_S = 60.0
 _PROMPT_CACHE_KEY_PREFIX = "wikiarena"
 
@@ -148,9 +153,13 @@ def _reject_priority_service_tier(
     )
     if service_tier is None:
         return
-    normalized_service_tier = str(
-        service_tier,
-    ).strip().lower()
+    normalized_service_tier = (
+        str(
+            service_tier,
+        )
+        .strip()
+        .lower()
+    )
     if normalized_service_tier in {
         "fast",
         "priority",
@@ -180,6 +189,26 @@ class _CodexAuthState:
 
 class _CodexAuthRefreshRequired(ProviderError):
     pass
+
+
+class _CodexWebSocketFallbackToHttp(ProviderError):
+    pass
+
+
+@dataclass(frozen=True)
+class _AnthropicVertexConfig:
+    base_url: str
+    model_base_url: str
+    project: str
+    location: str
+    cosmos_app_id: str
+    cosmos_app_scope: str
+    aiml_gateway_app_context_key_name: str
+    keymaker_base_url: str | None
+    keymaker_app_context_env_var: str
+    require_app_context: bool = True
+    token_expiry_window_seconds_default: int = 1800
+    beta_headers: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -450,10 +479,7 @@ class OpenAIChatProvider:
 
         previous_response_id = None
         response_input = request.messages
-        if (
-            openai_use_previous_response_id
-            and self._previous_response_id is not None
-        ):
+        if openai_use_previous_response_id and self._previous_response_id is not None:
             previous_response_id = self._previous_response_id
             response_input = _messages_since_last_openai_response(
                 request.messages,
@@ -555,6 +581,9 @@ class CodexChatProvider:
         user_agent: str = _CODEX_DEFAULT_USER_AGENT,
         prompt_cache_key: str | None = None,
         http_client: Any | None = None,
+        codex_transport: str | None = None,
+        websocket_connect: Any | None = None,
+        websocket_prewarm: bool = False,
     ):
         self.auth_file = Path(
             auth_file,
@@ -564,6 +593,20 @@ class CodexChatProvider:
         self.originator = originator
         self.user_agent = user_agent
         self.prompt_cache_key = prompt_cache_key or _default_prompt_cache_key()
+        self._codex_session_id = self.prompt_cache_key
+        self._codex_window_id = f"{self._codex_session_id}:0"
+        self._codex_turn_state: str | None = None
+        self.codex_transport = _resolve_codex_transport(
+            codex_transport,
+            http_client=http_client,
+            websocket_connect=websocket_connect,
+        )
+        self.websocket_connect = websocket_connect or _connect_codex_websocket
+        self.websocket_prewarm = websocket_prewarm
+        self._codex_ws_connection: Any | None = None
+        self._codex_ws_last_request: dict[str, Any] | None = None
+        self._codex_ws_last_response_id: str | None = None
+        self._codex_ws_last_output_items: list[dict[str, Any]] = []
         self.client = http_client or httpx.AsyncClient(
             timeout=timeout_s,
         )
@@ -595,6 +638,23 @@ class CodexChatProvider:
         prompt_cache_key = call_settings.pop(
             "prompt_cache_key",
             self.prompt_cache_key,
+        )
+        self._ensure_codex_session_identity(
+            prompt_cache_key,
+        )
+        codex_transport = _resolve_codex_transport(
+            call_settings.pop(
+                "codex_transport",
+                self.codex_transport,
+            ),
+            http_client=None,
+            websocket_connect=self.websocket_connect,
+        )
+        codex_websocket_prewarm = bool(
+            call_settings.pop(
+                "codex_websocket_prewarm",
+                self.websocket_prewarm,
+            ),
         )
         service_tier = _pop_codex_service_tier(
             call_settings,
@@ -690,11 +750,11 @@ class CodexChatProvider:
         )
 
         try:
-            output_items, completed_response, duration_ms = (
-                await self._stream_response(
-                    auth_state=auth_state,
-                    call_payload=call_payload,
-                )
+            output_items, completed_response, duration_ms = await self._stream_response(
+                auth_state=auth_state,
+                call_payload=call_payload,
+                codex_transport=codex_transport,
+                websocket_prewarm=codex_websocket_prewarm,
             )
         except _CodexAuthRefreshRequired:
             auth_state = await self._refresh_auth_state(
@@ -703,6 +763,8 @@ class CodexChatProvider:
             output_items, completed_response, duration_ms = await self._stream_response(
                 auth_state=auth_state,
                 call_payload=call_payload,
+                codex_transport=codex_transport,
+                websocket_prewarm=codex_websocket_prewarm,
             )
         except httpx.TimeoutException as timeout_error:
             raise ProviderTimeoutError(
@@ -749,12 +811,44 @@ class CodexChatProvider:
         *,
         auth_state: _CodexAuthState,
         call_payload: dict[str, Any],
+        codex_transport: str,
+        websocket_prewarm: bool,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any], float]:
+        if codex_transport in {"websocket", "websocket_only"}:
+            try:
+                return await self._stream_response_websocket(
+                    auth_state=auth_state,
+                    call_payload=call_payload,
+                    websocket_prewarm=websocket_prewarm,
+                )
+            except _CodexWebSocketFallbackToHttp:
+                if codex_transport == "websocket_only":
+                    raise ProviderError(
+                        "Codex websocket transport failed and HTTP fallback is disabled",
+                    )
+                return await self._stream_response_http(
+                    auth_state=auth_state,
+                    call_payload=call_payload,
+                )
+        return await self._stream_response_http(
+            auth_state=auth_state,
+            call_payload=call_payload,
+        )
+
+    async def _stream_response_http(
+        self,
+        *,
+        auth_state: _CodexAuthState,
+        call_payload: dict[str, Any],
     ) -> tuple[list[dict[str, Any]], dict[str, Any], float]:
         headers = _build_codex_request_headers(
             access_token=auth_state.access_token,
             account_id=auth_state.account_id,
             originator=self.originator,
             user_agent=self.user_agent,
+            session_id=self._codex_session_id,
+            window_id=self._codex_window_id,
+            turn_state=self._codex_turn_state,
         )
         started_at = time.perf_counter()
         async with self.client.stream(
@@ -781,12 +875,223 @@ class CodexChatProvider:
                 raise ProviderError(
                     f"Codex provider request failed: {detail}",
                 )
+            self._capture_codex_turn_state(
+                response,
+            )
             output_items, completed_response = await _parse_codex_sse_stream(
                 response,
             )
 
         duration_ms = (time.perf_counter() - started_at) * 1000.0
         return output_items, completed_response, duration_ms
+
+    async def _stream_response_websocket(
+        self,
+        *,
+        auth_state: _CodexAuthState,
+        call_payload: dict[str, Any],
+        websocket_prewarm: bool,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any], float]:
+        started_at = time.perf_counter()
+        await self._ensure_codex_websocket_connection(
+            auth_state=auth_state,
+        )
+        if websocket_prewarm:
+            await self._prewarm_codex_websocket(
+                call_payload,
+            )
+
+        request_payload = self._prepare_codex_websocket_request(
+            call_payload,
+        )
+        self._codex_ws_last_request = copy.deepcopy(
+            call_payload,
+        )
+        output_items, completed_response = await self._send_codex_websocket_request(
+            request_payload,
+        )
+        self._record_codex_websocket_response(
+            output_items=output_items,
+            completed_response=completed_response,
+        )
+        duration_ms = (time.perf_counter() - started_at) * 1000.0
+        return output_items, completed_response, duration_ms
+
+    async def _ensure_codex_websocket_connection(
+        self,
+        *,
+        auth_state: _CodexAuthState,
+    ) -> None:
+        if self._codex_ws_connection is not None and not bool(
+            getattr(
+                self._codex_ws_connection,
+                "closed",
+                False,
+            ),
+        ):
+            return
+
+        headers = _build_codex_websocket_headers(
+            access_token=auth_state.access_token,
+            account_id=auth_state.account_id,
+            originator=self.originator,
+            user_agent=self.user_agent,
+            session_id=self._codex_session_id,
+            window_id=self._codex_window_id,
+            turn_state=self._codex_turn_state,
+        )
+        connection = await self.websocket_connect(
+            _codex_websocket_url(
+                self.base_url,
+            ),
+            headers=headers,
+            timeout_s=self.timeout_s,
+        )
+        self._codex_ws_connection = connection
+        self._capture_codex_turn_state_from_headers(
+            getattr(
+                connection,
+                "response_headers",
+                None,
+            ),
+        )
+
+    async def _prewarm_codex_websocket(
+        self,
+        call_payload: dict[str, Any],
+    ) -> None:
+        if self._codex_ws_last_request is not None:
+            return
+        request_payload = {
+            "type": "response.create",
+            **copy.deepcopy(
+                call_payload,
+            ),
+            "generate": False,
+        }
+        output_items, completed_response = await self._send_codex_websocket_request(
+            request_payload,
+        )
+        self._codex_ws_last_request = copy.deepcopy(
+            call_payload,
+        )
+        self._record_codex_websocket_response(
+            output_items=output_items,
+            completed_response=completed_response,
+        )
+
+    def _prepare_codex_websocket_request(
+        self,
+        call_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        request_payload = {
+            "type": "response.create",
+            **copy.deepcopy(
+                call_payload,
+            ),
+        }
+        previous_response_id = self._codex_ws_last_response_id
+        incremental_input = _codex_incremental_input(
+            current_request=call_payload,
+            previous_request=self._codex_ws_last_request,
+            previous_output_items=self._codex_ws_last_output_items,
+            allow_empty_delta=True,
+        )
+        if previous_response_id is not None and incremental_input is not None:
+            request_payload["previous_response_id"] = previous_response_id
+            request_payload["input"] = incremental_input
+        return request_payload
+
+    async def _send_codex_websocket_request(
+        self,
+        request_payload: dict[str, Any],
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        connection = self._codex_ws_connection
+        if connection is None:
+            raise ProviderError(
+                "Codex websocket connection is unavailable",
+            )
+        try:
+            await connection.send(
+                json.dumps(
+                    request_payload,
+                ),
+            )
+            return await _parse_codex_websocket_stream(
+                connection,
+            )
+        except ProviderError:
+            self._codex_ws_connection = None
+            raise
+        except Exception as error:
+            self._codex_ws_connection = None
+            raise ProviderError(
+                f"Codex websocket request failed: {error}",
+            ) from error
+
+    def _record_codex_websocket_response(
+        self,
+        *,
+        output_items: list[dict[str, Any]],
+        completed_response: dict[str, Any],
+    ) -> None:
+        response_id = _string_or_none(
+            completed_response.get(
+                "id",
+            ),
+        )
+        self._codex_ws_last_response_id = response_id
+        self._codex_ws_last_output_items = _codex_output_items_for_incremental_baseline(
+            output_items,
+        )
+
+    def _ensure_codex_session_identity(
+        self,
+        prompt_cache_key: str | None,
+    ) -> None:
+        if prompt_cache_key is None or prompt_cache_key == self._codex_session_id:
+            return
+        self.prompt_cache_key = prompt_cache_key
+        self._codex_session_id = prompt_cache_key
+        self._codex_window_id = f"{self._codex_session_id}:0"
+        self._codex_turn_state = None
+        self._codex_ws_connection = None
+        self._codex_ws_last_request = None
+        self._codex_ws_last_response_id = None
+        self._codex_ws_last_output_items = []
+
+    def _capture_codex_turn_state(
+        self,
+        response: Any,
+    ) -> None:
+        headers = getattr(
+            response,
+            "headers",
+            None,
+        )
+        if headers is None:
+            return
+        turn_state = _string_or_none(
+            headers.get(
+                "x-codex-turn-state",
+            ),
+        )
+        if turn_state is not None:
+            self._codex_turn_state = turn_state
+
+    def _capture_codex_turn_state_from_headers(
+        self,
+        headers: Any,
+    ) -> None:
+        if headers is None:
+            return
+        turn_state = _string_or_none(
+            headers.get(
+                "x-codex-turn-state",
+            ),
+        )
+        if turn_state is not None:
+            self._codex_turn_state = turn_state
 
     async def _refresh_auth_state_if_needed(
         self,
@@ -853,16 +1158,22 @@ class CodexChatProvider:
             field_name="access_token",
             context="Codex refresh response",
         )
-        id_token = _string_or_none(
-            refreshed_tokens.get(
-                "id_token",
-            ),
-        ) or auth_state.id_token
-        new_refresh_token = _string_or_none(
-            refreshed_tokens.get(
-                "refresh_token",
-            ),
-        ) or refresh_token
+        id_token = (
+            _string_or_none(
+                refreshed_tokens.get(
+                    "id_token",
+                ),
+            )
+            or auth_state.id_token
+        )
+        new_refresh_token = (
+            _string_or_none(
+                refreshed_tokens.get(
+                    "refresh_token",
+                ),
+            )
+            or refresh_token
+        )
         account_id = _extract_codex_account_id(
             id_token=id_token,
             access_token=access_token,
@@ -876,11 +1187,15 @@ class CodexChatProvider:
         if account_id is not None:
             persisted_tokens["account_id"] = account_id
         persisted_payload["tokens"] = persisted_tokens
-        persisted_payload["last_refresh"] = datetime.now(
-            UTC,
-        ).isoformat().replace(
-            "+00:00",
-            "Z",
+        persisted_payload["last_refresh"] = (
+            datetime.now(
+                UTC,
+            )
+            .isoformat()
+            .replace(
+                "+00:00",
+                "Z",
+            )
         )
         auth_state.auth_file.write_text(
             json.dumps(
@@ -949,13 +1264,23 @@ class AnthropicChatProvider:
             "anthropic_cache_ttl",
             None,
         )
+        call_settings.pop(
+            "timeout_s",
+            None,
+        )
         output_config = call_settings.pop(
             "output_config",
             None,
         )
         max_tokens = call_settings.pop(
             "max_tokens",
-            1024,
+            _default_anthropic_max_tokens(
+                model_id=request.model_id,
+                thinking=call_settings.get(
+                    "thinking",
+                ),
+                output_config=output_config,
+            ),
         )
 
         call_payload: dict[str, Any] = {
@@ -1050,7 +1375,12 @@ class AnthropicChatProvider:
         usage = ProviderUsage(
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,
-            total_tokens=response.usage.input_tokens + response.usage.output_tokens,
+            total_tokens=(
+                response.usage.input_tokens
+                + response.usage.output_tokens
+                + cache_creation_input_tokens
+                + cache_read_input_tokens
+            ),
             cache_creation_input_tokens=cache_creation_input_tokens,
             cache_read_input_tokens=cache_read_input_tokens,
             input_token_details={
@@ -1083,6 +1413,652 @@ class AnthropicChatProvider:
         )
 
 
+class _AnthropicVertexKeymakerClient:
+    _ALL_OBJECTS_PATH = "/kmsapi/v1/keyobject/all"
+
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        app_context_env_var: str,
+        http_client: httpx.AsyncClient,
+    ) -> None:
+        self.base_url = base_url.rstrip(
+            "/",
+        )
+        self.app_context_env_var = app_context_env_var
+        self.http_client = http_client
+        self._cache: dict[str, str] = {}
+
+    async def get(
+        self,
+        key_name: str,
+    ) -> str:
+        if key_name in self._cache:
+            return self._cache[key_name]
+        await self._refresh_cache()
+        if key_name in self._cache:
+            return self._cache[key_name]
+        raise ProviderConfigurationError(
+            f"Keymaker key not found: {key_name}",
+        )
+
+    async def _refresh_cache(
+        self,
+    ) -> None:
+        app_context = os.getenv(
+            self.app_context_env_var,
+        )
+        if not app_context:
+            raise ProviderConfigurationError(
+                f"Missing required {self.app_context_env_var} for Anthropic Vertex Keymaker auth",
+            )
+
+        response = await self.http_client.get(
+            f"{self.base_url}{self._ALL_OBJECTS_PATH}",
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "X-KM-APP-CONTEXT": _maybe_base64_decode(
+                    app_context,
+                )
+                or "",
+            },
+        )
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as error:
+            raise ProviderConfigurationError(
+                f"Keymaker request failed: HTTP {error.response.status_code}",
+            ) from error
+
+        data = response.json() or {}
+        cache: dict[str, str] = {}
+        for item in data.get(
+            "nonkeys",
+            [],
+        ):
+            nonkey = item.get(
+                "nonkey",
+                {},
+            )
+            if (
+                nonkey.get(
+                    "state",
+                )
+                != "enabled"
+            ):
+                continue
+            name = nonkey.get(
+                "name",
+            )
+            if not name:
+                continue
+            cache[name] = (
+                _maybe_base64_decode(
+                    nonkey.get(
+                        "encoded_key_data",
+                        "",
+                    ),
+                )
+                or ""
+            )
+
+        for item in data.get(
+            "secretkeys",
+            [],
+        ):
+            secretkey = item.get(
+                "secretkey",
+                {},
+            )
+            if (
+                secretkey.get(
+                    "state",
+                )
+                != "enabled"
+            ):
+                continue
+            name = secretkey.get(
+                "name",
+            )
+            if not name:
+                continue
+            cache[name] = (
+                _maybe_base64_decode(
+                    secretkey.get(
+                        "encoded_secret_key",
+                    )
+                    or secretkey.get(
+                        "encoded_key_data",
+                        "",
+                    ),
+                )
+                or ""
+            )
+
+        self._cache = cache
+
+
+class AnthropicVertexChatProvider:
+    def __init__(
+        self,
+        *,
+        config: _AnthropicVertexConfig,
+        timeout_s: float | None = None,
+        http_client: httpx.AsyncClient | None = None,
+        keymaker_client: _AnthropicVertexKeymakerClient | None = None,
+    ) -> None:
+        self.config = config
+        self.timeout_s = timeout_s
+        self.base_url = config.base_url
+        self.http_client = http_client or httpx.AsyncClient(
+            timeout=timeout_s or 300.0,
+        )
+        self.keymaker_client = keymaker_client
+        self._auth_token: str | None = None
+        self._auth_expires_at: datetime | None = None
+
+    async def generate(
+        self,
+        request: ProviderRequest,
+    ) -> ProviderResponse:
+        _require_token_pricing(
+            settings=request.settings,
+            model_id=request.model_id,
+            provider_name="anthropic",
+            anthropic_cache_pricing=True,
+        )
+        cache_control = {
+            "type": "ephemeral",
+            "ttl": "5m",
+        }
+        system_prompt, messages = _format_messages_for_anthropic(
+            request.messages,
+            cache_control=cache_control,
+        )
+        formatted_tools = _format_tools_for_anthropic(
+            request,
+        )
+
+        call_settings = dict(
+            request.settings,
+        )
+        _strip_internal_pricing_settings(
+            call_settings,
+        )
+        call_settings.pop(
+            "anthropic_prompt_caching",
+            None,
+        )
+        call_settings.pop(
+            "anthropic_cache_ttl",
+            None,
+        )
+        vertex_anthropic_streaming = bool(
+            call_settings.pop(
+                "vertex_anthropic_streaming",
+                True,
+            ),
+        )
+        timeout_s = call_settings.pop(
+            "timeout_s",
+            self.timeout_s,
+        )
+        output_config = call_settings.pop(
+            "output_config",
+            None,
+        )
+        max_tokens = call_settings.pop(
+            "max_tokens",
+            _default_anthropic_max_tokens(
+                model_id=request.model_id,
+                thinking=call_settings.get(
+                    "thinking",
+                ),
+                output_config=output_config,
+            ),
+        )
+
+        payload: dict[str, Any] = {
+            "anthropic_version": "vertex-2023-10-16",
+            "messages": messages,
+            "max_tokens": max_tokens,
+            **call_settings,
+        }
+        if system_prompt:
+            payload["system"] = system_prompt
+        if formatted_tools:
+            payload["tools"] = formatted_tools
+        if output_config is not None:
+            payload["output_config"] = output_config
+
+        await self._ensure_token()
+        started_at = time.perf_counter()
+        if vertex_anthropic_streaming:
+            data = await self._stream_raw_predict(
+                request.model_id,
+                payload,
+                timeout_s=timeout_s,
+            )
+        else:
+            response = await self._post_raw_predict(
+                request.model_id,
+                payload,
+                timeout_s=timeout_s,
+            )
+            data = response.json() or {}
+        duration_ms = (time.perf_counter() - started_at) * 1000.0
+
+        assistant_text_parts: list[str] = []
+        assistant_thinking_parts: list[str] = []
+        tool_calls: list[ProviderToolCall] = []
+        for block in data.get(
+            "content",
+            [],
+        ):
+            if not isinstance(
+                block,
+                dict,
+            ):
+                continue
+            block_type = block.get(
+                "type",
+            )
+            if block_type == "thinking":
+                thinking_text = block.get(
+                    "thinking",
+                )
+                if thinking_text:
+                    assistant_thinking_parts.append(
+                        thinking_text,
+                    )
+                continue
+            if block_type == "text":
+                assistant_text_parts.append(
+                    block.get(
+                        "text",
+                        "",
+                    ),
+                )
+                continue
+            if block_type == "tool_use":
+                tool_calls.append(
+                    ProviderToolCall(
+                        id=block.get(
+                            "id",
+                            "",
+                        ),
+                        name=block.get(
+                            "name",
+                            "",
+                        ),
+                        arguments=block.get(
+                            "input",
+                            {},
+                        )
+                        or {},
+                    ),
+                )
+
+        response_message = ProviderMessage(
+            role=ProviderMessageRole.ASSISTANT,
+            thinking="\n\n".join(
+                assistant_thinking_parts,
+            )
+            or None,
+            content="".join(
+                assistant_text_parts,
+            )
+            or None,
+            tool_calls=tool_calls,
+        )
+        usage_data = (
+            data.get(
+                "usage",
+                {},
+            )
+            or {}
+        )
+        input_tokens = int(
+            usage_data.get(
+                "input_tokens",
+                0,
+            )
+            or 0,
+        )
+        output_tokens = int(
+            usage_data.get(
+                "output_tokens",
+                0,
+            )
+            or 0,
+        )
+        cache_creation_input_tokens = int(
+            usage_data.get(
+                "cache_creation_input_tokens",
+                0,
+            )
+            or 0,
+        )
+        cache_read_input_tokens = int(
+            usage_data.get(
+                "cache_read_input_tokens",
+                0,
+            )
+            or 0,
+        )
+        usage = ProviderUsage(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=(
+                input_tokens
+                + output_tokens
+                + cache_creation_input_tokens
+                + cache_read_input_tokens
+            ),
+            cache_creation_input_tokens=cache_creation_input_tokens,
+            cache_read_input_tokens=cache_read_input_tokens,
+            input_token_details={
+                "cache_creation_input_tokens": cache_creation_input_tokens,
+                "cache_read_input_tokens": cache_read_input_tokens,
+            },
+            estimated_cost_usd=_estimate_token_cost_usd(
+                settings={
+                    **request.settings,
+                    "anthropic_cache_ttl": "5m",
+                },
+                model_id=request.model_id,
+                provider_name="anthropic",
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cache_creation_input_tokens=cache_creation_input_tokens,
+                cache_read_input_tokens=cache_read_input_tokens,
+                input_tokens_include_cache_tokens=False,
+                anthropic_cache_pricing=True,
+            ),
+            response_time_ms=duration_ms,
+        )
+        return ProviderResponse(
+            message=response_message,
+            usage=usage,
+            provider_response_id=data.get(
+                "id",
+            ),
+        )
+
+    async def _ensure_token(
+        self,
+    ) -> None:
+        if (
+            self._auth_token
+            and self._auth_expires_at
+            and datetime.now()
+            + timedelta(
+                minutes=5,
+            )
+            < self._auth_expires_at
+        ):
+            return
+
+        headers: dict[str, str] = {
+            "Content-Type": "application/json",
+        }
+        if self.config.require_app_context:
+            if self.config.keymaker_base_url is None:
+                raise ProviderConfigurationError(
+                    "Missing required WIKIARENA_VERTEX_KEYMAKER_BASE_URL for Anthropic Vertex auth",
+                )
+            keymaker_client = self.keymaker_client
+            if keymaker_client is None:
+                keymaker_client = _AnthropicVertexKeymakerClient(
+                    base_url=self.config.keymaker_base_url,
+                    app_context_env_var=self.config.keymaker_app_context_env_var,
+                    http_client=self.http_client,
+                )
+                self.keymaker_client = keymaker_client
+            headers["x-cosmos-application-context"] = await keymaker_client.get(
+                self.config.aiml_gateway_app_context_key_name,
+            )
+
+        response = await self._post_json_with_retries(
+            f"{self.config.base_url.rstrip('/')}/v1/aimlgenaigatewayserv/gcpAuth/generateImpersonationAuthToken",
+            headers=headers,
+            payload={
+                "gcp_project_name": self.config.project,
+                "cosmos_app_id": self.config.cosmos_app_id,
+                "cosmos_app_scope": self.config.cosmos_app_scope,
+            },
+            provider_name="Anthropic Vertex token endpoint",
+            max_attempts=3,
+        )
+        data = response.json() or {}
+        self._auth_token = data.get(
+            "auth_token",
+        )
+        if not self._auth_token:
+            raise ProviderConfigurationError(
+                "Anthropic Vertex token endpoint did not return auth_token",
+            )
+        token_ttl = int(
+            data.get(
+                "token_expiry_window_seconds",
+                self.config.token_expiry_window_seconds_default,
+            )
+            or self.config.token_expiry_window_seconds_default,
+        )
+        self._auth_expires_at = datetime.now() + timedelta(
+            seconds=token_ttl,
+        )
+
+    async def _post_raw_predict(
+        self,
+        model_id: str,
+        payload: dict[str, Any],
+        *,
+        timeout_s: float | None,
+    ) -> httpx.Response:
+        headers = {
+            "Authorization": f"Bearer {self._auth_token}",
+            "x-cosmos-app-id": self.config.cosmos_app_id,
+            "Content-Type": "application/json",
+        }
+        if self.config.beta_headers:
+            headers["anthropic-beta"] = ",".join(
+                dict.fromkeys(
+                    self.config.beta_headers,
+                ),
+            )
+        return await self._post_json_with_retries(
+            (
+                f"{self.config.model_base_url.rstrip('/')}/v1/projects/"
+                f"{self.config.project}/locations/{self.config.location}/publishers/"
+                f"anthropic/models/{model_id}:rawPredict"
+            ),
+            headers=headers,
+            payload=payload,
+            provider_name="Anthropic Vertex",
+            max_attempts=5,
+            timeout_s=timeout_s,
+            retry_timeouts=False,
+        )
+
+    async def _stream_raw_predict(
+        self,
+        model_id: str,
+        payload: dict[str, Any],
+        *,
+        timeout_s: float | None,
+    ) -> dict[str, Any]:
+        headers = {
+            "Accept": "text/event-stream",
+            "Authorization": f"Bearer {self._auth_token}",
+            "x-cosmos-app-id": self.config.cosmos_app_id,
+            "Content-Type": "application/json",
+        }
+        if self.config.beta_headers:
+            headers["anthropic-beta"] = ",".join(
+                dict.fromkeys(
+                    self.config.beta_headers,
+                ),
+            )
+        url = (
+            f"{self.config.model_base_url.rstrip('/')}/v1/projects/"
+            f"{self.config.project}/locations/{self.config.location}/publishers/"
+            f"anthropic/models/{model_id}:streamRawPredict"
+        )
+        stream_payload = {
+            **payload,
+            "stream": True,
+        }
+        last_error: Exception | None = None
+        for attempt in range(
+            5,
+        ):
+            try:
+                async with self.http_client.stream(
+                    "POST",
+                    url,
+                    headers=headers,
+                    json=stream_payload,
+                    timeout=timeout_s,
+                ) as response:
+                    response.raise_for_status()
+                    return await _parse_anthropic_sse_stream(
+                        response,
+                    )
+            except httpx.HTTPStatusError as error:
+                status_code = error.response.status_code
+                last_error = error
+                if status_code == 401:
+                    self._auth_token = None
+                    self._auth_expires_at = None
+                    raise ProviderConfigurationError(
+                        "Anthropic Vertex authentication failed: HTTP 401",
+                    ) from error
+                if status_code == 429:
+                    if attempt < 4:
+                        await _sleep_for_retry(
+                            error.response.headers.get(
+                                "Retry-After",
+                            ),
+                            attempt=attempt,
+                        )
+                        continue
+                    raise ProviderRateLimitError(
+                        "Anthropic Vertex rate limit exceeded",
+                    ) from error
+                if status_code >= 500 and attempt < 4:
+                    await _sleep_for_retry(
+                        None,
+                        attempt=attempt,
+                    )
+                    continue
+                raise ProviderError(
+                    f"Anthropic Vertex request failed: HTTP {status_code}: {error.response.text}",
+                ) from error
+            except httpx.TimeoutException as error:
+                raise ProviderTimeoutError(
+                    "Anthropic Vertex timed out",
+                ) from error
+            except httpx.RequestError as error:
+                last_error = error
+                if attempt < 4:
+                    await _sleep_for_retry(
+                        None,
+                        attempt=attempt,
+                    )
+                    continue
+                raise ProviderError(
+                    f"Anthropic Vertex request failed: {error}",
+                ) from error
+
+        raise ProviderError(
+            "Anthropic Vertex request failed",
+        ) from last_error
+
+    async def _post_json_with_retries(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+        provider_name: str,
+        max_attempts: int,
+        timeout_s: float | None = None,
+        retry_timeouts: bool = True,
+    ) -> httpx.Response:
+        last_error: Exception | None = None
+        for attempt in range(
+            max_attempts,
+        ):
+            try:
+                response = await self.http_client.post(
+                    url,
+                    headers=headers,
+                    json=payload,
+                    timeout=timeout_s,
+                )
+                response.raise_for_status()
+                return response
+            except httpx.HTTPStatusError as error:
+                status_code = error.response.status_code
+                last_error = error
+                if status_code == 401:
+                    self._auth_token = None
+                    self._auth_expires_at = None
+                    raise ProviderConfigurationError(
+                        f"{provider_name} authentication failed: HTTP 401",
+                    ) from error
+                if status_code == 429:
+                    if attempt < max_attempts - 1:
+                        await _sleep_for_retry(
+                            error.response.headers.get(
+                                "Retry-After",
+                            ),
+                            attempt=attempt,
+                        )
+                        continue
+                    raise ProviderRateLimitError(
+                        f"{provider_name} rate limit exceeded",
+                    ) from error
+                if status_code >= 500 and attempt < max_attempts - 1:
+                    await _sleep_for_retry(
+                        None,
+                        attempt=attempt,
+                    )
+                    continue
+                raise ProviderError(
+                    f"{provider_name} request failed: HTTP {status_code}: {error.response.text}",
+                ) from error
+            except httpx.TimeoutException as error:
+                last_error = error
+                if retry_timeouts and attempt < max_attempts - 1:
+                    await _sleep_for_retry(
+                        None,
+                        attempt=attempt,
+                    )
+                    continue
+                raise ProviderTimeoutError(
+                    f"{provider_name} timed out",
+                ) from error
+            except httpx.RequestError as error:
+                last_error = error
+                if attempt < max_attempts - 1:
+                    await _sleep_for_retry(
+                        None,
+                        attempt=attempt,
+                    )
+                    continue
+                raise ProviderError(
+                    f"{provider_name} request failed: {error}",
+                ) from error
+
+        raise ProviderError(
+            f"{provider_name} request failed",
+        ) from last_error
+
+
 def create_provider_client(
     provider_name: str,
     provider_settings: dict[str, Any] | None = None,
@@ -1092,7 +2068,7 @@ def create_provider_client(
     )
     normalized_provider_name = provider_name.strip().lower()
 
-    if normalized_provider_name in {"openai", "openai_compatible"}:
+    if normalized_provider_name in {"openai", "openai-compatible"}:
         return OpenAIChatProvider(
             api_key=_require_value(
                 _pick_first(
@@ -1176,6 +2152,39 @@ def create_provider_client(
                 "prompt_cache_key",
                 None,
             ),
+            codex_transport=resolved_provider_settings.pop(
+                "codex_transport",
+                None,
+            ),
+            websocket_prewarm=bool(
+                resolved_provider_settings.pop(
+                    "codex_websocket_prewarm",
+                    False,
+                ),
+            ),
+        )
+
+    if normalized_provider_name == "claude-code":
+        from wikiarena.providers.claude_code import ClaudeCodeProvider
+
+        return ClaudeCodeProvider(
+            claude_bin=resolved_provider_settings.pop(
+                "claude_bin",
+                None,
+            ),
+            oauth_token=_pick_first(
+                resolved_provider_settings.pop(
+                    "oauth_token",
+                    None,
+                ),
+                os.getenv(
+                    "CLAUDE_CODE_OAUTH_TOKEN",
+                ),
+            ),
+            timeout_s=resolved_provider_settings.pop(
+                "timeout_s",
+                None,
+            ),
         )
 
     if normalized_provider_name == "openrouter":
@@ -1210,6 +2219,34 @@ def create_provider_client(
         )
 
     if normalized_provider_name == "anthropic":
+        anthropic_transport = _pick_first(
+            resolved_provider_settings.pop(
+                "anthropic_transport",
+                None,
+            ),
+            os.getenv(
+                "WIKIARENA_ANTHROPIC_TRANSPORT",
+            ),
+            "messages",
+        )
+        if (
+            str(
+                anthropic_transport,
+            )
+            .strip()
+            .lower()
+            == "vertex"
+        ):
+            return AnthropicVertexChatProvider(
+                config=_anthropic_vertex_config_from_environment(
+                    resolved_provider_settings,
+                ),
+                timeout_s=resolved_provider_settings.pop(
+                    "timeout_s",
+                    None,
+                ),
+            )
+
         return AnthropicChatProvider(
             api_key=_require_value(
                 _pick_first(
@@ -1289,16 +2326,268 @@ def _require_value(
     return value
 
 
+def _anthropic_vertex_config_from_environment(
+    provider_settings: dict[str, Any],
+) -> _AnthropicVertexConfig:
+    base_url = _require_value(
+        _pick_first(
+            provider_settings.pop(
+                "vertex_base_url",
+                None,
+            ),
+            os.getenv(
+                "WIKIARENA_VERTEX_BASE_URL",
+            ),
+        ),
+        "WIKIARENA_VERTEX_BASE_URL",
+        "anthropic",
+    )
+    model_base_url = _pick_first(
+        provider_settings.pop(
+            "vertex_model_base_url",
+            None,
+        ),
+        os.getenv(
+            "WIKIARENA_VERTEX_MODEL_BASE_URL",
+        ),
+        "https://aiplatform.googleapis.com",
+    )
+    project = _require_value(
+        _pick_first(
+            provider_settings.pop(
+                "vertex_project",
+                None,
+            ),
+            os.getenv(
+                "WIKIARENA_VERTEX_PROJECT",
+            ),
+        ),
+        "WIKIARENA_VERTEX_PROJECT",
+        "anthropic",
+    )
+    location = _pick_first(
+        provider_settings.pop(
+            "vertex_location",
+            None,
+        ),
+        os.getenv(
+            "WIKIARENA_VERTEX_LOCATION",
+        ),
+        "global",
+    )
+    cosmos_app_id = _require_value(
+        _pick_first(
+            provider_settings.pop(
+                "vertex_cosmos_app_id",
+                None,
+            ),
+            os.getenv(
+                "WIKIARENA_VERTEX_COSMOS_APP_ID",
+            ),
+        ),
+        "WIKIARENA_VERTEX_COSMOS_APP_ID",
+        "anthropic",
+    )
+    cosmos_app_scope = _require_value(
+        _pick_first(
+            provider_settings.pop(
+                "vertex_cosmos_app_scope",
+                None,
+            ),
+            os.getenv(
+                "WIKIARENA_VERTEX_COSMOS_APP_SCOPE",
+            ),
+        ),
+        "WIKIARENA_VERTEX_COSMOS_APP_SCOPE",
+        "anthropic",
+    )
+    aiml_gateway_app_context_key_name = _require_value(
+        _pick_first(
+            provider_settings.pop(
+                "vertex_aiml_gateway_app_context_key_name",
+                None,
+            ),
+            os.getenv(
+                "WIKIARENA_VERTEX_AIML_GATEWAY_APP_CONTEXT_KEY_NAME",
+            ),
+        ),
+        "WIKIARENA_VERTEX_AIML_GATEWAY_APP_CONTEXT_KEY_NAME",
+        "anthropic",
+    )
+    beta_headers_value = _pick_first(
+        provider_settings.pop(
+            "vertex_anthropic_beta_headers",
+            None,
+        ),
+        os.getenv(
+            "WIKIARENA_VERTEX_ANTHROPIC_BETA_HEADERS",
+        ),
+    )
+    require_app_context = _bool_from_setting(
+        _pick_first(
+            provider_settings.pop(
+                "vertex_require_app_context",
+                None,
+            ),
+            os.getenv(
+                "WIKIARENA_VERTEX_REQUIRE_APP_CONTEXT",
+            ),
+        ),
+        default=True,
+    )
+    return _AnthropicVertexConfig(
+        base_url=base_url,
+        model_base_url=model_base_url or "https://aiplatform.googleapis.com",
+        project=project,
+        location=location or "global",
+        cosmos_app_id=cosmos_app_id,
+        cosmos_app_scope=cosmos_app_scope,
+        aiml_gateway_app_context_key_name=aiml_gateway_app_context_key_name,
+        keymaker_base_url=_pick_first(
+            provider_settings.pop(
+                "vertex_keymaker_base_url",
+                None,
+            ),
+            os.getenv(
+                "WIKIARENA_VERTEX_KEYMAKER_BASE_URL",
+            ),
+        ),
+        keymaker_app_context_env_var=_pick_first(
+            provider_settings.pop(
+                "vertex_keymaker_app_context_env_var",
+                None,
+            ),
+            os.getenv(
+                "WIKIARENA_VERTEX_KEYMAKER_APP_CONTEXT_ENV_VAR",
+            ),
+            "KM_APP_CONTEXT_FCIAGENT",
+        )
+        or "KM_APP_CONTEXT_FCIAGENT",
+        require_app_context=require_app_context,
+        token_expiry_window_seconds_default=int(
+            _pick_first(
+                provider_settings.pop(
+                    "vertex_token_expiry_window_seconds_default",
+                    None,
+                ),
+                os.getenv(
+                    "WIKIARENA_VERTEX_TOKEN_EXPIRY_WINDOW_SECONDS_DEFAULT",
+                ),
+                "1800",
+            )
+            or "1800",
+        ),
+        beta_headers=_split_header_list(
+            beta_headers_value,
+        ),
+    )
+
+
+def _split_header_list(
+    value: str | None,
+) -> tuple[str, ...]:
+    if not value:
+        return ()
+    return tuple(
+        item.strip()
+        for item in value.split(
+            ",",
+        )
+        if item.strip()
+    )
+
+
+def _bool_from_setting(
+    value: str | None,
+    *,
+    default: bool,
+) -> bool:
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        return True
+    if normalized in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }:
+        return False
+    raise ProviderConfigurationError(
+        f"Unsupported boolean setting value: {value}",
+    )
+
+
+def _maybe_base64_decode(
+    value: str | None,
+) -> str | None:
+    if not value:
+        return value
+    if (
+        len(
+            value,
+        )
+        % 4
+        != 0
+    ):
+        return value
+    if not re.match(
+        r"^[A-Za-z0-9+/]*={0,2}$",
+        value,
+    ):
+        return value
+    try:
+        return base64.b64decode(
+            value,
+        ).decode(
+            "utf-8",
+        )
+    except Exception:
+        return value
+
+
+async def _sleep_for_retry(
+    retry_after: str | None,
+    *,
+    attempt: int,
+) -> None:
+    delay_s: float | None = None
+    if retry_after:
+        try:
+            delay_s = float(
+                retry_after,
+            )
+        except ValueError:
+            delay_s = None
+    if delay_s is None:
+        delay_s = min(
+            0.5 * (2**attempt),
+            8.0,
+        )
+    await asyncio.sleep(
+        delay_s,
+    )
+
+
 def _require_string_field(
     value: Any,
     *,
     field_name: str,
     context: str,
 ) -> str:
-    if isinstance(
-        value,
-        str,
-    ) and value:
+    if (
+        isinstance(
+            value,
+            str,
+        )
+        and value
+    ):
         return value
     raise ProviderConfigurationError(
         f"{context} is missing {field_name}",
@@ -1308,12 +2597,66 @@ def _require_string_field(
 def _string_or_none(
     value: Any,
 ) -> str | None:
-    if isinstance(
-        value,
-        str,
-    ) and value:
+    if (
+        isinstance(
+            value,
+            str,
+        )
+        and value
+    ):
         return value
     return None
+
+
+def _default_anthropic_max_tokens(
+    *,
+    model_id: str,
+    thinking: Any,
+    output_config: Any,
+) -> int:
+    if model_id in {
+        "claude-opus-4-7",
+        "claude-opus-4-6",
+    } and (
+        isinstance(
+            thinking,
+            dict,
+        )
+        and thinking.get(
+            "type",
+        )
+        == "adaptive"
+    ):
+        return 128_000
+
+    if (
+        model_id
+        in {
+            "claude-opus-4-7",
+            "claude-opus-4-6",
+        }
+        and isinstance(
+            output_config,
+            dict,
+        )
+        and output_config.get(
+            "effort",
+        )
+        in {
+            "max",
+            "xhigh",
+        }
+    ):
+        return 128_000
+
+    if model_id in {
+        "claude-opus-4-7",
+        "claude-opus-4-6",
+        "claude-sonnet-4-6",
+    }:
+        return 64_000
+
+    return 1024
 
 
 def _load_codex_auth_state(
@@ -1397,9 +2740,7 @@ def _codex_auth_token_needs_refresh(
 ) -> bool:
     if auth_state.expires_at_s is None:
         return False
-    return auth_state.expires_at_s <= (
-        time.time() + _CODEX_AUTH_REFRESH_MARGIN_S
-    )
+    return auth_state.expires_at_s <= (time.time() + _CODEX_AUTH_REFRESH_MARGIN_S)
 
 
 def _extract_codex_account_id(
@@ -1431,9 +2772,12 @@ def _parse_jwt_claims(
     parts = token.split(
         ".",
     )
-    if len(
-        parts,
-    ) != 3:
+    if (
+        len(
+            parts,
+        )
+        != 3
+    ):
         return None
     payload = parts[1]
     padding = "=" * (
@@ -1592,9 +2936,13 @@ def _pop_codex_service_tier(
     if service_tier is None:
         return None
 
-    normalized_service_tier = str(
-        service_tier,
-    ).strip().lower()
+    normalized_service_tier = (
+        str(
+            service_tier,
+        )
+        .strip()
+        .lower()
+    )
     if normalized_service_tier in {
         "",
         "auto",
@@ -1693,6 +3041,9 @@ def _build_codex_request_headers(
     account_id: str | None,
     originator: str,
     user_agent: str,
+    session_id: str,
+    window_id: str,
+    turn_state: str | None,
 ) -> dict[str, str]:
     headers = {
         "Accept": "text/event-stream",
@@ -1700,11 +3051,225 @@ def _build_codex_request_headers(
         "Content-Type": "application/json",
         "originator": originator,
         "User-Agent": user_agent,
-        "session_id": f"wikiarena-{uuid.uuid4()}",
+        "session_id": session_id,
+        "x-client-request-id": session_id,
+        "x-codex-window-id": window_id,
     }
+    if turn_state is not None:
+        headers["x-codex-turn-state"] = turn_state
     if account_id is not None:
         headers["ChatGPT-Account-Id"] = account_id
     return headers
+
+
+def _build_codex_websocket_headers(
+    *,
+    access_token: str,
+    account_id: str | None,
+    originator: str,
+    user_agent: str,
+    session_id: str,
+    window_id: str,
+    turn_state: str | None,
+) -> dict[str, str]:
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "originator": originator,
+        "User-Agent": user_agent,
+        "session_id": session_id,
+        "x-client-request-id": session_id,
+        "x-codex-window-id": window_id,
+        "OpenAI-Beta": _CODEX_WEBSOCKET_BETA_HEADER_VALUE,
+    }
+    if turn_state is not None:
+        headers["x-codex-turn-state"] = turn_state
+    if account_id is not None:
+        headers["ChatGPT-Account-Id"] = account_id
+    return headers
+
+
+def _resolve_codex_transport(
+    raw_transport: Any,
+    *,
+    http_client: Any | None,
+    websocket_connect: Any | None,
+) -> str:
+    if raw_transport is None:
+        if http_client is not None and websocket_connect is None:
+            return "http"
+        return "websocket"
+
+    normalized_transport = (
+        str(
+            raw_transport,
+        )
+        .strip()
+        .lower()
+    )
+    if normalized_transport in {
+        "http",
+        "http_sse",
+        "sse",
+    }:
+        return "http"
+    if normalized_transport in {
+        "auto",
+        "websocket",
+        "websockets",
+        "ws",
+    }:
+        return "websocket"
+    if normalized_transport in {
+        "websocket_only",
+        "websocket-only",
+        "ws_only",
+        "ws-only",
+    }:
+        return "websocket_only"
+    raise ProviderConfigurationError(
+        f"Unsupported Codex transport '{raw_transport}'",
+    )
+
+
+def _codex_websocket_url(
+    response_url: str,
+) -> str:
+    parsed_url = urlsplit(
+        response_url,
+    )
+    scheme = parsed_url.scheme
+    if scheme == "https":
+        scheme = "wss"
+    elif scheme == "http":
+        scheme = "ws"
+    return urlunsplit(
+        (
+            scheme,
+            parsed_url.netloc,
+            parsed_url.path,
+            parsed_url.query,
+            parsed_url.fragment,
+        ),
+    )
+
+
+async def _connect_codex_websocket(
+    url: str,
+    *,
+    headers: dict[str, str],
+    timeout_s: float | None,
+) -> Any:
+    try:
+        import websockets
+        from websockets.exceptions import InvalidStatusCode
+    except ImportError as error:
+        raise ProviderConfigurationError(
+            "Codex websocket transport requires the 'websockets' package",
+        ) from error
+
+    try:
+        return await websockets.connect(
+            url,
+            extra_headers=headers,
+            user_agent_header=None,
+            open_timeout=timeout_s,
+        )
+    except InvalidStatusCode as error:
+        status_code = getattr(
+            error,
+            "status_code",
+            None,
+        )
+        if status_code == 401:
+            raise _CodexAuthRefreshRequired(
+                "Codex access token expired",
+            ) from error
+        if status_code == 426:
+            raise _CodexWebSocketFallbackToHttp(
+                "Codex websocket upgrade is unavailable",
+            ) from error
+        if status_code == 429:
+            raise ProviderRateLimitError(
+                "Codex provider rate limit exceeded during websocket connect",
+            ) from error
+        raise ProviderError(
+            f"Codex websocket connect failed: HTTP {status_code}",
+        ) from error
+
+
+def _codex_incremental_input(
+    *,
+    current_request: dict[str, Any],
+    previous_request: dict[str, Any] | None,
+    previous_output_items: list[dict[str, Any]],
+    allow_empty_delta: bool,
+) -> list[dict[str, Any]] | None:
+    if previous_request is None:
+        return None
+
+    previous_without_input = copy.deepcopy(
+        previous_request,
+    )
+    current_without_input = copy.deepcopy(
+        current_request,
+    )
+    previous_input = previous_without_input.pop(
+        "input",
+        [],
+    )
+    current_input = current_without_input.pop(
+        "input",
+        [],
+    )
+    if previous_without_input != current_without_input:
+        return None
+    if not isinstance(
+        previous_input,
+        list,
+    ) or not isinstance(
+        current_input,
+        list,
+    ):
+        return None
+
+    baseline = [
+        *copy.deepcopy(
+            previous_input,
+        ),
+        *copy.deepcopy(
+            previous_output_items,
+        ),
+    ]
+    baseline_length = len(
+        baseline,
+    )
+    if current_input[:baseline_length] != baseline:
+        return None
+    if not allow_empty_delta and baseline_length == len(
+        current_input,
+    ):
+        return None
+    return copy.deepcopy(
+        current_input[baseline_length:],
+    )
+
+
+def _codex_output_items_for_incremental_baseline(
+    output_items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    response_message = _provider_message_from_openai_responses_output(
+        [
+            _namespace_from_mapping(
+                item,
+            )
+            for item in output_items
+        ],
+    )
+    return _format_messages_for_openai_responses(
+        [
+            response_message,
+        ],
+    )
 
 
 async def _read_codex_error_detail(
@@ -1796,11 +3361,16 @@ async def _parse_codex_sse_stream(
     async for raw_line in response.aiter_lines():
         if not raw_line:
             continue
-        if not raw_line.startswith(
-            "data: ",
+        if raw_line.startswith(
+            "event: ",
         ):
             continue
-        payload_text = raw_line[6:]
+        if raw_line.startswith(
+            "data: ",
+        ):
+            payload_text = raw_line[6:]
+        else:
+            payload_text = raw_line
         if payload_text == "[DONE]":
             break
         try:
@@ -1816,40 +3386,12 @@ async def _parse_codex_sse_stream(
             dict,
         ):
             continue
-        event_type = event.get(
-            "type",
-        )
-        if event_type == "response.output_item.done":
-            item = event.get(
-                "item",
-            )
-            if isinstance(
-                item,
-                dict,
-            ):
-                output_items.append(
-                    item,
-                )
+        if _handle_codex_response_event(
+            event=event,
+            output_items=output_items,
+            completed_response=completed_response,
+        ):
             continue
-        if event_type == "response.completed":
-            response_payload = event.get(
-                "response",
-            )
-            if isinstance(
-                response_payload,
-                dict,
-            ):
-                completed_response = response_payload
-            continue
-        if event_type == "error":
-            detail = _string_or_none(
-                event.get(
-                    "message",
-                ),
-            ) or "Codex stream error"
-            raise ProviderError(
-                f"Codex provider request failed: {detail}",
-            )
 
     if not output_items:
         completed_output = completed_response.get(
@@ -1868,6 +3410,394 @@ async def _parse_codex_sse_stream(
                 )
             ]
     return output_items, completed_response
+
+
+async def _parse_anthropic_sse_stream(
+    response: Any,
+) -> dict[str, Any]:
+    message: dict[str, Any] = {
+        "content": [],
+        "usage": {},
+    }
+    content_blocks: dict[int, dict[str, Any]] = {}
+    tool_input_buffers: dict[int, list[str]] = {}
+
+    async for raw_line in response.aiter_lines():
+        if not raw_line:
+            continue
+        if raw_line.startswith(
+            "event: ",
+        ):
+            continue
+        if raw_line.startswith(
+            "data: ",
+        ):
+            payload_text = raw_line[6:]
+        else:
+            payload_text = raw_line
+        if payload_text == "[DONE]":
+            break
+        try:
+            event = json.loads(
+                payload_text,
+            )
+        except json.JSONDecodeError as error:
+            raise ProviderError(
+                "Anthropic Vertex request failed: invalid SSE payload",
+            ) from error
+        if not isinstance(
+            event,
+            dict,
+        ):
+            continue
+        event_type = event.get(
+            "type",
+        )
+        if event_type == "message":
+            message.update(
+                event,
+            )
+            break
+        if event_type == "error":
+            error_payload = event.get(
+                "error",
+            )
+            if isinstance(
+                error_payload,
+                dict,
+            ):
+                detail = (
+                    _string_or_none(
+                        error_payload.get(
+                            "message",
+                        ),
+                    )
+                    or _string_or_none(
+                        error_payload.get(
+                            "type",
+                        ),
+                    )
+                    or "stream error"
+                )
+            else:
+                detail = "stream error"
+            raise ProviderError(
+                f"Anthropic Vertex request failed: {detail}",
+            )
+        if event_type == "message_start":
+            message_payload = event.get(
+                "message",
+            )
+            if isinstance(
+                message_payload,
+                dict,
+            ):
+                message.update(
+                    {
+                        key: value
+                        for key, value in message_payload.items()
+                        if key != "content"
+                    },
+                )
+                usage = message_payload.get(
+                    "usage",
+                )
+                if isinstance(
+                    usage,
+                    dict,
+                ):
+                    message.setdefault(
+                        "usage",
+                        {},
+                    ).update(
+                        usage,
+                    )
+            continue
+        if event_type == "content_block_start":
+            index = event.get(
+                "index",
+            )
+            content_block = event.get(
+                "content_block",
+            )
+            if isinstance(
+                index,
+                int,
+            ) and isinstance(
+                content_block,
+                dict,
+            ):
+                block = copy.deepcopy(
+                    content_block,
+                )
+                block_type = block.get(
+                    "type",
+                )
+                if block_type == "text":
+                    block.setdefault(
+                        "text",
+                        "",
+                    )
+                elif block_type == "thinking":
+                    block.setdefault(
+                        "thinking",
+                        "",
+                    )
+                elif block_type == "tool_use":
+                    tool_input_buffers[index] = []
+                    block.setdefault(
+                        "input",
+                        {},
+                    )
+                content_blocks[index] = block
+            continue
+        if event_type == "content_block_delta":
+            index = event.get(
+                "index",
+            )
+            delta = event.get(
+                "delta",
+            )
+            if not isinstance(
+                index,
+                int,
+            ) or not isinstance(
+                delta,
+                dict,
+            ):
+                continue
+            block = content_blocks.setdefault(
+                index,
+                {},
+            )
+            delta_type = delta.get(
+                "type",
+            )
+            if delta_type == "text_delta":
+                block["text"] = (
+                    str(
+                        block.get(
+                            "text",
+                            "",
+                        ),
+                    )
+                    + str(
+                        delta.get(
+                            "text",
+                            "",
+                        ),
+                    )
+                )
+            elif delta_type == "thinking_delta":
+                block["thinking"] = (
+                    str(
+                        block.get(
+                            "thinking",
+                            "",
+                        ),
+                    )
+                    + str(
+                        delta.get(
+                            "thinking",
+                            "",
+                        ),
+                    )
+                )
+            elif delta_type == "input_json_delta":
+                tool_input_buffers.setdefault(
+                    index,
+                    [],
+                ).append(
+                    str(
+                        delta.get(
+                            "partial_json",
+                            "",
+                        ),
+                    ),
+                )
+            elif delta_type == "signature_delta" and delta.get(
+                "signature",
+            ):
+                block["signature"] = delta.get(
+                    "signature",
+                )
+            continue
+        if event_type == "content_block_stop":
+            index = event.get(
+                "index",
+            )
+            if isinstance(
+                index,
+                int,
+            ) and index in tool_input_buffers:
+                raw_input = "".join(
+                    tool_input_buffers[index],
+                )
+                if raw_input:
+                    try:
+                        content_blocks[index]["input"] = json.loads(
+                            raw_input,
+                        )
+                    except json.JSONDecodeError as error:
+                        raise ProviderError(
+                            "Anthropic Vertex request failed: invalid streamed tool input",
+                        ) from error
+            continue
+        if event_type == "message_delta":
+            delta = event.get(
+                "delta",
+            )
+            if isinstance(
+                delta,
+                dict,
+            ):
+                message.update(
+                    delta,
+                )
+            usage = event.get(
+                "usage",
+            )
+            if isinstance(
+                usage,
+                dict,
+            ):
+                message.setdefault(
+                    "usage",
+                    {},
+                ).update(
+                    usage,
+                )
+            continue
+        if event_type == "message_stop":
+            break
+
+    if content_blocks:
+        message["content"] = [
+            content_blocks[index]
+            for index in sorted(
+                content_blocks,
+            )
+        ]
+    return message
+
+
+async def _parse_codex_websocket_stream(
+    websocket: Any,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    output_items: list[dict[str, Any]] = []
+    completed_response: dict[str, Any] = {}
+
+    while True:
+        try:
+            raw_message = await websocket.recv()
+        except StopAsyncIteration:
+            break
+        except Exception as error:
+            if completed_response and error.__class__.__name__.startswith(
+                "ConnectionClosed",
+            ):
+                break
+            raise
+        if isinstance(
+            raw_message,
+            bytes,
+        ):
+            raw_message = raw_message.decode(
+                "utf-8",
+                errors="replace",
+            )
+        if not isinstance(
+            raw_message,
+            str,
+        ):
+            continue
+        try:
+            event = json.loads(
+                raw_message,
+            )
+        except json.JSONDecodeError as error:
+            raise ProviderError(
+                "Codex provider request failed: invalid websocket payload",
+            ) from error
+        if not isinstance(
+            event,
+            dict,
+        ):
+            continue
+        completed = _handle_codex_response_event(
+            event=event,
+            output_items=output_items,
+            completed_response=completed_response,
+        )
+        if completed:
+            break
+
+    if not output_items:
+        completed_output = completed_response.get(
+            "output",
+        )
+        if isinstance(
+            completed_output,
+            list,
+        ):
+            output_items = [
+                item
+                for item in completed_output
+                if isinstance(
+                    item,
+                    dict,
+                )
+            ]
+    return output_items, completed_response
+
+
+def _handle_codex_response_event(
+    *,
+    event: dict[str, Any],
+    output_items: list[dict[str, Any]],
+    completed_response: dict[str, Any],
+) -> bool:
+    event_type = event.get(
+        "type",
+    )
+    if event_type == "response.output_item.done":
+        item = event.get(
+            "item",
+        )
+        if isinstance(
+            item,
+            dict,
+        ):
+            output_items.append(
+                item,
+            )
+        return False
+    if event_type == "response.completed":
+        response_payload = event.get(
+            "response",
+        )
+        if isinstance(
+            response_payload,
+            dict,
+        ):
+            completed_response.clear()
+            completed_response.update(
+                response_payload,
+            )
+        return True
+    if event_type == "error":
+        detail = (
+            _string_or_none(
+                event.get(
+                    "message",
+                ),
+            )
+            or "Codex stream error"
+        )
+        raise ProviderError(
+            f"Codex provider request failed: {detail}",
+        )
+    return False
 
 
 def _namespace_from_mapping(
@@ -2066,9 +3996,7 @@ def _normalize_openai_responses_id_suffix(
             "fc_",
         )
     normalized_characters = [
-        character
-        if character.isalnum() or character in {"_", "-"}
-        else "_"
+        character if character.isalnum() or character in {"_", "-"} else "_"
         for character in candidate
     ]
     normalized = "".join(
@@ -2153,17 +4081,23 @@ def _format_messages_for_anthropic(
         for formatted_message in reversed(
             formatted_messages,
         ):
-            if formatted_message.get(
-                "role",
-            ) != "user":
+            if (
+                formatted_message.get(
+                    "role",
+                )
+                != "user"
+            ):
                 continue
             content_blocks = formatted_message.get(
                 "content",
             )
-            if not isinstance(
-                content_blocks,
-                list,
-            ) or not content_blocks:
+            if (
+                not isinstance(
+                    content_blocks,
+                    list,
+                )
+                or not content_blocks
+            ):
                 continue
             last_block = content_blocks[-1]
             if isinstance(
@@ -2456,11 +4390,14 @@ def _extract_openai_responses_message_text_parts(
         [],
     )
     for content_item in content_items:
-        if getattr(
-            content_item,
-            "type",
-            None,
-        ) != "output_text":
+        if (
+            getattr(
+                content_item,
+                "type",
+                None,
+            )
+            != "output_text"
+        ):
             continue
         text_value = getattr(
             content_item,
@@ -2491,10 +4428,13 @@ def _extract_openai_reasoning_summary_text(
             "text",
             None,
         )
-        if isinstance(
-            text_value,
-            str,
-        ) and text_value.strip():
+        if (
+            isinstance(
+                text_value,
+                str,
+            )
+            and text_value.strip()
+        ):
             summary_parts.append(
                 text_value,
             )
@@ -2775,15 +4715,21 @@ def _resolve_openai_api_mode(
     *,
     default_api_mode: str,
 ) -> str:
-    if settings.get(
-        "openai_api_mode",
-    ) is not None:
+    if (
+        settings.get(
+            "openai_api_mode",
+        )
+        is not None
+    ):
         return str(
             settings["openai_api_mode"],
         )
-    if settings.get(
-        "openai_reasoning_summary",
-    ) is not None:
+    if (
+        settings.get(
+            "openai_reasoning_summary",
+        )
+        is not None
+    ):
         return "responses"
     if bool(
         settings.get(
@@ -2851,8 +4797,7 @@ def _estimate_token_cost_usd(
         (non_cached_input_tokens / 1_000_000) * input_cost_per_1m_tokens
         + (cache_creation_input_tokens / 1_000_000)
         * cache_creation_input_cost_per_1m_tokens
-        + (cache_read_input_tokens / 1_000_000)
-        * cache_read_input_cost_per_1m_tokens
+        + (cache_read_input_tokens / 1_000_000) * cache_read_input_cost_per_1m_tokens
         + (output_tokens / 1_000_000) * output_cost_per_1m_tokens
     )
 
@@ -2866,12 +4811,15 @@ def _require_token_pricing(
     provider_name: str,
     anthropic_cache_pricing: bool = False,
 ) -> None:
-    if _resolve_token_pricing(
-        settings=settings,
-        model_id=model_id,
-        provider_name=provider_name,
-        anthropic_cache_pricing=anthropic_cache_pricing,
-    ) is not None:
+    if (
+        _resolve_token_pricing(
+            settings=settings,
+            model_id=model_id,
+            provider_name=provider_name,
+            anthropic_cache_pricing=anthropic_cache_pricing,
+        )
+        is not None
+    ):
         return
     raise _missing_pricing_error(
         model_id=model_id,
@@ -3064,7 +5012,7 @@ def _pricing_provider_uses_openai_pricing(
     return (provider_name or "").strip().lower() in {
         "codex",
         "openai",
-        "openai_compatible",
+        "openai-compatible",
         "openrouter",
     } or model_id.startswith(
         "gpt-",
@@ -3150,12 +5098,16 @@ def _apply_long_context_pricing(
 def _anthropic_cache_creation_multiplier(
     settings: dict[str, Any],
 ) -> float:
-    cache_ttl = str(
-        settings.get(
-            "anthropic_cache_ttl",
-            "5m",
-        ),
-    ).strip().lower()
+    cache_ttl = (
+        str(
+            settings.get(
+                "anthropic_cache_ttl",
+                "5m",
+            ),
+        )
+        .strip()
+        .lower()
+    )
     if cache_ttl == "1h":
         return 2.0
     return 1.25

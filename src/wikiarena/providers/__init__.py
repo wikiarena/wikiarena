@@ -1,23 +1,31 @@
-from wikiarena.providers.client import AnthropicChatProvider
-from wikiarena.providers.client import CodexChatProvider
-from wikiarena.providers.client import ModelProvider
-from wikiarena.providers.client import OpenAIChatProvider
-from wikiarena.providers.client import ProviderConfigurationError
-from wikiarena.providers.client import ProviderError
-from wikiarena.providers.client import ProviderRateLimitError
-from wikiarena.providers.client import ProviderTimeoutError
-from wikiarena.providers.client import create_provider_client
-from wikiarena.providers.types import ProviderMessage
-from wikiarena.providers.types import ProviderMessageRole
-from wikiarena.providers.types import ProviderReasoningItem
-from wikiarena.providers.types import ProviderRequest
-from wikiarena.providers.types import ProviderResponse
-from wikiarena.providers.types import ProviderTool
-from wikiarena.providers.types import ProviderToolCall
-from wikiarena.providers.types import ProviderUsage
+from wikiarena.providers.claude_code import ClaudeCodeProvider
+from wikiarena.providers.client import (
+    AnthropicChatProvider,
+    AnthropicVertexChatProvider,
+    CodexChatProvider,
+    ModelProvider,
+    OpenAIChatProvider,
+    ProviderConfigurationError,
+    ProviderError,
+    ProviderRateLimitError,
+    ProviderTimeoutError,
+    create_provider_client,
+)
+from wikiarena.providers.types import (
+    ProviderMessage,
+    ProviderMessageRole,
+    ProviderReasoningItem,
+    ProviderRequest,
+    ProviderResponse,
+    ProviderTool,
+    ProviderToolCall,
+    ProviderUsage,
+)
 
 __all__ = [
     "AnthropicChatProvider",
+    "AnthropicVertexChatProvider",
+    "ClaudeCodeProvider",
     "CodexChatProvider",
     "ModelProvider",
     "OpenAIChatProvider",
